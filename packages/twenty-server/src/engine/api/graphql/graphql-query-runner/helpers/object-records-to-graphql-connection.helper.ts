@@ -18,6 +18,8 @@ import { encodeCursor } from 'src/engine/api/graphql/graphql-query-runner/utils/
 import { getTargetObjectMetadataOrThrow } from 'src/engine/api/graphql/graphql-query-runner/utils/get-target-object-metadata.util';
 import { type AggregationField } from 'src/engine/api/graphql/workspace-schema-builder/utils/get-available-aggregations-from-object-fields.util';
 import { type CompositeFieldMetadataType } from 'src/engine/metadata-modules/field-metadata/types/composite-field-metadata-type.type';
+import { RelationType } from 'src/engine/metadata-modules/field-metadata/interfaces/relation-type.interface';
+
 import { isCompositeFieldMetadataType } from 'src/engine/metadata-modules/field-metadata/utils/is-composite-field-metadata-type.util';
 import { type FlatEntityMaps } from 'src/engine/metadata-modules/flat-entity/types/flat-entity-maps.type';
 import { findFlatEntityByIdInFlatEntityMapsOrThrow } from 'src/engine/metadata-modules/flat-entity/utils/find-flat-entity-by-id-in-flat-entity-maps-or-throw.util';
@@ -224,6 +226,27 @@ export class ObjectRecordsToGraphqlConnectionHelper {
         const objectValue = objectRecord[fieldMetadata.name];
 
         if (!isDefined(objectValue)) {
+          if (
+            fieldMetadata.settings?.relationType === RelationType.ONE_TO_MANY
+          ) {
+            processedObjectRecord[fieldMetadata.name] =
+              this.createConnection<ObjectRecord>({
+                objectRecords: [],
+                objectRecordsAggregatedValues:
+                  objectRecordsAggregatedValues[fieldMetadata.name],
+                selectedAggregatedFields:
+                  selectedAggregatedFields[fieldMetadata.name],
+                objectName: targetObjectMetadata.nameSingular,
+                take,
+                totalCount:
+                  objectRecordsAggregatedValues[fieldMetadata.name]
+                    ?.totalCount ?? 0,
+                order,
+                hasNextPage: false,
+                hasPreviousPage: false,
+                depth: depth + 1,
+              });
+          }
           continue;
         }
 
