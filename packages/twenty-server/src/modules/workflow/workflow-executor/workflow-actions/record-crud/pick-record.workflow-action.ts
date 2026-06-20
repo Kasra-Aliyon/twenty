@@ -29,6 +29,8 @@ type PickRecordExecutionContext = Awaited<
   ReturnType<WorkflowExecutionContextService['getExecutionContext']>
 >;
 
+const LOAD_BALANCED_COUNT_CONCURRENCY = 5;
+
 @Injectable()
 export class PickRecordWorkflowAction implements WorkflowAction {
   constructor(
@@ -105,13 +107,17 @@ export class PickRecordWorkflowAction implements WorkflowAction {
         };
       }
 
-      const leastLoadedIndex = await this.getLeastLoadedIndex({
+      const leastLoadedResult = await this.getLeastLoadedIndex({
         orderedRecords,
         loadBalance,
         executionContext,
       });
 
-      return { result: orderedRecords[leastLoadedIndex] };
+      if ('error' in leastLoadedResult) {
+        return { error: leastLoadedResult.error };
+      }
+
+      return { result: orderedRecords[leastLoadedResult.index] };
     }
 
     const pickedIndex = await this.getPickedIndex({
@@ -132,23 +138,47 @@ export class PickRecordWorkflowAction implements WorkflowAction {
     orderedRecords: ObjectRecord[];
     loadBalance: WorkflowPickRecordLoadBalance;
     executionContext: PickRecordExecutionContext;
-  }): Promise<number> {
-    const relatedCounts = await Promise.all(
-      orderedRecords.map(async (record) => {
-        const countOutput = await this.findRecordsService.execute({
-          objectName: loadBalance.objectNameSingular,
-          filter: { [loadBalance.fieldName]: { id: { eq: record.id } } },
-          authContext: executionContext.authContext,
-          rolePermissionConfig: executionContext.rolePermissionConfig,
-          shouldBuildEffectiveSelectFields: false,
-          limit: 1,
-        });
+  }): Promise<{ index: number } | { error: string }> {
+    const relatedCounts: number[] = [];
 
-        return countOutput.success
-          ? (countOutput.result?.count ?? 0)
-          : Number.POSITIVE_INFINITY;
-      }),
-    );
+    // Count one related set per candidate, bounded by a fixed concurrency so a
+    // large pool cannot fan out into an unbounded number of parallel queries.
+    for (
+      let batchStart = 0;
+      batchStart < orderedRecords.length;
+      batchStart += LOAD_BALANCED_COUNT_CONCURRENCY
+    ) {
+      const batch = orderedRecords.slice(
+        batchStart,
+        batchStart + LOAD_BALANCED_COUNT_CONCURRENCY,
+      );
+
+      const batchOutputs = await Promise.all(
+        batch.map((record) =>
+          this.findRecordsService.execute({
+            objectName: loadBalance.objectNameSingular,
+            filter: { [loadBalance.fieldName]: { id: { eq: record.id } } },
+            authContext: executionContext.authContext,
+            rolePermissionConfig: executionContext.rolePermissionConfig,
+            shouldBuildEffectiveSelectFields: false,
+            limit: 1,
+          }),
+        ),
+      );
+
+      for (const countOutput of batchOutputs) {
+        if (!countOutput.success) {
+          return {
+            error:
+              countOutput.error ||
+              countOutput.message ||
+              'Pick record action failed to count related records',
+          };
+        }
+
+        relatedCounts.push(countOutput.result?.count ?? 0);
+      }
+    }
 
     let leastLoadedIndex = 0;
 
@@ -158,7 +188,7 @@ export class PickRecordWorkflowAction implements WorkflowAction {
       }
     }
 
-    return leastLoadedIndex;
+    return { index: leastLoadedIndex };
   }
 
   private async getPickedIndex({
