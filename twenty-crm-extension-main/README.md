@@ -101,6 +101,31 @@ npm run zip
 
 The built extension is in `.output/chrome-mv3/`
 
+### Local Twenty Development
+
+From the Twenty repository root, start the local app:
+
+```bash
+yarn start
+```
+
+Then run the extension separately:
+
+```bash
+cd twenty-crm-extension-main
+npm install
+npm run dev
+```
+
+Load the unpacked extension from `.output/chrome-mv3-dev` for development. For a production build, run `npm run build` and load `.output/chrome-mv3`.
+
+The extension defaults to:
+
+- Twenty App URL: `http://localhost:3001`
+- Twenty API URL: `http://localhost:3000`
+
+Log in to `http://localhost:3001` in the same browser profile. The extension syncs the local `tokenPairState` session from that page and uses `http://localhost:3000/graphql` directly.
+
 ---
 
 ## 🏷️ Creating a Release

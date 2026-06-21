@@ -1,55 +1,253 @@
 import { TwentyApiClient, extractTokenFromCookie } from '../utils/twenty-api';
-import { getSettings, saveSettings, addToRecentCaptures, getRecentCaptures } from '../utils/storage';
-import type { ExtensionMessage, ExtensionResponse, LinkedInProfileData, LinkedInCompanyData } from '../types';
+import {
+  getSettings,
+  saveSettings,
+  addToRecentCaptures,
+  getRecentCaptures,
+  getTwentyTokenPair,
+  saveTwentyTokenPair,
+} from '../utils/storage';
+import type {
+  ExtensionMessage,
+  ExtensionResponse,
+  ExtensionSettings,
+  LinkedInProfileData,
+  LinkedInCompanyData,
+  TwentyTokenPair,
+} from '../types';
 
 // Cache for API client
 let apiClient: TwentyApiClient | null = null;
-let cachedTwentyUrl: string | null = null;
+let cachedTwentyApiUrl: string | null = null;
+
+type RenewTokenResult = {
+  renewToken?: {
+    tokens?: TwentyTokenPair;
+  };
+};
+
+const RENEW_TOKEN_MUTATION = `
+  mutation RenewToken($appToken: String!) {
+    renewToken(appToken: $appToken) {
+      tokens {
+        accessOrWorkspaceAgnosticToken {
+          token
+          expiresAt
+        }
+        refreshToken {
+          token
+          expiresAt
+        }
+      }
+    }
+  }
+`;
 
 // Get or create API client
 async function getApiClient(): Promise<TwentyApiClient> {
   const settings = await getSettings();
   
-  if (!settings.twentyUrl) {
-    throw new Error('Twenty URL not configured');
+  if (!settings.twentyApiUrl) {
+    throw new Error('Twenty API URL not configured');
   }
   
   // Create new client if URL changed
-  if (cachedTwentyUrl !== settings.twentyUrl || !apiClient) {
-    apiClient = new TwentyApiClient(settings.twentyUrl);
-    cachedTwentyUrl = settings.twentyUrl;
+  if (cachedTwentyApiUrl !== settings.twentyApiUrl || !apiClient) {
+    apiClient = new TwentyApiClient(settings.twentyApiUrl);
+    cachedTwentyApiUrl = settings.twentyApiUrl;
   }
   
-  // Get fresh token from cookie
-  const token = await getAuthToken(settings.twentyUrl);
+  const token = await getAuthToken(settings);
   if (!token) {
-    throw new Error('No authentication token found. Please log in to Twenty CRM.');
+    throw new Error('No authentication token found. Please log in to local Twenty CRM.');
   }
   
   apiClient.setToken(token);
   return apiClient;
 }
 
-// Extract domain from URL for cookie access
-function extractDomain(url: string): string {
+function isValidTwentyTokenPair(payload: unknown): payload is TwentyTokenPair {
+  if (!payload || typeof payload !== 'object') {
+    return false;
+  }
+
+  const tokenPair = payload as Partial<TwentyTokenPair>;
+
+  return (
+    typeof tokenPair.accessOrWorkspaceAgnosticToken?.token === 'string' &&
+    tokenPair.accessOrWorkspaceAgnosticToken.token.length > 0
+  );
+}
+
+function parseTokenPair(rawTokenPair: string | null): TwentyTokenPair | null {
+  if (!rawTokenPair) {
+    return null;
+  }
+
   try {
-    const urlObj = new URL(url);
-    return urlObj.hostname;
+    const tokenPair = JSON.parse(rawTokenPair);
+
+    return isValidTwentyTokenPair(tokenPair) ? tokenPair : null;
   } catch {
-    return url;
+    return null;
   }
 }
 
-// Get auth token from Twenty's cookie
-async function getAuthToken(twentyUrl: string): Promise<string | null> {
+function haveSameOrigin(firstUrl: string, secondUrl: string): boolean {
   try {
+    return new URL(firstUrl).origin === new URL(secondUrl).origin;
+  } catch {
+    return false;
+  }
+}
+
+async function getTokenFromStorage(): Promise<string | null> {
+  const tokenPair = await getTwentyTokenPair();
+
+  if (!isValidTwentyTokenPair(tokenPair)) {
+    return null;
+  }
+
+  return tokenPair.accessOrWorkspaceAgnosticToken.token;
+}
+
+function isTokenExpired(expiresAt: string | undefined): boolean {
+  if (!expiresAt) {
+    return false;
+  }
+
+  const expiresAtTime = new Date(expiresAt).getTime();
+
+  if (Number.isNaN(expiresAtTime)) {
+    return false;
+  }
+
+  return expiresAtTime <= Date.now() + 30_000;
+}
+
+async function renewTokenPair(settings: ExtensionSettings): Promise<string | null> {
+  const tokenPair = await getTwentyTokenPair();
+
+  if (!isValidTwentyTokenPair(tokenPair)) {
+    return null;
+  }
+
+  if (!isTokenExpired(tokenPair.accessOrWorkspaceAgnosticToken.expiresAt)) {
+    return tokenPair.accessOrWorkspaceAgnosticToken.token;
+  }
+
+  try {
+    const response = await fetch(`${settings.twentyApiUrl}/metadata`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        query: RENEW_TOKEN_MUTATION,
+        variables: {
+          appToken: tokenPair.refreshToken.token,
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      const responseText = await response.text();
+
+      console.error('[Twenty] Token renewal HTTP error:', response.status, responseText);
+      return tokenPair.accessOrWorkspaceAgnosticToken.token;
+    }
+
+    const result = await response.json() as {
+      data?: RenewTokenResult;
+      errors?: Array<{ message: string }>;
+    };
+
+    if (result.errors?.length) {
+      console.error(
+        '[Twenty] Token renewal GraphQL error:',
+        result.errors.map((error) => error.message).join('; '),
+      );
+      return tokenPair.accessOrWorkspaceAgnosticToken.token;
+    }
+
+    const renewedTokenPair = result.data?.renewToken?.tokens;
+
+    if (!isValidTwentyTokenPair(renewedTokenPair)) {
+      console.error('[Twenty] Token renewal did not return a valid token pair');
+      return tokenPair.accessOrWorkspaceAgnosticToken.token;
+    }
+
+    await saveTwentyTokenPair(renewedTokenPair);
+    console.log('[Twenty] Local token renewed');
+
+    return renewedTokenPair.accessOrWorkspaceAgnosticToken.token;
+  } catch (error) {
+    console.error('[Twenty] Token renewal failed:', error);
+    return tokenPair.accessOrWorkspaceAgnosticToken.token;
+  }
+}
+
+async function syncTokenPairFromActiveTab(): Promise<boolean> {
+  const settings = await getSettings();
+  const tabs = await browser.tabs.query({
+    active: true,
+    currentWindow: true,
+  });
+  const activeTab = tabs[0];
+
+  if (!activeTab?.id || !activeTab.url) {
+    console.log('No active tab available for Twenty token sync');
+    return false;
+  }
+
+  if (!haveSameOrigin(activeTab.url, settings.twentyAppUrl)) {
+    console.log(
+      'Active tab is not the configured Twenty app URL:',
+      activeTab.url,
+      settings.twentyAppUrl,
+    );
+    return false;
+  }
+
+  try {
+    const injectionResults = await browser.scripting.executeScript({
+      target: { tabId: activeTab.id },
+      func: () => localStorage.getItem('tokenPairState'),
+    });
+    const rawTokenPair = injectionResults[0]?.result ?? null;
+    const tokenPair = parseTokenPair(rawTokenPair);
+
+    await saveTwentyTokenPair(tokenPair);
+
+    console.log(
+      'Active tab Twenty token sync:',
+      tokenPair ? 'synced' : 'no token found',
+    );
+
+    return isValidTwentyTokenPair(tokenPair);
+  } catch (error) {
+    console.error('Failed to sync token from active Twenty tab:', error);
+    return false;
+  }
+}
+
+// Get auth token from synced local storage first, then legacy Twenty cookie.
+async function getAuthToken(settings: ExtensionSettings): Promise<string | null> {
+  const storedToken = await renewTokenPair(settings) ?? await getTokenFromStorage();
+
+  if (storedToken) {
+    return storedToken;
+  }
+
+  try {
+    const cookieUrl = settings.twentyAppUrl || settings.twentyApiUrl;
     // Try to get the tokenPair cookie from Twenty domain
     const cookie = await browser.cookies.get({
-      url: twentyUrl,
+      url: cookieUrl,
       name: 'tokenPair',
     });
     
-    console.log('Cookie lookup for', twentyUrl, ':', cookie ? 'found' : 'not found');
+    console.log('Cookie lookup for', cookieUrl, ':', cookie ? 'found' : 'not found');
     
     if (cookie?.value) {
       const decodedValue = decodeURIComponent(cookie.value);
@@ -57,9 +255,9 @@ async function getAuthToken(twentyUrl: string): Promise<string | null> {
     }
     
     // Also try without www
-    const altUrl = twentyUrl.includes('://www.') 
-      ? twentyUrl.replace('://www.', '://') 
-      : twentyUrl.replace('://', '://www.');
+    const altUrl = cookieUrl.includes('://www.') 
+      ? cookieUrl.replace('://www.', '://') 
+      : cookieUrl.replace('://', '://www.');
     
     const altCookie = await browser.cookies.get({
       url: altUrl,
@@ -223,12 +421,34 @@ async function handleMessage(message: ExtensionMessage): Promise<ExtensionRespon
   
   try {
     switch (message.type) {
+      case 'SYNC_TWENTY_TOKEN_PAIR': {
+        const tokenPair = message.payload as TwentyTokenPair | null;
+        const hasValidTokenPair = isValidTwentyTokenPair(tokenPair);
+
+        console.log(
+          'Twenty token sync payload:',
+          hasValidTokenPair ? 'valid token pair' : 'no valid token pair',
+        );
+
+        await saveTwentyTokenPair(
+          hasValidTokenPair ? tokenPair : null,
+        );
+
+        return { success: true };
+      }
+
+      case 'SYNC_TWENTY_TOKEN_PAIR_FROM_ACTIVE_TAB': {
+        const hasToken = await syncTokenPairFromActiveTab();
+
+        return { success: true, data: { hasToken } };
+      }
+
       case 'GET_AUTH_TOKEN': {
         const settings = await getSettings();
-        if (!settings.twentyUrl) {
-          return { success: false, error: 'Twenty URL not configured' };
+        if (!settings.twentyApiUrl) {
+          return { success: false, error: 'Twenty API URL not configured' };
         }
-        const token = await getAuthToken(settings.twentyUrl);
+        const token = await getAuthToken(settings);
         return { success: !!token, data: { hasToken: !!token } };
       }
       
@@ -250,8 +470,8 @@ async function handleMessage(message: ExtensionMessage): Promise<ExtensionRespon
       
       case 'GET_SETTINGS': {
         const settings = await getSettings();
-        const hasToken = settings.twentyUrl 
-          ? !!(await getAuthToken(settings.twentyUrl)) 
+        const hasToken = settings.twentyApiUrl 
+          ? !!(await getAuthToken(settings)) 
           : false;
         return { 
           success: true, 
@@ -260,13 +480,13 @@ async function handleMessage(message: ExtensionMessage): Promise<ExtensionRespon
       }
       
       case 'SAVE_SETTINGS': {
-        const newSettings = message.payload as { twentyUrl?: string };
+        const newSettings = message.payload as Partial<ExtensionSettings>;
         console.log('Saving settings:', newSettings);
         await saveSettings(newSettings);
         // Clear cached client when URL changes
-        if (newSettings.twentyUrl) {
+        if (newSettings.twentyApiUrl) {
           apiClient = null;
-          cachedTwentyUrl = null;
+          cachedTwentyApiUrl = null;
         }
         console.log('Settings saved successfully');
         return { success: true };

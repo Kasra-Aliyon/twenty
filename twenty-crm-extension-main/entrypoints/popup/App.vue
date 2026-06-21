@@ -1,9 +1,14 @@
 <script lang="ts" setup>
 import { ref, onMounted, computed } from 'vue';
 import type { ExtensionResponse } from '../../types';
+import {
+  DEFAULT_TWENTY_API_URL,
+  DEFAULT_TWENTY_APP_URL,
+} from '../../utils/storage';
 
 // State
-const twentyUrl = ref('');
+const twentyAppUrl = ref(DEFAULT_TWENTY_APP_URL);
+const twentyApiUrl = ref(DEFAULT_TWENTY_API_URL);
 const hasToken = ref(false);
 const isConnected = ref(false);
 const isLoading = ref(true);
@@ -20,7 +25,7 @@ const recentCaptures = ref<Array<{
 }>>([]);
 
 // Computed
-const isConfigured = computed(() => !!twentyUrl.value);
+const isConfigured = computed(() => !!twentyAppUrl.value && !!twentyApiUrl.value);
 const connectionStatus = computed(() => {
   if (!isConfigured.value) return 'not-configured';
   if (!hasToken.value) return 'no-session';
@@ -57,10 +62,15 @@ async function loadSettings() {
   try {
     const response = await browser.runtime.sendMessage({
       type: 'GET_SETTINGS',
-    }) as ExtensionResponse<{ twentyUrl: string; hasToken: boolean }>;
+    }) as ExtensionResponse<{
+      twentyAppUrl: string;
+      twentyApiUrl: string;
+      hasToken: boolean;
+    }>;
     
     if (response.success && response.data) {
-      twentyUrl.value = response.data.twentyUrl || '';
+      twentyAppUrl.value = response.data.twentyAppUrl || DEFAULT_TWENTY_APP_URL;
+      twentyApiUrl.value = response.data.twentyApiUrl || DEFAULT_TWENTY_API_URL;
       hasToken.value = response.data.hasToken || false;
       
       if (hasToken.value) {
@@ -89,19 +99,27 @@ async function loadRecentCaptures() {
   }
 }
 
+function normalizeUrl(url: string): string {
+  let normalizedUrl = url.trim();
+
+  if (!normalizedUrl.startsWith('http://') && !normalizedUrl.startsWith('https://')) {
+    normalizedUrl = 'http://' + normalizedUrl;
+  }
+
+  return normalizedUrl.replace(/\/$/, '');
+}
+
 async function saveSettings() {
-  if (!twentyUrl.value) {
-    error.value = 'Please enter your Twenty URL';
+  if (!twentyAppUrl.value || !twentyApiUrl.value) {
+    error.value = 'Please enter your Twenty app and API URLs';
     return;
   }
   
-  // Normalize URL
-  let url = twentyUrl.value.trim();
-  if (!url.startsWith('http://') && !url.startsWith('https://')) {
-    url = 'https://' + url;
-  }
-  url = url.replace(/\/$/, ''); // Remove trailing slash
-  twentyUrl.value = url;
+  const normalizedTwentyAppUrl = normalizeUrl(twentyAppUrl.value);
+  const normalizedTwentyApiUrl = normalizeUrl(twentyApiUrl.value);
+
+  twentyAppUrl.value = normalizedTwentyAppUrl;
+  twentyApiUrl.value = normalizedTwentyApiUrl;
   
   isSaving.value = true;
   error.value = null;
@@ -110,7 +128,10 @@ async function saveSettings() {
   try {
     const response = await browser.runtime.sendMessage({
       type: 'SAVE_SETTINGS',
-      payload: { twentyUrl: url },
+      payload: {
+        twentyAppUrl: normalizedTwentyAppUrl,
+        twentyApiUrl: normalizedTwentyApiUrl,
+      },
     }) as ExtensionResponse;
     
     if (response.success) {
@@ -134,6 +155,26 @@ async function testConnection() {
   error.value = null;
   
   try {
+    const authResponse = await browser.runtime.sendMessage({
+      type: 'GET_AUTH_TOKEN',
+    }) as ExtensionResponse<{ hasToken: boolean }>;
+
+    hasToken.value = authResponse.success && authResponse.data?.hasToken === true;
+
+    if (!hasToken.value) {
+      const syncResponse = await browser.runtime.sendMessage({
+        type: 'SYNC_TWENTY_TOKEN_PAIR_FROM_ACTIVE_TAB',
+      }) as ExtensionResponse<{ hasToken: boolean }>;
+
+      hasToken.value = syncResponse.success && syncResponse.data?.hasToken === true;
+    }
+
+    if (!hasToken.value) {
+      isConnected.value = false;
+      error.value = 'No local Twenty login token synced yet. Open http://localhost:3001, log in, then click this extension while that Twenty tab is active.';
+      return;
+    }
+
     const response = await browser.runtime.sendMessage({
       type: 'TEST_CONNECTION',
     }) as ExtensionResponse<{ connected: boolean }>;
@@ -153,16 +194,16 @@ async function testConnection() {
 }
 
 function openTwenty() {
-  if (twentyUrl.value) {
-    browser.tabs.create({ url: twentyUrl.value });
+  if (twentyAppUrl.value) {
+    browser.tabs.create({ url: twentyAppUrl.value });
   }
 }
 
 function openRecord(record: { twentyId: string; type: string }) {
-  if (twentyUrl.value) {
+  if (twentyAppUrl.value) {
     // URL uses singular: /object/person/ and /object/company/
     browser.tabs.create({ 
-      url: `${twentyUrl.value}/object/${record.type}/${record.twentyId}` 
+      url: `${twentyAppUrl.value}/object/${record.type}/${record.twentyId}` 
     });
   }
 }
@@ -209,16 +250,29 @@ function formatDate(timestamp: number): string {
         <h2 class="section__title">Settings</h2>
         
         <div class="form-group">
-          <label class="label" for="twentyUrl">Twenty URL</label>
+          <label class="label" for="twentyAppUrl">Twenty App URL</label>
           <input
-            id="twentyUrl"
-            v-model="twentyUrl"
+            id="twentyAppUrl"
+            v-model="twentyAppUrl"
             type="url"
             class="input"
-            placeholder="https://your-twenty.com"
+            placeholder="http://localhost:3001"
             @keyup.enter="saveSettings"
           />
-          <p class="hint">Your self-hosted Twenty instance URL</p>
+          <p class="hint">Local Twenty frontend URL for opening records</p>
+        </div>
+
+        <div class="form-group">
+          <label class="label" for="twentyApiUrl">Twenty API URL</label>
+          <input
+            id="twentyApiUrl"
+            v-model="twentyApiUrl"
+            type="url"
+            class="input"
+            placeholder="http://localhost:3000"
+            @keyup.enter="saveSettings"
+          />
+          <p class="hint">Local Twenty server URL used for GraphQL</p>
         </div>
 
         <div class="button-group">
@@ -250,7 +304,7 @@ function formatDate(timestamp: number): string {
       <!-- Login Prompt -->
       <section v-if="isConfigured && !hasToken" class="section section--warning">
         <p class="warning-text">
-          Please log in to your Twenty instance to use the extension.
+          Please log in to local Twenty to sync your browser session.
         </p>
         <button class="btn btn--primary" @click="openTwenty">
           Open Twenty →
@@ -291,8 +345,8 @@ function formatDate(timestamp: number): string {
       <section class="section section--muted">
         <h2 class="section__title">How to use</h2>
         <ol class="instructions">
-          <li>Enter your Twenty CRM URL above</li>
-          <li>Log in to Twenty in your browser</li>
+          <li>Keep the local URLs above or adjust them</li>
+          <li>Log in to local Twenty in this browser</li>
           <li>Visit any LinkedIn profile or company page</li>
           <li>Click the floating button to capture</li>
         </ol>

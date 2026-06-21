@@ -27,7 +27,6 @@ const FIND_PERSON_BY_LINKEDIN = `
           }
           jobTitle
           avatarUrl
-          city
           company {
             id
             name
@@ -313,10 +312,18 @@ export class TwentyApiClient {
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP error: ${response.status}`);
+      const responseText = await response.text();
+
+      throw new Error(`HTTP error: ${response.status} ${responseText}`);
     }
 
-    return response.json();
+    const result = await response.json();
+
+    if (result.errors?.length) {
+      throw new Error(result.errors.map((error: { message: string }) => error.message).join('; '));
+    }
+
+    return result;
   }
 
   async findPersonByLinkedInUrl(
@@ -547,7 +554,6 @@ export class TwentyApiClient {
         },
         jobTitle: data.headline || '',
         avatarUrl: avatarUrl,
-        city: data.location || '',
         // Link to company if we found/created one
         companyId: companyId,
       },
@@ -602,12 +608,13 @@ export class TwentyApiClient {
 
   async testConnection(): Promise<boolean> {
     try {
-      // Simple query to test if the connection works
-      const result = await this.graphqlRequest<{ currentWorkspace: { id: string } }>(
-        `query { currentWorkspace { id } }`
+      // /graphql exposes the workspace schema, so use a standard object query.
+      const result = await this.graphqlRequest<PeopleQueryResult>(
+        `query TestConnection { people(first: 1) { edges { node { id } } } }`
       );
-      return !result.errors?.length && !!result.data?.currentWorkspace;
-    } catch {
+      return !result.errors?.length && !!result.data?.people;
+    } catch (error) {
+      console.error('[Twenty] Connection test failed:', error);
       return false;
     }
   }
@@ -709,7 +716,6 @@ export class TwentyApiClient {
             },
             jobTitle: personData.headline || undefined,
             avatarUrl: avatarUrl,
-            city: personData.location || undefined,
             companyId: companyId,
           },
         }

@@ -1,5 +1,105 @@
 import type { LinkedInProfileData, LinkedInCompanyData, LinkedInData } from '../types';
 
+const PROFILE_NAME_SELECTORS = [
+  'h1.text-heading-xlarge',
+  'h1.inline.t-24',
+  'h1.t-24.v-align-middle',
+  '.pv-top-card h1',
+  '.pv-text-details__left-panel h1',
+  '.ph5 h1',
+  '.mt2 h1',
+  'main h1',
+  'section h1',
+  'h1[class*="break-words"]',
+];
+
+const PROFILE_HEADLINE_SELECTORS = [
+  '.pv-text-details__left-panel div.text-body-medium',
+  '.pv-top-card div.text-body-medium',
+  'main section div.text-body-medium.break-words',
+  'div[data-generated-suggestion-target]',
+  'div.text-body-medium.break-words',
+];
+
+function cleanText(value: string | null | undefined): string {
+  return (value || '')
+    .replace(/\u00a0/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function getMetaContent(selector: string): string {
+  return cleanText(
+    document.querySelector<HTMLMetaElement>(selector)?.content,
+  );
+}
+
+function getTextFromSelectors(selectors: string[]): string {
+  for (const selector of selectors) {
+    const elements = Array.from(document.querySelectorAll(selector));
+
+    for (const element of elements) {
+      const text = cleanText(element.textContent);
+
+      if (text && text.toLowerCase() !== 'linkedin' && text.length <= 160) {
+        return text;
+      }
+    }
+  }
+
+  return '';
+}
+
+function getProfileTitleParts(): { name: string; headline: string } {
+  const titleCandidates = [
+    getMetaContent('meta[property="og:title"]'),
+    getMetaContent('meta[name="twitter:title"]'),
+    cleanText(document.title),
+  ];
+
+  for (const titleCandidate of titleCandidates) {
+    const title = titleCandidate
+      .replace(/\s*\|\s*LinkedIn\s*$/i, '')
+      .replace(/\s*-\s*LinkedIn\s*$/i, '')
+      .trim();
+
+    if (!title || /^linkedin$/i.test(title)) {
+      continue;
+    }
+
+    const parts = title.split(/\s[-–]\s/).map(cleanText).filter(Boolean);
+
+    if (parts.length > 0) {
+      return {
+        name: parts[0],
+        headline: parts.slice(1).join(' - '),
+      };
+    }
+  }
+
+  return { name: '', headline: '' };
+}
+
+function getProfileName(): string {
+  const selectorName = getTextFromSelectors(PROFILE_NAME_SELECTORS);
+
+  if (selectorName) {
+    return selectorName;
+  }
+
+  return getProfileTitleParts().name;
+}
+
+function getProfileHeadline(fullName: string): string {
+  const selectorHeadline = getTextFromSelectors(PROFILE_HEADLINE_SELECTORS);
+
+  if (selectorHeadline && selectorHeadline !== fullName) {
+    return selectorHeadline;
+  }
+
+  return getProfileTitleParts().headline;
+}
+
 // Detect page type from URL
 export function getLinkedInPageType(url: string): 'person' | 'company' | null {
   if (url.includes('linkedin.com/in/')) {
@@ -26,31 +126,18 @@ export function getLinkedInIdentifier(url: string): string | null {
 export function scrapePersonProfile(): LinkedInProfileData | null {
   try {
     const linkedinUrl = window.location.href.split('?')[0];
-    
-    // Get name - LinkedIn uses h1 for the profile name with various class combinations
-    // Try multiple selectors as LinkedIn frequently changes their DOM
-    const nameElement = 
-      document.querySelector('h1.text-heading-xlarge') ||  // Old format
-      document.querySelector('h1.inline.t-24') ||          // New format (2024+)
-      document.querySelector('h1.t-24.v-align-middle') ||  // Another variant
-      document.querySelector('.pv-top-card h1') ||         // Fallback: h1 in top card
-      document.querySelector('h1[class*="break-words"]');  // Generic fallback
-    
-    if (!nameElement) {
-      console.warn('Could not find name element - tried multiple selectors');
+
+    const fullName = getProfileName();
+
+    if (!fullName) {
+      console.warn('Could not find profile name from DOM or page title');
       return null;
     }
-    
-    const fullName = nameElement.textContent?.trim() || '';
+
     console.log('Scraped name:', fullName);
     const nameParts = parseFullName(fullName);
-    
-    // Get headline/title - div with text-body-medium class that has job title
-    // Use data-generated-suggestion-target attribute as it's more reliable
-    const headlineElement = 
-      document.querySelector('div[data-generated-suggestion-target]') ||
-      document.querySelector('div.text-body-medium.break-words');
-    const headline = headlineElement?.textContent?.trim() || '';
+
+    const headline = getProfileHeadline(fullName);
     console.log('Scraped headline:', headline);
     
     // Get current company info
@@ -67,7 +154,7 @@ export function scrapePersonProfile(): LinkedInProfileData | null {
       document.querySelector('span.text-body-small.inline.t-black--light.break-words') ||
       document.querySelector('.text-body-small.inline.t-black--light.break-words') ||
       document.querySelector('.pv-top-card--list-bullet li:last-child');
-    const location = locationElement?.textContent?.trim() || '';
+    const location = cleanText(locationElement?.textContent);
     console.log('Scraped location:', location);
     
     const result = {
@@ -156,15 +243,22 @@ function scrapeCurrentCompanyFromProfile(): { name: string; linkedinUrl?: string
     const companyLink = 
       document.querySelector('.pv-text-details__right-panel-item-text a[href*="/company/"]') ||
       document.querySelector('a[data-field="experience_company_logo"]') ||
-      document.querySelector('.experience-item a[href*="/company/"]');
+      document.querySelector('.experience-item a[href*="/company/"]') ||
+      Array.from(document.querySelectorAll('main a[href*="/company/"]')).find(
+        (link) => {
+          const text = cleanText(link.textContent);
+
+          return text.length > 0 && !/^(follow|message|connect)$/i.test(text);
+        },
+      );
     
     if (companyLink) {
       const href = companyLink.getAttribute('href') || '';
       const match = href.match(/\/company\/([^/?]+)/);
       const linkedinUrl = match ? `https://www.linkedin.com/company/${match[1]}/` : undefined;
       
-      const name = companyLink.textContent?.trim() || 
-        companyLink.closest('.pv-text-details__right-panel-item-text')?.textContent?.trim() ||
+      const name = cleanText(companyLink.textContent) ||
+        cleanText(companyLink.closest('.pv-text-details__right-panel-item-text')?.textContent) ||
         '';
       
       if (name) {
@@ -178,7 +272,7 @@ function scrapeCurrentCompanyFromProfile(): { name: string; linkedinUrl?: string
       document.querySelector('[aria-label*="Current company"]');
     
     if (companyElement) {
-      return { name: companyElement.textContent?.trim() || '' };
+      return { name: cleanText(companyElement.textContent) };
     }
     
     return null;
@@ -308,4 +402,3 @@ function extractCompanyFromHeadline(headline: string): string {
   
   return '';
 }
-

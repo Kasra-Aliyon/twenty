@@ -1,10 +1,28 @@
 import { storage } from '#imports';
-import type { ExtensionSettings } from '../types';
+import type { ExtensionSettings, TwentyTokenPair } from '../types';
+
+export const DEFAULT_TWENTY_APP_URL = 'http://localhost:3001';
+export const DEFAULT_TWENTY_API_URL = 'http://localhost:3000';
 
 // Define storage items with proper typing
-export const twentyUrlStorage = storage.defineItem<string>('sync:twentyUrl', {
+export const legacyTwentyUrlStorage = storage.defineItem<string>('sync:twentyUrl', {
   fallback: '',
 });
+
+export const twentyAppUrlStorage = storage.defineItem<string>('sync:twentyAppUrl', {
+  fallback: DEFAULT_TWENTY_APP_URL,
+});
+
+export const twentyApiUrlStorage = storage.defineItem<string>('sync:twentyApiUrl', {
+  fallback: DEFAULT_TWENTY_API_URL,
+});
+
+export const twentyTokenPairStorage = storage.defineItem<TwentyTokenPair | null>(
+  'local:twentyTokenPair',
+  {
+    fallback: null,
+  },
+);
 
 export const lastCapturedStorage = storage.defineItem<Array<{
   linkedinUrl: string;
@@ -18,14 +36,34 @@ export const lastCapturedStorage = storage.defineItem<Array<{
 
 // Helper functions
 export async function getSettings(): Promise<ExtensionSettings> {
-  const twentyUrl = await twentyUrlStorage.getValue();
-  return { twentyUrl };
+  const legacyTwentyUrl = await legacyTwentyUrlStorage.getValue();
+  const twentyAppUrl = await twentyAppUrlStorage.getValue();
+  const twentyApiUrl = await twentyApiUrlStorage.getValue();
+
+  return {
+    twentyAppUrl: twentyAppUrl || legacyTwentyUrl || DEFAULT_TWENTY_APP_URL,
+    twentyApiUrl: twentyApiUrl || legacyTwentyUrl || DEFAULT_TWENTY_API_URL,
+  };
 }
 
 export async function saveSettings(settings: Partial<ExtensionSettings>): Promise<void> {
-  if (settings.twentyUrl !== undefined) {
-    await twentyUrlStorage.setValue(settings.twentyUrl);
+  if (settings.twentyAppUrl !== undefined) {
+    await twentyAppUrlStorage.setValue(settings.twentyAppUrl);
   }
+
+  if (settings.twentyApiUrl !== undefined) {
+    await twentyApiUrlStorage.setValue(settings.twentyApiUrl);
+  }
+}
+
+export async function saveTwentyTokenPair(
+  tokenPair: TwentyTokenPair | null,
+): Promise<void> {
+  await twentyTokenPairStorage.setValue(tokenPair);
+}
+
+export async function getTwentyTokenPair(): Promise<TwentyTokenPair | null> {
+  return twentyTokenPairStorage.getValue();
 }
 
 export async function addToRecentCaptures(capture: {
@@ -50,4 +88,3 @@ export async function addToRecentCaptures(capture: {
 export async function getRecentCaptures() {
   return lastCapturedStorage.getValue();
 }
-

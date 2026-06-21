@@ -369,6 +369,20 @@ export default defineContentScript({
       // Check for existing record after a short delay
       setTimeout(checkExisting, 1500);
     }
+
+    async function scrapeCurrentPageWithRetry(): Promise<LinkedInData | null> {
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        const data = scrapeCurrentPage();
+
+        if (data) {
+          return data;
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+
+      return null;
+    }
     
     // Check for existing record
     async function checkExisting() {
@@ -383,7 +397,7 @@ export default defineContentScript({
       setState({ status: 'loading' });
       
       // Scrape page data first for better duplicate matching
-      const scrapedData = scrapeCurrentPage();
+      const scrapedData = await scrapeCurrentPageWithRetry();
       console.log('Scraped data for duplicate check:', scrapedData);
       
       try {
@@ -433,7 +447,7 @@ export default defineContentScript({
     async function handleCapture() {
       if (state.status !== 'ready') return;
       
-      const data = state.data || scrapeCurrentPage();
+      const data = state.data || await scrapeCurrentPageWithRetry();
       if (!data) {
         showToast('Could not extract profile data');
         return;
@@ -483,11 +497,11 @@ export default defineContentScript({
       try {
         const response = await browser.runtime.sendMessage({
           type: 'GET_SETTINGS',
-        }) as ExtensionResponse<{ twentyUrl: string }>;
+        }) as ExtensionResponse<{ twentyAppUrl: string }>;
         
-        if (response.success && response.data?.twentyUrl) {
+        if (response.success && response.data?.twentyAppUrl) {
           const { id, type } = state.existingRecord;
-          const url = `${response.data.twentyUrl}/object/${type}/${id}`;
+          const url = `${response.data.twentyAppUrl}/object/${type}/${id}`;
           window.open(url, '_blank');
         }
       } catch (error) {
@@ -529,7 +543,7 @@ export default defineContentScript({
     
     // Link to existing record and update it
     async function linkToRecord(record: SearchResult) {
-      const data = state.data || scrapeCurrentPage();
+      const data = state.data || await scrapeCurrentPageWithRetry();
       if (!data) {
         showToast('Could not extract profile data');
         return;
@@ -659,7 +673,7 @@ export default defineContentScript({
     async function updateExistingRecord() {
       if (!state.existingRecord) return;
       
-      const data = scrapeCurrentPage();
+      const data = await scrapeCurrentPageWithRetry();
       if (!data) {
         showToast('Could not extract profile data');
         return;

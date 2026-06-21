@@ -40,7 +40,6 @@ export type TwentyPerson = {
   linkedinLink?: TwentyLinks;
   jobTitle?: string;
   avatarUrl?: string;
-  city?: string;
   company?: {
     id: string;
     name: string;
@@ -89,6 +88,8 @@ export type CaptureState = {
 
 // Message Types for Extension Communication
 export type MessageType =
+  | 'SYNC_TWENTY_TOKEN_PAIR'
+  | 'SYNC_TWENTY_TOKEN_PAIR_FROM_ACTIVE_TAB'
   | 'GET_AUTH_TOKEN'
   | 'CHECK_DUPLICATE'
   | 'CREATE_RECORD'
@@ -113,7 +114,8 @@ export type ExtensionResponse<T = unknown> = {
 
 // Settings
 export type ExtensionSettings = {
-  twentyUrl: string;
+  twentyAppUrl: string;
+  twentyApiUrl: string;
 };
 
 // GraphQL Response Types
@@ -148,4 +150,3 @@ export type CreatePersonResult = {
 export type CreateCompanyResult = {
   createCompany: TwentyCompany;
 };
-
