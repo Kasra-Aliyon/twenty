@@ -405,8 +405,12 @@ export class TwentyApiClient {
       return exactMatch.node;
     }
 
-    // Return first partial match if no exact match
-    return companies[0]?.node || null;
+    const normalizedCompanyName = this.normalizeCompanyNameForMatch(companyName);
+    const normalizedMatch = companies.find(
+      (c) => this.normalizeCompanyNameForMatch(c.node.name) === normalizedCompanyName
+    );
+
+    return normalizedMatch?.node || null;
   }
 
   async findPersonByName(
@@ -459,8 +463,31 @@ export class TwentyApiClient {
   }
 
   async findOrCreateCompany(
-    companyName: string
+    companyName: string,
+    linkedinUrl?: string
   ): Promise<{ id: string; name: string; created: boolean }> {
+    if (linkedinUrl) {
+      try {
+        const existingCompanyByLinkedIn =
+          await this.findCompanyByLinkedInUrl(linkedinUrl);
+
+        if (existingCompanyByLinkedIn) {
+          console.log(
+            'Found existing company by LinkedIn URL:',
+            existingCompanyByLinkedIn.name
+          );
+
+          return {
+            id: existingCompanyByLinkedIn.id,
+            name: existingCompanyByLinkedIn.name,
+            created: false,
+          };
+        }
+      } catch (error) {
+        console.error('Error searching company by LinkedIn URL:', error);
+      }
+    }
+
     // First, try to find existing company by name
     const existingCompany = await this.findCompanyByName(companyName);
     
@@ -471,19 +498,26 @@ export class TwentyApiClient {
 
     // Create new company if not found
     console.log('Creating new company:', companyName);
-    const newCompany = await this.createCompanySimple(companyName);
+    const newCompany = await this.createCompanySimple(companyName, linkedinUrl);
     return { id: newCompany.id, name: newCompany.name, created: true };
   }
 
-  // Simple company creation (just name, no LinkedIn URL)
+  // Simple company creation for companies discovered from a person profile.
   private async createCompanySimple(
-    name: string
+    name: string,
+    linkedinUrl?: string
   ): Promise<CreateCompanyResult['createCompany']> {
     const result = await this.graphqlRequest<CreateCompanyResult>(
       CREATE_COMPANY,
       {
         input: {
           name,
+          linkedinLink: linkedinUrl
+            ? {
+                primaryLinkUrl: linkedinUrl,
+                primaryLinkLabel: 'LinkedIn',
+              }
+            : undefined,
         },
       }
     );
@@ -510,7 +544,10 @@ export class TwentyApiClient {
     if (data.currentCompany) {
       console.log('[Twenty] Attempting to find or create company:', data.currentCompany);
       try {
-        const companyResult = await this.findOrCreateCompany(data.currentCompany);
+        const companyResult = await this.findOrCreateCompany(
+          data.currentCompany,
+          data.currentCompanyLinkedInUrl
+        );
         companyId = companyResult.id;
         companyCreated = companyResult.created;
         console.log(`[Twenty] Company ${companyResult.created ? 'created' : 'found'}:`, companyResult.name, 'id:', companyId);
@@ -552,7 +589,7 @@ export class TwentyApiClient {
           primaryLinkUrl: data.linkedinUrl,
           primaryLinkLabel: 'LinkedIn',
         },
-        jobTitle: data.headline || '',
+        jobTitle: data.jobTitle || data.headline || '',
         avatarUrl: avatarUrl,
         // Link to company if we found/created one
         companyId: companyId,
@@ -677,7 +714,10 @@ export class TwentyApiClient {
       let companyId: string | undefined;
       if (personData.currentCompany) {
         try {
-          const companyResult = await this.findOrCreateCompany(personData.currentCompany);
+          const companyResult = await this.findOrCreateCompany(
+            personData.currentCompany,
+            personData.currentCompanyLinkedInUrl
+          );
           companyId = companyResult.id;
         } catch (error) {
           console.error('Error finding/creating company:', error);
@@ -714,7 +754,7 @@ export class TwentyApiClient {
               primaryLinkUrl: personData.linkedinUrl,
               primaryLinkLabel: 'LinkedIn',
             },
-            jobTitle: personData.headline || undefined,
+            jobTitle: personData.jobTitle || personData.headline || undefined,
             avatarUrl: avatarUrl,
             companyId: companyId,
           },
@@ -760,6 +800,16 @@ export class TwentyApiClient {
     // Extract the profile/company identifier from various LinkedIn URL formats
     const match = url.match(/linkedin\.com\/(in|company)\/([^/?]+)/);
     return match ? match[2] : url;
+  }
+
+  private normalizeCompanyNameForMatch(name: string): string {
+    return name
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/\b(inc|incorporated|llc|ltd|limited|corp|corporation|co|company|gmbh|ag|sas|sarl|plc|bv|nv|oy|ab)\b\.?/g, '')
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
   }
 
   private parseEmployeeCount(countStr: string): number | undefined {

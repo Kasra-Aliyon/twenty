@@ -5,7 +5,9 @@ export type LinkedInProfileData = {
   firstName: string;
   lastName: string;
   headline?: string;
+  jobTitle?: string;
   currentCompany?: string;
+  currentCompanyLinkedInUrl?: string;
   profileImageUrl?: string;
   location?: string;
 };
