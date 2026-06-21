@@ -30,6 +30,36 @@ Twenty gives technical teams the building blocks for a custom CRM that meets com
 
 # Installation
 
+### <img src="./packages/twenty-website/public/images/readme/code-icon.svg" width="14" height="14"/> Run locally
+
+Use this when you want the full CRM running on your machine. It starts the app services, prepares the database, and serves the CRM at [http://localhost:3001](http://localhost:3001).
+
+```bash
+# From the repository root
+corepack enable
+yarn install
+
+# Start Postgres and Redis, create databases, copy env files, and run migrations
+bash packages/twenty-utils/setup-dev-env.sh
+
+# Start the frontend, backend, and worker
+yarn start
+```
+
+The frontend runs at [http://localhost:3001](http://localhost:3001), and the backend API runs at [http://localhost:3000](http://localhost:3000).
+
+To stop the database services later:
+
+```bash
+bash packages/twenty-utils/setup-dev-env.sh --down
+```
+
+To wipe local data and start from a clean database:
+
+```bash
+bash packages/twenty-utils/setup-dev-env.sh --reset
+```
+
 ### <img src="./packages/twenty-website/public/images/readme/globe-icon.svg" width="14" height="14"/> Cloud
 
 The fastest way to get started. Sign up at [twenty.com](https://twenty.com) and spin up a workspace in under a minute, with no infrastructure to manage and always up to date.
