@@ -1,3 +1,5 @@
+import { FieldActorSource } from 'twenty-shared/types';
+
 import { ApolloEnrichmentMapperService } from 'src/modules/apollo-enrichment/services/apollo-enrichment-mapper.service';
 import { type ApolloPerson } from 'src/modules/apollo-enrichment/types/apollo-api.type';
 import { type PersonWorkspaceEntity } from 'src/modules/person/standard-objects/person.workspace-entity';
@@ -125,6 +127,109 @@ describe('ApolloEnrichmentMapperService', () => {
     expect(update).toEqual({});
   });
 
+  it('refreshes existing primary email for auto-created contact records', () => {
+    const person = buildPerson({
+      emails: {
+        primaryEmail: 'stale@example.com',
+        additionalEmails: ['alias@example.com'],
+      },
+      createdBy: {
+        source: FieldActorSource.EMAIL,
+        workspaceMemberId: null,
+        name: 'System',
+        context: {},
+      },
+    });
+    const update = mapper.mapApolloPersonToTwentyUpdate({
+      person,
+      apolloPerson: {
+        email: 'fresh@example.com',
+      },
+    });
+
+    expect(update).toEqual({
+      emails: {
+        primaryEmail: 'fresh@example.com',
+        additionalEmails: ['alias@example.com'],
+      },
+    });
+  });
+
+  it('keeps existing primary email for manual contact records', () => {
+    const person = buildPerson({
+      emails: {
+        primaryEmail: 'manual@example.com',
+        additionalEmails: null,
+      },
+      createdBy: {
+        source: FieldActorSource.MANUAL,
+        workspaceMemberId: null,
+        name: 'Manual User',
+        context: {},
+      },
+    });
+    const update = mapper.mapApolloPersonToTwentyUpdate({
+      person,
+      apolloPerson: {
+        email: 'apollo@example.com',
+      },
+    });
+
+    expect(update).toEqual({});
+  });
+
+  it('considers auto-created contact records with stale emails enrichable', () => {
+    expect(
+      mapper.shouldEnrichPerson(
+        buildPerson({
+          emails: {
+            primaryEmail: 'stale@example.com',
+            additionalEmails: null,
+          },
+          phones: {
+            primaryPhoneNumber: '+14155550100',
+            primaryPhoneCountryCode: 'US',
+            primaryPhoneCallingCode: '',
+            additionalPhones: null,
+          },
+          companyId: 'company-id',
+          createdBy: {
+            source: FieldActorSource.CALENDAR,
+            workspaceMemberId: null,
+            name: 'System',
+            context: {},
+          },
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it('considers API-created contact records with stale emails enrichable', () => {
+    expect(
+      mapper.shouldEnrichPerson(
+        buildPerson({
+          emails: {
+            primaryEmail: 'stale@example.com',
+            additionalEmails: null,
+          },
+          phones: {
+            primaryPhoneNumber: '+14155550100',
+            primaryPhoneCountryCode: 'US',
+            primaryPhoneCallingCode: '',
+            additionalPhones: null,
+          },
+          companyId: 'company-id',
+          createdBy: {
+            source: FieldActorSource.API,
+            workspaceMemberId: null,
+            name: 'API',
+            context: {},
+          },
+        }),
+      ),
+    ).toBe(true);
+  });
+
   it('normalizes Apollo organization domains and links', () => {
     const mappedCompany = mapper.mapApolloOrganization({
       name: 'Acme',
@@ -191,5 +296,44 @@ describe('ApolloEnrichmentMapperService', () => {
         changedFields: ['name'],
       }),
     ).toBe(false);
+  });
+
+  it('triggers enrichment when a soft-deleted person is restored', () => {
+    const restoredPerson = buildPerson({
+      deletedAt: null,
+      emails: {
+        primaryEmail: 'stale@example.com',
+        additionalEmails: null,
+      },
+      phones: {
+        primaryPhoneNumber: '+14155550100',
+        primaryPhoneCountryCode: 'US',
+        primaryPhoneCallingCode: '',
+        additionalPhones: null,
+      },
+      companyId: 'company-id',
+      createdBy: {
+        source: FieldActorSource.API,
+        workspaceMemberId: null,
+        name: 'API',
+        context: {},
+      },
+      linkedinLink: {
+        primaryLinkLabel: '',
+        primaryLinkUrl: 'https://www.linkedin.com/in/jane',
+        secondaryLinks: null,
+      },
+    });
+
+    expect(
+      mapper.shouldEnrichAfterUpdate({
+        before: {
+          ...restoredPerson,
+          deletedAt: '2026-06-22T07:00:00.000Z',
+        },
+        after: restoredPerson,
+        changedFields: ['deletedAt'],
+      }),
+    ).toBe(true);
   });
 });

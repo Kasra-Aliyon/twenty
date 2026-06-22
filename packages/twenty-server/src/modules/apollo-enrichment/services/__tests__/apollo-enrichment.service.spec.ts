@@ -1,3 +1,5 @@
+import { FieldActorSource } from 'twenty-shared/types';
+
 import { ApolloClientService } from 'src/modules/apollo-enrichment/services/apollo-client.service';
 import { ApolloEnrichmentMapperService } from 'src/modules/apollo-enrichment/services/apollo-enrichment-mapper.service';
 import { ApolloEnrichmentService } from 'src/modules/apollo-enrichment/services/apollo-enrichment.service';
@@ -170,6 +172,51 @@ describe('ApolloEnrichmentService', () => {
         primaryPhoneCountryCode: '',
         primaryPhoneCallingCode: '',
         additionalPhones: null,
+      },
+    });
+  });
+
+  it('refreshes existing email for restored auto-created contact records', async () => {
+    personRepository.findOne.mockResolvedValue(
+      buildPerson({
+        emails: {
+          primaryEmail: 'stale@example.com',
+          additionalEmails: null,
+        },
+        phones: {
+          primaryPhoneNumber: '+14155550100',
+          primaryPhoneCountryCode: 'US',
+          primaryPhoneCallingCode: '',
+          additionalPhones: null,
+        },
+        jobTitle: 'Existing title',
+        companyId: 'existing-company-id',
+        createdBy: {
+          source: FieldActorSource.EMAIL,
+          workspaceMemberId: null,
+          name: 'System',
+          context: {},
+        },
+      }),
+    );
+    apolloClientService.enrichPerson.mockResolvedValue({
+      person: {
+        email: 'apollo@example.com',
+        sanitized_phone: '+14155550199',
+        title: 'Apollo title',
+      },
+    });
+
+    const result = await service.enrichPerson({
+      workspaceId,
+      personId,
+    });
+
+    expect(result).toBe('updated');
+    expect(personRepository.update).toHaveBeenCalledWith(personId, {
+      emails: {
+        primaryEmail: 'apollo@example.com',
+        additionalEmails: null,
       },
     });
   });

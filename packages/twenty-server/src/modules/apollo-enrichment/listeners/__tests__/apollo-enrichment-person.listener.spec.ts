@@ -2,6 +2,7 @@ import {
   type ObjectRecordCreateEvent,
   type ObjectRecordUpdateEvent,
 } from 'twenty-shared/database-events';
+import { FieldActorSource } from 'twenty-shared/types';
 
 import { ApolloEnrichmentPersonListener } from 'src/modules/apollo-enrichment/listeners/apollo-enrichment-person.listener';
 import { ApolloEnrichmentMapperService } from 'src/modules/apollo-enrichment/services/apollo-enrichment-mapper.service';
@@ -95,6 +96,55 @@ describe('ApolloEnrichmentPersonListener', () => {
                 secondaryLinks: null,
               },
             }),
+          },
+        } as ObjectRecordUpdateEvent<PersonWorkspaceEntity>,
+      ]),
+    );
+
+    expect(enqueuePerson).toHaveBeenCalledWith({
+      workspaceId: 'workspace-id',
+      personId: 'person-id',
+      trigger: 'person.updated',
+    });
+  });
+
+  it('enqueues when a soft-deleted person is restored', async () => {
+    const restoredPerson = buildPerson({
+      deletedAt: null,
+      emails: {
+        primaryEmail: 'stale@example.com',
+        additionalEmails: null,
+      },
+      phones: {
+        primaryPhoneNumber: '+14155550100',
+        primaryPhoneCountryCode: 'US',
+        primaryPhoneCallingCode: '',
+        additionalPhones: null,
+      },
+      companyId: 'company-id',
+      createdBy: {
+        source: FieldActorSource.API,
+        workspaceMemberId: null,
+        name: 'API',
+        context: {},
+      },
+      linkedinLink: {
+        primaryLinkLabel: '',
+        primaryLinkUrl: 'https://www.linkedin.com/in/jane',
+        secondaryLinks: null,
+      },
+    });
+
+    await listener.handleUpdatedEvent(
+      buildEventBatch([
+        {
+          recordId: 'person-id',
+          properties: {
+            before: {
+              ...restoredPerson,
+              deletedAt: '2026-06-22T07:00:00.000Z',
+            },
+            after: restoredPerson,
           },
         } as ObjectRecordUpdateEvent<PersonWorkspaceEntity>,
       ]),

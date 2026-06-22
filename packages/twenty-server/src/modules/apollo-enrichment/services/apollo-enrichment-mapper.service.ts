@@ -1,6 +1,11 @@
 import { Injectable } from '@nestjs/common';
 
-import { type FullNameMetadata, type LinksMetadata } from 'twenty-shared/types';
+import {
+  type ActorMetadata,
+  FieldActorSource,
+  type FullNameMetadata,
+  type LinksMetadata,
+} from 'twenty-shared/types';
 
 import {
   type ApolloOrganization,
@@ -29,7 +34,7 @@ export class ApolloEnrichmentMapperService {
   shouldEnrichPerson(
     person: Pick<
       PersonWorkspaceEntity,
-      'name' | 'emails' | 'phones' | 'linkedinLink' | 'companyId'
+      'name' | 'emails' | 'phones' | 'linkedinLink' | 'companyId' | 'createdBy'
     >,
   ): boolean {
     return this.hasEnrichmentGap(person) && this.hasEnoughMatchInput(person);
@@ -42,11 +47,23 @@ export class ApolloEnrichmentMapperService {
   }: {
     before: Pick<
       PersonWorkspaceEntity,
-      'name' | 'emails' | 'phones' | 'linkedinLink' | 'companyId'
+      | 'name'
+      | 'emails'
+      | 'phones'
+      | 'linkedinLink'
+      | 'companyId'
+      | 'createdBy'
+      | 'deletedAt'
     >;
     after: Pick<
       PersonWorkspaceEntity,
-      'name' | 'emails' | 'phones' | 'linkedinLink' | 'companyId'
+      | 'name'
+      | 'emails'
+      | 'phones'
+      | 'linkedinLink'
+      | 'companyId'
+      | 'createdBy'
+      | 'deletedAt'
     >;
     changedFields: string[];
   }): boolean {
@@ -58,6 +75,14 @@ export class ApolloEnrichmentMapperService {
       changedFields.includes('linkedinLink') &&
       !hasText(before.linkedinLink?.primaryLinkUrl) &&
       hasText(after.linkedinLink?.primaryLinkUrl)
+    ) {
+      return true;
+    }
+
+    if (
+      changedFields.includes('deletedAt') &&
+      before.deletedAt !== null &&
+      after.deletedAt === null
     ) {
       return true;
     }
@@ -118,7 +143,7 @@ export class ApolloEnrichmentMapperService {
 
     const email = this.extractApolloEmail(apolloPerson);
 
-    if (!hasText(person.emails?.primaryEmail) && hasText(email)) {
+    if (hasText(email) && this.shouldUpdatePrimaryEmail({ person, email })) {
       update.emails = {
         primaryEmail: email,
         additionalEmails: person.emails?.additionalEmails ?? null,
@@ -247,13 +272,42 @@ export class ApolloEnrichmentMapperService {
   }
 
   private hasEnrichmentGap(
-    person: Pick<PersonWorkspaceEntity, 'emails' | 'phones' | 'companyId'>,
+    person: Pick<
+      PersonWorkspaceEntity,
+      'emails' | 'phones' | 'companyId' | 'createdBy'
+    >,
   ): boolean {
     return (
       !hasText(person.emails?.primaryEmail) ||
+      this.canRefreshPrimaryEmailFromApollo(person) ||
       !hasText(person.phones?.primaryPhoneNumber) ||
       !hasText(person.companyId)
     );
+  }
+
+  private shouldUpdatePrimaryEmail({
+    person,
+    email,
+  }: {
+    person: Pick<PersonWorkspaceEntity, 'emails' | 'createdBy'>;
+    email: string;
+  }): boolean {
+    const currentPrimaryEmail = this.cleanEmail(person.emails?.primaryEmail);
+
+    if (!hasText(currentPrimaryEmail)) {
+      return true;
+    }
+
+    return (
+      currentPrimaryEmail !== email &&
+      this.canRefreshPrimaryEmailFromApollo(person)
+    );
+  }
+
+  private canRefreshPrimaryEmailFromApollo(
+    person: Pick<PersonWorkspaceEntity, 'createdBy'>,
+  ): boolean {
+    return isApolloRefreshableContactSource(person.createdBy);
   }
 
   private hasEnoughMatchInput(
@@ -381,3 +435,16 @@ export const hasText = (value: string | null | undefined): value is string =>
 const hasProtocol = (value: string): boolean => /^https?:\/\//i.test(value);
 
 const stripWww = (value: string): string => value.replace(/^www\./i, '');
+
+const APOLLO_REFRESHABLE_CONTACT_SOURCES = new Set<FieldActorSource>([
+  FieldActorSource.API,
+  FieldActorSource.APPLICATION,
+  FieldActorSource.CALENDAR,
+  FieldActorSource.EMAIL,
+]);
+
+const isApolloRefreshableContactSource = (
+  createdBy: ActorMetadata | null | undefined,
+): boolean =>
+  createdBy?.source !== undefined &&
+  APOLLO_REFRESHABLE_CONTACT_SOURCES.has(createdBy.source);
