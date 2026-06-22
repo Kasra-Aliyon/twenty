@@ -238,19 +238,22 @@ ok "Databases 'default' and 'test' ready"
 info "Setting up .env files..."
 cd "$REPO_ROOT"
 
-if command -v npx &>/dev/null && [ -d node_modules ]; then
-  npx nx reset:env twenty-front
-  npx nx reset:env twenty-server
-else
-  for pkg in twenty-front twenty-server; do
-    src="packages/$pkg/.env.example"
-    dst="packages/$pkg/.env"
-    if [ -f "$src" ] && [ ! -f "$dst" ]; then
-      cp "$src" "$dst"
-      ok "$pkg/.env created"
-    fi
-  done
-fi
+for pkg in twenty-front twenty-server; do
+  src="packages/$pkg/.env.example"
+  dst="packages/$pkg/.env"
+
+  if [ -f "$dst" ]; then
+    ok "$pkg/.env already exists"
+    continue
+  fi
+
+  if command -v npx &>/dev/null && [ -d node_modules ]; then
+    npx nx reset:env "$pkg"
+  elif [ -f "$src" ]; then
+    cp "$src" "$dst"
+    ok "$pkg/.env created"
+  fi
+done
 
 # =============================================================================
 # 4. Initialize database schema

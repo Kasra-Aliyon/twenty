@@ -16,6 +16,7 @@ import { CheckCustomDomainValidRecordsCronCommand } from 'src/engine/core-module
 import { TrashCleanupCronCommand } from 'src/engine/trash-cleanup/commands/trash-cleanup.cron.command';
 import { CleanOnboardingWorkspacesCronCommand } from 'src/engine/workspace-manager/workspace-cleaner/commands/clean-onboarding-workspaces.cron.command';
 import { CleanSuspendedWorkspacesCronCommand } from 'src/engine/workspace-manager/workspace-cleaner/commands/clean-suspended-workspaces.cron.command';
+import { ApolloEnrichmentBackfillCronCommand } from 'src/modules/apollo-enrichment/crons/commands/apollo-enrichment-backfill.cron.command';
 import { CalendarEventListFetchCronCommand } from 'src/modules/calendar/calendar-event-import-manager/crons/commands/calendar-event-list-fetch.cron.command';
 import { CalendarEventsImportCronCommand } from 'src/modules/calendar/calendar-event-import-manager/crons/commands/calendar-import.cron.command';
 import { CalendarOngoingStaleCronCommand } from 'src/modules/calendar/calendar-event-import-manager/crons/commands/calendar-ongoing-stale.cron.command';
@@ -64,6 +65,7 @@ export class CronRegisterAllCommand extends CommandRunner {
     private readonly marketplaceCatalogSyncCronCommand: MarketplaceCatalogSyncCronCommand,
     private readonly applicationVersionCheckCronCommand: ApplicationVersionCheckCronCommand,
     private readonly staleRegistrationCleanupCronCommand: StaleRegistrationCleanupCronCommand,
+    private readonly apolloEnrichmentBackfillCronCommand: ApolloEnrichmentBackfillCronCommand,
     private readonly twentyConfigService: TwentyConfigService,
   ) {
     super();
@@ -173,6 +175,13 @@ export class CronRegisterAllCommand extends CommandRunner {
       {
         name: 'StaleRegistrationCleanup',
         command: this.staleRegistrationCleanupCronCommand,
+      },
+      {
+        name: 'ApolloEnrichmentBackfill',
+        command: this.apolloEnrichmentBackfillCronCommand,
+        isEnabled: this.twentyConfigService.get(
+          'APOLLO_ENRICHMENT_BACKFILL_ENABLED',
+        ),
       },
     ];
 

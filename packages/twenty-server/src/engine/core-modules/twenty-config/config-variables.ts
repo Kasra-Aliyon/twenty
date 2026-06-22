@@ -274,6 +274,84 @@ export class ConfigVariables {
   MESSAGING_MESSAGES_GET_BATCH_SIZE = 400;
 
   @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.APOLLO_ENRICHMENT,
+    description: 'Enable or disable Apollo enrichment for people and companies',
+    type: ConfigVariableType.BOOLEAN,
+  })
+  @IsOptional()
+  APOLLO_ENRICHMENT_ENABLED = false;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.APOLLO_ENRICHMENT,
+    description: 'Apollo API key used for enrichment requests',
+    type: ConfigVariableType.STRING,
+    isSensitive: true,
+  })
+  @ValidateIf((env) => env.APOLLO_ENRICHMENT_ENABLED)
+  @IsDefined()
+  APOLLO_API_KEY: string;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.APOLLO_ENRICHMENT,
+    description: 'Apollo API base URL',
+    type: ConfigVariableType.STRING,
+  })
+  @IsUrl({ require_tld: false, require_protocol: true })
+  @IsOptional()
+  APOLLO_API_BASE_URL = 'https://api.apollo.io/api/v1';
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.APOLLO_ENRICHMENT,
+    description: 'Request personal email reveal from Apollo enrichment',
+    type: ConfigVariableType.BOOLEAN,
+  })
+  @IsOptional()
+  APOLLO_REVEAL_PERSONAL_EMAILS = false;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.APOLLO_ENRICHMENT,
+    description: 'Request phone number reveal from Apollo enrichment',
+    type: ConfigVariableType.BOOLEAN,
+  })
+  @IsOptional()
+  APOLLO_REVEAL_PHONE_NUMBER = false;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.APOLLO_ENRICHMENT,
+    description: 'Enable or disable scheduled Apollo enrichment backfill',
+    type: ConfigVariableType.BOOLEAN,
+  })
+  @IsOptional()
+  APOLLO_ENRICHMENT_BACKFILL_ENABLED = false;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.APOLLO_ENRICHMENT,
+    description: 'Maximum Apollo enrichment backfill candidates per workspace',
+    type: ConfigVariableType.NUMBER,
+  })
+  @CastToPositiveNumber()
+  @IsOptional()
+  APOLLO_ENRICHMENT_BACKFILL_LIMIT = 50;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.APOLLO_ENRICHMENT,
+    description: 'Cron pattern for Apollo enrichment backfill',
+    type: ConfigVariableType.STRING,
+  })
+  @IsOptional()
+  APOLLO_ENRICHMENT_BACKFILL_CRON_PATTERN = '*/10 * * * *';
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.APOLLO_ENRICHMENT,
+    description:
+      'Cooldown in seconds before a person can be retried by Apollo enrichment backfill',
+    type: ConfigVariableType.NUMBER,
+  })
+  @CastToPositiveNumber()
+  @IsOptional()
+  APOLLO_ENRICHMENT_RETRY_SECONDS = 3600;
+
+  @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.MICROSOFT_AUTH,
     description: 'Enable or disable the Microsoft Calendar integration',
     type: ConfigVariableType.BOOLEAN,

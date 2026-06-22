@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { ApolloEnrichmentModule } from 'src/modules/apollo-enrichment/apollo-enrichment.module';
 import { CalendarModule } from 'src/modules/calendar/calendar.module';
 import { ConnectedAccountModule } from 'src/modules/connected-account/connected-account.module';
 import { MessagingModule } from 'src/modules/messaging/messaging.module';
@@ -9,6 +10,7 @@ import { WorkspaceMemberModule } from 'src/modules/workspace-member/workspace-me
 
 @Module({
   imports: [
+    ApolloEnrichmentModule,
     MessagingModule,
     CalendarModule,
     ConnectedAccountModule,

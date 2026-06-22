@@ -2,6 +2,7 @@ export interface QueueJobOptions {
   id?: string;
   priority?: number;
   retryLimit?: number;
+  backoff?: number | { type: 'fixed' | 'exponential'; delay: number };
   delay?: number;
 }
 

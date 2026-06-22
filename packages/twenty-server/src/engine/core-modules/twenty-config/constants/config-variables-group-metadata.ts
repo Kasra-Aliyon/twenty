@@ -43,6 +43,12 @@ export const CONFIG_VARIABLES_GROUP_METADATA: Record<
     isHiddenOnLoad: false,
     isHiddenInAdminPanel: false,
   },
+  [ConfigVariablesGroup.APOLLO_ENRICHMENT]: {
+    position: 550,
+    description: 'Configure Apollo person and company enrichment',
+    isHiddenOnLoad: true,
+    isHiddenInAdminPanel: false,
+  },
   [ConfigVariablesGroup.EMAIL_SETTINGS]: {
     position: 600,
     description:

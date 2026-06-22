@@ -1,6 +1,10 @@
 bash packages/twenty-utils/setup-dev-env.sh
 yarn start
 
+
+bash packages/twenty-utils/setup-dev-env.sh
+yarn start:localhost
+
 "
 setup-dev-env.sh is the repo’s one-shot local setup script. It starts Postgres and Redis, creates/copies needed env files, and initializes the database schema. It is idempotent, so it’s safe to run again if you’re unsure whether your local services are ready.
 Then yarn start starts the main local dev environment: frontend, backend, and worker.

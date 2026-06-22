@@ -11,12 +11,17 @@ type HidePasswordConfig = {
 
 type MaskingConfigType = {
   APP_SECRET: LastNCharsConfig;
+  APOLLO_API_KEY: LastNCharsConfig;
   PG_DATABASE_URL: HidePasswordConfig;
   REDIS_URL: HidePasswordConfig;
 };
 
 export const CONFIG_VARIABLES_MASKING_CONFIG: MaskingConfigType = {
   APP_SECRET: {
+    strategy: ConfigVariablesMaskingStrategies.LAST_N_CHARS,
+    chars: 5,
+  },
+  APOLLO_API_KEY: {
     strategy: ConfigVariablesMaskingStrategies.LAST_N_CHARS,
     chars: 5,
   },

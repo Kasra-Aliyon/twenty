@@ -10,6 +10,7 @@ export enum MessageQueue {
   emailQueue = 'email-queue',
   calendarQueue = 'calendar-queue',
   contactCreationQueue = 'contact-creation-queue',
+  apolloEnrichmentQueue = 'apollo-enrichment-queue',
   billingQueue = 'billing-queue',
   workspaceQueue = 'workspace-queue',
   entityEventsToDbQueue = 'entity-events-to-db-queue',
