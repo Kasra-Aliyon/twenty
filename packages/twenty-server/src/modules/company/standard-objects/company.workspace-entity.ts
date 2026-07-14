@@ -4,6 +4,7 @@ import {
   type AddressMetadata,
   type CurrencyMetadata,
   type LinksMetadata,
+  type PhonesMetadata,
 } from 'twenty-shared/types';
 
 import { type FieldTypeAndNameMetadata } from 'src/engine/workspace-manager/utils/get-ts-vector-column-expression.util';
@@ -36,6 +37,14 @@ export class CompanyWorkspaceEntity {
   domainName: LinksMetadata;
   linkedinLink: LinksMetadata | null;
   annualRevenue: CurrencyMetadata | null;
+  employees: number | null;
+  industry: string | null;
+  keywords: string[] | null;
+  companyPhone: PhonesMetadata | null;
+  technologies: string[] | null;
+  segments: string[] | null;
+  accountStatus: string | null;
+  companyType: string | null;
   address: AddressMetadata;
   position: number;
   createdBy: ActorMetadata;

@@ -731,6 +731,30 @@ export const STANDARD_OBJECTS = {
       annualRevenue: {
         universalIdentifier: '60f533b7-2166-4071-a767-ceb0286822fd',
       },
+      employees: {
+        universalIdentifier: '20202020-8965-464a-8a75-74bafc152a0b',
+      },
+      industry: {
+        universalIdentifier: 'c85c9d8b-4b53-4fcb-89be-1ec4881eae96',
+      },
+      keywords: {
+        universalIdentifier: '2a03eaf2-5a0c-43f3-a820-97b4d2dafa52',
+      },
+      companyPhone: {
+        universalIdentifier: 'b3b289c8-e704-4605-af0e-79e092a69a4a',
+      },
+      technologies: {
+        universalIdentifier: 'e695a93a-355e-4fa1-8462-9936794881f0',
+      },
+      segments: {
+        universalIdentifier: '3819d081-c748-47cc-9e0e-dba6345b3201',
+      },
+      accountStatus: {
+        universalIdentifier: '47856475-3eba-4e48-85a5-e9fbabf66332',
+      },
+      companyType: {
+        universalIdentifier: '51660d5b-dea8-4287-bfda-0109bb3bdb6b',
+      },
       position: { universalIdentifier: '20202020-9b4e-462b-991d-a0ee33326454' },
       createdBy: {
         universalIdentifier: '20202020-fabc-451d-ab7d-412170916baa',
@@ -824,6 +848,30 @@ export const STANDARD_OBJECTS = {
           },
           annualRevenue: {
             universalIdentifier: '2a35f734-dea2-4de9-8395-acbce8df0f97',
+          },
+          employees: {
+            universalIdentifier: 'b6960784-bef9-4ab7-8d56-5039be8db355',
+          },
+          industry: {
+            universalIdentifier: '3a67870c-70f9-4a86-ad9a-08f35ad2b1a0',
+          },
+          keywords: {
+            universalIdentifier: 'e1bb8fce-a431-49aa-b662-5113914543b0',
+          },
+          companyPhone: {
+            universalIdentifier: '6aab0b84-8ca1-4255-8486-d245a125c3d4',
+          },
+          technologies: {
+            universalIdentifier: 'cf8ed398-8106-444e-9eef-22d6cf278a18',
+          },
+          segments: {
+            universalIdentifier: 'de3334d0-e6be-40d3-94b0-e43d9c380bf1',
+          },
+          accountStatus: {
+            universalIdentifier: 'd3216993-4255-40ff-9ba5-0dde56146eba',
+          },
+          companyType: {
+            universalIdentifier: '4886f981-fa63-4a0b-b233-2d3d1ed933af',
           },
           linkedinLink: {
             universalIdentifier: '20202020-af01-4a01-8a01-c0aba11c1206',

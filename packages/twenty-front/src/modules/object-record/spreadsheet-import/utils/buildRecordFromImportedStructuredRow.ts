@@ -1,6 +1,7 @@
 import { type FieldMetadataItem } from '@/object-metadata/types/FieldMetadataItem';
 import { isCompositeFieldType } from '@/object-record/object-filter-dropdown/utils/isCompositeFieldType';
 import { type FieldActorForInputValue } from '@/object-record/record-field/ui/types/FieldMetadata';
+import { parseSpreadsheetImportStringArray } from '@/object-record/spreadsheet-import/utils/parseSpreadsheetImportStringArray';
 import { getCompositeSubFieldKey } from '@/object-record/spreadsheet-import/utils/spreadsheetImportGetCompositeSubFieldKey';
 import {
   type ImportedStructuredRow,
@@ -263,6 +264,10 @@ export const buildRecordFromImportedStructuredRow = ({
 
         // To meet backend requirements, handle case where user provides only a primaryPhoneNumber without calling code
         if (hasUserProvidedPrimaryPhoneNumberWithoutCallingCode) {
+          const normalizedPrimaryPhoneNumber = castToString(primaryPhoneNumber)
+            .trim()
+            .replace(/^'(?=\+)/, '');
+
           const primaryPhoneCountryCode =
             importedStructuredRow[
               getCompositeSubFieldKey(field, 'primaryPhoneCountryCode')
@@ -274,26 +279,40 @@ export const buildRecordFromImportedStructuredRow = ({
 
           try {
             const {
-              number: parsedNumber,
+              nationalNumber: parsedNationalNumber,
               countryCallingCode: parsedCountryCallingCode,
+              country: parsedCountryCode,
             } = parsePhoneNumberWithError(
-              primaryPhoneNumber as string,
+              normalizedPrimaryPhoneNumber,
               hasUserProvidedPrimaryPhoneCountryCode
                 ? (primaryPhoneCountryCode as CountryCode)
                 : undefined,
             );
 
             recordToBuild[field.name] = {
-              primaryPhoneNumber: parsedNumber,
+              ...compositeData,
+              primaryPhoneNumber: parsedNationalNumber,
               primaryPhoneCallingCode: `+${parsedCountryCallingCode}`,
+              primaryPhoneCountryCode:
+                parsedCountryCode ??
+                (hasUserProvidedPrimaryPhoneCountryCode
+                  ? castToString(primaryPhoneCountryCode)
+                  : ''),
             };
           } catch {
             recordToBuild[field.name] = {
-              primaryPhoneNumber,
+              ...compositeData,
+              primaryPhoneNumber: normalizedPrimaryPhoneNumber,
               primaryPhoneCallingCode:
                 stripSimpleQuotesFromString(
                   field?.defaultValue?.primaryPhoneCallingCode,
                 ) || '+1',
+              primaryPhoneCountryCode:
+                (hasUserProvidedPrimaryPhoneCountryCode
+                  ? castToString(primaryPhoneCountryCode)
+                  : stripSimpleQuotesFromString(
+                      field?.defaultValue?.primaryPhoneCountryCode,
+                    )) || '',
             };
           }
         }
@@ -330,7 +349,13 @@ export const buildRecordFromImportedStructuredRow = ({
           context: {},
         } satisfies FieldActorForInputValue;
         break;
-      case FieldMetadataType.ARRAY:
+      case FieldMetadataType.ARRAY: {
+        if (isDefined(importedFieldValue)) {
+          recordToBuild[field.name] =
+            parseSpreadsheetImportStringArray(importedFieldValue) ?? [];
+        }
+        break;
+      }
       case FieldMetadataType.MULTI_SELECT: {
         if (isDefined(importedFieldValue)) {
           recordToBuild[field.name] =

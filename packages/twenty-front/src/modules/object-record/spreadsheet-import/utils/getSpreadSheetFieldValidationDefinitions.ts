@@ -1,8 +1,9 @@
 import { isFieldRatingValue } from '@/object-record/record-field/ui/types/guards/isFieldRatingValue';
 import { emailSchema } from '@/object-record/record-field/ui/validation-schemas/emailSchema';
+import { parseSpreadsheetImportStringArray } from '@/object-record/spreadsheet-import/utils/parseSpreadsheetImportStringArray';
 import { type SpreadsheetImportFieldValidationDefinition } from '@/spreadsheet-import/types';
 import { t } from '@lingui/core/macro';
-import { isDate, isString } from '@sniptt/guards';
+import { isDate } from '@sniptt/guards';
 import { parsePhoneNumberWithError } from 'libphonenumber-js';
 import { RATING_VALUES } from 'twenty-shared/constants';
 import {
@@ -239,18 +240,9 @@ export const getSpreadSheetFieldValidationDefinitions = (
       return [
         {
           rule: 'function',
-          isValid: (value: string) => {
-            try {
-              const parsedValue = JSON.parse(value);
-              return (
-                Array.isArray(parsedValue) &&
-                parsedValue.every((item: any) => isString(item))
-              );
-            } catch {
-              return false;
-            }
-          },
-          errorMessage: `${fieldName} ${t`is not a valid array`}`,
+          isValid: (value: string) =>
+            isDefined(parseSpreadsheetImportStringArray(value)),
+          errorMessage: `${fieldName} ${t`is not a valid array or comma-separated list`}`,
           level: 'error',
         },
       ];

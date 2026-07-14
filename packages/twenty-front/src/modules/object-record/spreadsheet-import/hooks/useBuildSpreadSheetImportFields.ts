@@ -130,10 +130,16 @@ export const useBuildSpreadsheetImportFields = () => {
     SETTINGS_COMPOSITE_FIELD_TYPE_CONFIGS[fieldType].subFields.forEach(
       ({ subFieldName, isImportable, subFieldLabel }) => {
         if (!isImportable) return;
-        const label = getCompositeSubFieldLabelWithFieldLabel(
-          fieldMetadataItem,
-          subFieldLabel,
-        );
+        const isPrimaryPhoneNumber =
+          fieldType === FieldMetadataType.PHONES &&
+          subFieldName === 'primaryPhoneNumber';
+
+        const label = isPrimaryPhoneNumber
+          ? fieldMetadataItem.label
+          : getCompositeSubFieldLabelWithFieldLabel(
+              fieldMetadataItem,
+              subFieldLabel,
+            );
 
         spreadsheetImportFields.push(
           createBaseField(fieldMetadataItem, {

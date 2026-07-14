@@ -434,6 +434,27 @@ describe('buildRecordFromImportedStructuredRow', () => {
     });
   });
 
+  it('should build an array field from comma-separated values', () => {
+    const importedStructuredRow: ImportedStructuredRow = {
+      arrayField:
+        'Google Search Console, Apple Business Manager, Microsoft 365 Apps & Services, Google Analytics 4 (GA4), WordPress.org',
+    };
+
+    const result = buildRecordFromImportedStructuredRow({
+      importedStructuredRow,
+      fieldMetadataItems: fields,
+      spreadsheetImportFields: [],
+    });
+
+    expect(result.arrayField).toEqual([
+      'Google Search Console',
+      'Apple Business Manager',
+      'Microsoft 365 Apps & Services',
+      'Google Analytics 4 (GA4)',
+      'WordPress.org',
+    ]);
+  });
+
   it('should successfully build a record from imported structured row with primary phone number (without calling code)', () => {
     const importedStructuredRow: ImportedStructuredRow = {
       'Primary Phone Number (phoneField)': '5550123',
@@ -449,6 +470,31 @@ describe('buildRecordFromImportedStructuredRow', () => {
       phoneField: {
         primaryPhoneNumber: '5550123',
         primaryPhoneCallingCode: '+1',
+        primaryPhoneCountryCode: '',
+      },
+      createdBy: {
+        source: 'IMPORT',
+        context: {},
+      },
+    });
+  });
+
+  it('should derive phone components from an international phone number', () => {
+    const importedStructuredRow: ImportedStructuredRow = {
+      'Primary Phone Number (phoneField)': "'+44 1628 481112",
+    };
+
+    const result = buildRecordFromImportedStructuredRow({
+      importedStructuredRow,
+      fieldMetadataItems: fields,
+      spreadsheetImportFields: [],
+    });
+
+    expect(result).toEqual({
+      phoneField: {
+        primaryPhoneNumber: '1628481112',
+        primaryPhoneCountryCode: 'GB',
+        primaryPhoneCallingCode: '+44',
       },
       createdBy: {
         source: 'IMPORT',

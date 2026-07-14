@@ -246,6 +246,31 @@ describe('useBuildSpreadSheetImportFields', () => {
     expect(lastNameField?.isCompositeSubField).toBe(true);
   });
 
+  it('should use the phone field label for its primary number import field', () => {
+    const { result } = renderHook(() => useBuildSpreadsheetImportFields(), {
+      wrapper: Wrapper,
+    });
+
+    const spreadsheetImportFields = result.current.buildSpreadsheetImportFields(
+      [
+        createMockFieldMetadataItem({
+          type: FieldMetadataType.PHONES,
+          name: 'companyPhone',
+          label: 'Company Phone',
+        }),
+      ],
+    );
+
+    const primaryPhoneNumberField = spreadsheetImportFields.find(
+      (field) => field.compositeSubFieldKey === 'primaryPhoneNumber',
+    );
+
+    expect(primaryPhoneNumberField).toMatchObject({
+      label: 'Company Phone',
+      key: 'Primary Phone Number (companyPhone)',
+    });
+  });
+
   it('should filter out ACTOR fields', () => {
     const { result } = renderHook(() => useBuildSpreadsheetImportFields(), {
       wrapper: Wrapper,
