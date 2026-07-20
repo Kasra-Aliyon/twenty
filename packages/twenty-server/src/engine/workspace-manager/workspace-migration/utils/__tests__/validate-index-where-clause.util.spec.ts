@@ -13,6 +13,14 @@ describe('validateAndReturnIndexWhereClause', () => {
     );
   });
 
+  it.each([
+    '"deletedAt" IS NULL AND "targetCompanyId" IS NOT NULL',
+    '"deletedAt" IS NULL AND "targetPersonId" IS NOT NULL',
+    '"deletedAt" IS NULL AND "targetOpportunityId" IS NOT NULL',
+  ])('should allow record list membership predicates', (clause) => {
+    expect(validateAndReturnIndexWhereClause(clause)).toBe(clause);
+  });
+
   it('should throw for clauses not in the allowlist', () => {
     expect(() =>
       validateAndReturnIndexWhereClause('1=1; DROP TABLE users;'),

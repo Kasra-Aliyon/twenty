@@ -10,8 +10,8 @@ export type RecordListRecord = ObjectRecord & {
   name: string;
   type: RecordListType;
   position: number;
-  folderId: string;
-  folder: { id: string; name: string };
+  folderId: string | null;
+  folder: { id: string; name: string } | null;
 };
 
 export type EditingRecordListItem = {

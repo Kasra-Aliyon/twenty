@@ -11,8 +11,7 @@ import { ViewType } from '@/views/types/ViewType';
 export const RecordIndexViewBar = () => {
   const recordIndexViewType = useAtomStateValue(recordIndexViewTypeState);
 
-  const { objectNamePlural, recordIndexId, objectMetadataItem } =
-    useRecordIndexContextOrThrow();
+  const { recordIndexId, objectMetadataItem } = useRecordIndexContextOrThrow();
 
   const { hasCurrentViewNonReadableFields } =
     useHasCurrentViewNonReadableFields(objectMetadataItem);
@@ -31,7 +30,7 @@ export const RecordIndexViewBar = () => {
         }
       />
       <RecordIndexViewBarEffect
-        objectNamePlural={objectNamePlural}
+        objectMetadataItem={objectMetadataItem}
         viewBarId={recordIndexId}
       />
     </SpreadsheetImportProvider>

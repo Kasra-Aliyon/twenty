@@ -30,6 +30,12 @@ type RecordListRecord = ObjectRecord & {
   folder?: { id: string; name: string };
 };
 
+const OBJECT_NAME_BY_LIST_TYPE = {
+  COMPANY: 'company',
+  PERSON: 'person',
+  OPPORTUNITY: 'opportunity',
+} as const satisfies Record<RecordListType, string>;
+
 export const RecordListPage = () => {
   const { recordListId } = useParams();
   const isRecordListsEnabled = useIsFeatureEnabled(
@@ -65,15 +71,14 @@ export const RecordListPage = () => {
     return <Navigate to={AppPath.NotFound} replace />;
   }
 
-  if (isUndefined(contextStoreCurrentObjectMetadataItemId)) {
-    return <RecordIndexSkeletonLoader />;
-  }
-
   const objectMetadataItem = objectMetadataItems.find(
-    (item) => item.id === contextStoreCurrentObjectMetadataItemId,
+    (item) => item.nameSingular === OBJECT_NAME_BY_LIST_TYPE[recordList.type],
   );
 
-  if (isUndefined(objectMetadataItem)) {
+  if (
+    isUndefined(objectMetadataItem) ||
+    contextStoreCurrentObjectMetadataItemId !== objectMetadataItem.id
+  ) {
     return <RecordIndexSkeletonLoader />;
   }
 

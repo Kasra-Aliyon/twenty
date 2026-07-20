@@ -72,7 +72,7 @@ export const buildRecordListStandardFlatFieldMetadatas = (
       label: i18nLabel(msg`Folder`),
       description: i18nLabel(msg`Folder containing this list`),
       icon: 'IconFolder',
-      isNullable: false,
+      isNullable: true,
       targetObjectName: 'recordListFolder',
       targetFieldName: 'lists',
       settings: {

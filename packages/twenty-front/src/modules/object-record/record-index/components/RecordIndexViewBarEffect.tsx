@@ -1,28 +1,18 @@
 import { useEffect } from 'react';
 
 import { useColumnDefinitionsFromObjectMetadata } from '@/object-metadata/hooks/useColumnDefinitionsFromObjectMetadata';
-import { useObjectMetadataItem } from '@/object-metadata/hooks/useObjectMetadataItem';
-import { useObjectNameSingularFromPlural } from '@/object-metadata/hooks/useObjectNameSingularFromPlural';
+import { type EnrichedObjectMetadataItem } from '@/object-metadata/types/EnrichedObjectMetadataItem';
 import { useInitViewBar } from '@/views/hooks/useInitViewBar';
-import { isUndefinedOrNull } from '~/utils/isUndefinedOrNull';
 
 type RecordIndexViewBarEffectProps = {
-  objectNamePlural: string;
+  objectMetadataItem: EnrichedObjectMetadataItem;
   viewBarId: string;
 };
 
 export const RecordIndexViewBarEffect = ({
-  objectNamePlural,
+  objectMetadataItem,
   viewBarId,
 }: RecordIndexViewBarEffectProps) => {
-  const { objectNameSingular } = useObjectNameSingularFromPlural({
-    objectNamePlural,
-  });
-
-  const { objectMetadataItem } = useObjectMetadataItem({
-    objectNameSingular,
-  });
-
   const { columnDefinitions } =
     useColumnDefinitionsFromObjectMetadata(objectMetadataItem);
 
@@ -30,9 +20,6 @@ export const RecordIndexViewBarEffect = ({
     useInitViewBar(viewBarId);
 
   useEffect(() => {
-    if (isUndefinedOrNull(objectMetadataItem)) {
-      return;
-    }
     setViewObjectMetadataId?.(objectMetadataItem.id);
     setAvailableFieldDefinitions?.(columnDefinitions);
   }, [

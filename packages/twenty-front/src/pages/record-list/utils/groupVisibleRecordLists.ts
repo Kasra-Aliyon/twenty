@@ -1,4 +1,5 @@
 import { type RecordListRecord } from '../types/RecordListRecords';
+import { getRecordListFolderKey } from '../constants/record-list-folder.constants';
 import { type RecordListType } from 'twenty-shared/types';
 
 export const groupVisibleRecordLists = ({
@@ -21,8 +22,10 @@ export const groupVisibleRecordLists = ({
         return listsByFolderId;
       }
 
-      listsByFolderId[recordList.folderId] = [
-        ...(listsByFolderId[recordList.folderId] ?? []),
+      const folderKey = getRecordListFolderKey(recordList.folderId);
+
+      listsByFolderId[folderKey] = [
+        ...(listsByFolderId[folderKey] ?? []),
         recordList,
       ];
 

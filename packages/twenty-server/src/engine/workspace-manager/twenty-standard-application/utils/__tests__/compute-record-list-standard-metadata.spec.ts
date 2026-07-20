@@ -33,7 +33,7 @@ describe('Record list standard metadata build', () => {
     }
   });
 
-  it('builds the immutable list type and required folder relation', () => {
+  it('builds the immutable list type and optional folder relation', () => {
     const typeField =
       allFlatEntityMaps.flatFieldMetadataMaps.byUniversalIdentifier[
         STANDARD_OBJECTS.recordList.fields.type.universalIdentifier
@@ -54,7 +54,7 @@ describe('Record list standard metadata build', () => {
     });
     expect(folderField).toMatchObject({
       type: FieldMetadataType.RELATION,
-      isNullable: false,
+      isNullable: true,
       settings: expect.objectContaining({
         relationType: RelationType.MANY_TO_ONE,
         joinColumnName: 'folderId',

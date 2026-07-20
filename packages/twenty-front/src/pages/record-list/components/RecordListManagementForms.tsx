@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { RECORD_LIST_TYPES, type RecordListType } from 'twenty-shared/types';
 import { Button } from 'twenty-ui/input';
 
+import { ROOT_RECORD_LIST_FOLDER_ID } from '../constants/record-list-folder.constants';
 import { type RecordListFolderRecord } from '../types/RecordListRecords';
 import { StyledForm, StyledInput, StyledSelect } from './RecordListsPageStyles';
 
@@ -20,7 +21,7 @@ export const RecordListManagementForms = ({
   onCreateList: (input: {
     name: string;
     type: RecordListType;
-    folderId: string;
+    folderId: string | null;
     position: number;
   }) => void;
 }) => {
@@ -60,7 +61,7 @@ export const RecordListManagementForms = ({
           onCreateList({
             name: newListName,
             type: newListType,
-            folderId: newListFolderId,
+            folderId: newListFolderId || null,
             position: nextListPositionByFolderId[newListFolderId] ?? 0,
           });
           setNewListName('');
@@ -90,22 +91,15 @@ export const RecordListManagementForms = ({
           value={newListFolderId}
           onChange={(event) => setNewListFolderId(event.target.value)}
           aria-label={t`List folder`}
-          required
         >
-          <option value="" disabled>
-            {t`Select folder`}
-          </option>
+          <option value={ROOT_RECORD_LIST_FOLDER_ID}>{t`No folder`}</option>
           {folders.map((folder) => (
             <option key={folder.id} value={folder.id}>
               {folder.name}
             </option>
           ))}
         </StyledSelect>
-        <Button
-          title={t`Create list`}
-          type="submit"
-          disabled={isSaving || folders.length === 0}
-        />
+        <Button title={t`Create list`} type="submit" disabled={isSaving} />
       </StyledForm>
     </>
   );

@@ -21,6 +21,8 @@ import {
   FeatureFlagKey,
   RECORD_LIST_TYPES,
 } from 'twenty-shared/types';
+import { IconPlus, IconX } from 'twenty-ui/icon';
+import { LightIconButton, SearchInput } from 'twenty-ui/input';
 
 import { RecordListFolderSection } from './components/RecordListFolderSection';
 import { RecordListManagementForms } from './components/RecordListManagementForms';
@@ -28,9 +30,15 @@ import { RecordListRenameForm } from './components/RecordListRenameForm';
 import {
   StyledContent,
   StyledEmptyState,
-  StyledInput,
+  StyledExplorerHeader,
+  StyledExplorerTitle,
+  StyledManagementPanel,
   StyledPanel,
 } from './components/RecordListsPageStyles';
+import {
+  getRecordListFolderKey,
+  ROOT_RECORD_LIST_FOLDER_ID,
+} from './constants/record-list-folder.constants';
 import {
   type EditingRecordListItem,
   type RecordListFolderRecord,
@@ -49,6 +57,7 @@ export const RecordListsPage = () => {
   const [editingItem, setEditingItem] = useState<EditingRecordListItem | null>(
     null,
   );
+  const [isManagementOpen, setIsManagementOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const isRecordListsEnabled = useIsFeatureEnabled(
     FeatureFlagKey.IS_RECORD_LISTS_ENABLED,
@@ -132,20 +141,28 @@ export const RecordListsPage = () => {
     canReadListType,
   });
   const listCountByFolderId = recordLists.reduce<Record<string, number>>(
-    (counts, recordList) => ({
-      ...counts,
-      [recordList.folderId]: (counts[recordList.folderId] ?? 0) + 1,
-    }),
+    (counts, recordList) => {
+      const folderKey = getRecordListFolderKey(recordList.folderId);
+
+      return {
+        ...counts,
+        [folderKey]: (counts[folderKey] ?? 0) + 1,
+      };
+    },
     {},
   );
   const nextListPositionByFolderId = recordLists.reduce<Record<string, number>>(
-    (positions, recordList) => ({
-      ...positions,
-      [recordList.folderId]: Math.max(
-        positions[recordList.folderId] ?? 0,
-        recordList.position + 1,
-      ),
-    }),
+    (positions, recordList) => {
+      const folderKey = getRecordListFolderKey(recordList.folderId);
+
+      return {
+        ...positions,
+        [folderKey]: Math.max(
+          positions[folderKey] ?? 0,
+          recordList.position + 1,
+        ),
+      };
+    },
     {},
   );
   const sortedFolders = folders
@@ -157,6 +174,9 @@ export const RecordListsPage = () => {
       (listsByFolderId[folder.id]?.length ?? 0) > 0 ||
       (canManageLists && !isSearching),
   );
+  const topLevelLists = (listsByFolderId[ROOT_RECORD_LIST_FOLDER_ID] ?? [])
+    .slice()
+    .sort((first, second) => first.position - second.position);
   const nextFolderPosition = folders.reduce(
     (position, folder) => Math.max(position, folder.position + 1),
     0,
@@ -181,26 +201,48 @@ export const RecordListsPage = () => {
       <PageCardLayout header={<PageCardHeader title={t`Lists`} />}>
         <StyledContent>
           <StyledPanel>
-            <StyledInput
+            <SearchInput
               value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder={t`Search lists`}
+              onChange={setSearch}
+              placeholder={t`Search lists...`}
               aria-label={t`Search lists`}
             />
-            {canManageLists && (
-              <RecordListManagementForms
-                folders={sortedFolders}
-                nextListPositionByFolderId={nextListPositionByFolderId}
-                isSaving={isSaving}
-                onCreateFolder={(name) =>
-                  void runMutation(() =>
-                    createFolder({ name, position: nextFolderPosition }),
-                  )
-                }
-                onCreateList={(input) =>
-                  void runMutation(() => createList(input))
-                }
-              />
+            <StyledExplorerHeader>
+              <StyledExplorerTitle>{t`Lists`}</StyledExplorerTitle>
+              {canManageLists && (
+                <LightIconButton
+                  Icon={isManagementOpen ? IconX : IconPlus}
+                  aria-label={
+                    isManagementOpen
+                      ? t`Close list management`
+                      : t`Create a list or folder`
+                  }
+                  title={
+                    isManagementOpen
+                      ? t`Close list management`
+                      : t`Create a list or folder`
+                  }
+                  active={isManagementOpen}
+                  onClick={() => setIsManagementOpen((isOpen) => !isOpen)}
+                />
+              )}
+            </StyledExplorerHeader>
+            {canManageLists && isManagementOpen && (
+              <StyledManagementPanel>
+                <RecordListManagementForms
+                  folders={sortedFolders}
+                  nextListPositionByFolderId={nextListPositionByFolderId}
+                  isSaving={isSaving}
+                  onCreateFolder={(name) =>
+                    void runMutation(() =>
+                      createFolder({ name, position: nextFolderPosition }),
+                    )
+                  }
+                  onCreateList={(input) =>
+                    void runMutation(() => createList(input))
+                  }
+                />
+              </StyledManagementPanel>
             )}
             {editingItem && (
               <RecordListRenameForm
@@ -209,6 +251,35 @@ export const RecordListsPage = () => {
                 onChange={setEditingItem}
                 onCancel={() => setEditingItem(null)}
                 onSave={() => void saveRename()}
+              />
+            )}
+            {topLevelLists.length > 0 && (
+              <RecordListFolderSection
+                folder={null}
+                folderIndex={0}
+                folderCount={displayedFolders.length}
+                lists={topLevelLists}
+                folders={sortedFolders}
+                listCountByFolderId={listCountByFolderId}
+                nextListPositionByFolderId={nextListPositionByFolderId}
+                canManageLists={canManageLists}
+                isReorderingDisabled={isSearching}
+                isSaving={isSaving}
+                onUpdateFolderPosition={() => undefined}
+                onDeleteFolder={() => undefined}
+                onUpdateList={(listId, input) =>
+                  void runMutation(() =>
+                    updateOneRecord({
+                      objectNameSingular: 'recordList',
+                      idToUpdate: listId,
+                      updateOneRecordInput: input,
+                    }),
+                  )
+                }
+                onDeleteList={(listId) =>
+                  void runMutation(() => deleteList(listId))
+                }
+                onStartRename={setEditingItem}
               />
             )}
             {displayedFolders.map((folder, folderIndex) => (
@@ -253,12 +324,12 @@ export const RecordListsPage = () => {
                 onStartRename={setEditingItem}
               />
             ))}
-            {displayedFolders.length === 0 && (
+            {displayedFolders.length === 0 && topLevelLists.length === 0 && (
               <StyledEmptyState>
                 {isSearching
                   ? t`No lists match your search.`
                   : canManageLists
-                    ? t`Create a folder to organize your first list.`
+                    ? t`Create your first list.`
                     : t`No lists are available to you.`}
               </StyledEmptyState>
             )}

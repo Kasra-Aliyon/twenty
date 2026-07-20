@@ -5,6 +5,7 @@ import {
   IconBuildingSkyscraper,
   IconChevronDown,
   IconChevronUp,
+  IconFolder,
   IconPencil,
   IconTargetArrow,
   IconTrash,
@@ -12,6 +13,7 @@ import {
 } from 'twenty-ui/icon';
 import { Button } from 'twenty-ui/input';
 
+import { ROOT_RECORD_LIST_FOLDER_ID } from '../constants/record-list-folder.constants';
 import {
   type EditingRecordListItem,
   type RecordListFolderRecord,
@@ -20,11 +22,13 @@ import {
 import {
   StyledActions,
   StyledFolder,
+  StyledFolderCount,
   StyledFolderHeader,
+  StyledFolderIcon,
   StyledFolderTitle,
+  StyledListIcon,
   StyledListLink,
   StyledListRow,
-  StyledListType,
   StyledSelect,
 } from './RecordListsPageStyles';
 
@@ -51,7 +55,7 @@ export const RecordListFolderSection = ({
   onDeleteList,
   onStartRename,
 }: {
-  folder: RecordListFolderRecord;
+  folder: RecordListFolderRecord | null;
   folderIndex: number;
   folderCount: number;
   lists: RecordListRecord[];
@@ -65,81 +69,87 @@ export const RecordListFolderSection = ({
   onDeleteFolder: (folderId: string) => void;
   onUpdateList: (
     listId: string,
-    input: { position?: number; folderId?: string },
+    input: { position?: number; folderId?: string | null },
   ) => void;
   onDeleteList: (listId: string) => void;
   onStartRename: (item: EditingRecordListItem) => void;
 }) => (
   <StyledFolder>
-    <StyledFolderHeader>
-      <StyledFolderTitle>
-        {folder.name} · {lists.length}
-      </StyledFolderTitle>
-      {canManageLists && (
-        <StyledActions>
-          <Button
-            ariaLabel={t`Move folder up`}
-            Icon={IconChevronUp}
-            variant="tertiary"
-            size="small"
-            disabled={folderIndex === 0 || isReorderingDisabled || isSaving}
-            onClick={() =>
-              onUpdateFolderPosition(
-                folder.id,
-                folderIndex === 1
-                  ? folders[0].position - 1
-                  : (folders[folderIndex - 2].position +
-                      folders[folderIndex - 1].position) /
-                      2,
-              )
-            }
-          />
-          <Button
-            ariaLabel={t`Move folder down`}
-            Icon={IconChevronDown}
-            variant="tertiary"
-            size="small"
-            disabled={
-              folderIndex === folderCount - 1 ||
-              isReorderingDisabled ||
-              isSaving
-            }
-            onClick={() =>
-              onUpdateFolderPosition(
-                folder.id,
-                folderIndex === folderCount - 2
-                  ? folders[folderIndex + 1].position + 1
-                  : (folders[folderIndex + 1].position +
-                      folders[folderIndex + 2].position) /
-                      2,
-              )
-            }
-          />
-          <Button
-            ariaLabel={t`Rename folder`}
-            Icon={IconPencil}
-            variant="tertiary"
-            size="small"
-            onClick={() =>
-              onStartRename({
-                kind: 'folder',
-                id: folder.id,
-                name: folder.name,
-              })
-            }
-          />
-          <Button
-            ariaLabel={t`Delete folder`}
-            Icon={IconTrash}
-            variant="tertiary"
-            accent="danger"
-            size="small"
-            disabled={(listCountByFolderId[folder.id] ?? 0) > 0 || isSaving}
-            onClick={() => onDeleteFolder(folder.id)}
-          />
-        </StyledActions>
-      )}
-    </StyledFolderHeader>
+    {folder && (
+      <StyledFolderHeader>
+        <StyledFolderTitle>
+          <StyledFolderIcon>
+            <IconFolder size={16} />
+          </StyledFolderIcon>
+          <span>{folder.name}</span>
+          <StyledFolderCount>{lists.length}</StyledFolderCount>
+        </StyledFolderTitle>
+        {canManageLists && (
+          <StyledActions data-record-list-actions>
+            <Button
+              ariaLabel={t`Move folder up`}
+              Icon={IconChevronUp}
+              variant="tertiary"
+              size="small"
+              disabled={folderIndex === 0 || isReorderingDisabled || isSaving}
+              onClick={() =>
+                onUpdateFolderPosition(
+                  folder.id,
+                  folderIndex === 1
+                    ? folders[0].position - 1
+                    : (folders[folderIndex - 2].position +
+                        folders[folderIndex - 1].position) /
+                        2,
+                )
+              }
+            />
+            <Button
+              ariaLabel={t`Move folder down`}
+              Icon={IconChevronDown}
+              variant="tertiary"
+              size="small"
+              disabled={
+                folderIndex === folderCount - 1 ||
+                isReorderingDisabled ||
+                isSaving
+              }
+              onClick={() =>
+                onUpdateFolderPosition(
+                  folder.id,
+                  folderIndex === folderCount - 2
+                    ? folders[folderIndex + 1].position + 1
+                    : (folders[folderIndex + 1].position +
+                        folders[folderIndex + 2].position) /
+                        2,
+                )
+              }
+            />
+            <Button
+              ariaLabel={t`Rename folder`}
+              Icon={IconPencil}
+              variant="tertiary"
+              size="small"
+              onClick={() =>
+                onStartRename({
+                  kind: 'folder',
+                  id: folder.id,
+                  name: folder.name,
+                })
+              }
+            />
+            <Button
+              ariaLabel={t`Delete folder`}
+              Icon={IconTrash}
+              variant="tertiary"
+              accent="danger"
+              size="small"
+              disabled={(listCountByFolderId[folder.id] ?? 0) > 0 || isSaving}
+              onClick={() => onDeleteFolder(folder.id)}
+            />
+          </StyledActions>
+        )}
+      </StyledFolderHeader>
+    )}
     {lists.map((recordList, listIndex) => {
       const ListIcon = LIST_ICON_BY_TYPE[recordList.type];
 
@@ -150,12 +160,13 @@ export const RecordListFolderSection = ({
               recordListId: recordList.id,
             })}
           >
-            <ListIcon size={16} />
+            <StyledListIcon>
+              <ListIcon size={16} />
+            </StyledListIcon>
             <span>{recordList.name}</span>
-            <StyledListType>{recordList.type}</StyledListType>
           </StyledListLink>
           {canManageLists && (
-            <StyledActions>
+            <StyledActions data-record-list-actions>
               <Button
                 ariaLabel={t`Move list up`}
                 Icon={IconChevronUp}
@@ -195,16 +206,19 @@ export const RecordListFolderSection = ({
                 }
               />
               <StyledSelect
-                value={recordList.folderId}
+                value={recordList.folderId ?? ROOT_RECORD_LIST_FOLDER_ID}
                 aria-label={t`Move list to folder`}
                 onChange={(event) =>
                   onUpdateList(recordList.id, {
-                    folderId: event.target.value,
+                    folderId: event.target.value || null,
                     position:
                       nextListPositionByFolderId[event.target.value] ?? 0,
                   })
                 }
               >
+                <option
+                  value={ROOT_RECORD_LIST_FOLDER_ID}
+                >{t`No folder`}</option>
                 {folders.map((folderOption) => (
                   <option key={folderOption.id} value={folderOption.id}>
                     {folderOption.name}

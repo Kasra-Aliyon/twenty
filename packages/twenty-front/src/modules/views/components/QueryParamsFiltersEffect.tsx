@@ -1,8 +1,5 @@
 import { useEffect } from 'react';
-import { useParams } from 'react-router-dom';
 
-import { useObjectMetadataItem } from '@/object-metadata/hooks/useObjectMetadataItem';
-import { useObjectNameSingularFromPlural } from '@/object-metadata/hooks/useObjectNameSingularFromPlural';
 import { currentRecordFilterGroupsComponentState } from '@/object-record/record-filter-group/states/currentRecordFilterGroupsComponentState';
 import { currentRecordFiltersComponentState } from '@/object-record/record-filter/states/currentRecordFiltersComponentState';
 import { useRecordIndexContextOrThrow } from '@/object-record/record-index/contexts/RecordIndexContext';
@@ -18,19 +15,11 @@ export const QueryParamsFiltersEffect = () => {
     useFiltersFromQueryParams();
   const { hasFiltersQueryParams } = useHasFiltersInQueryParams();
 
-  const { objectNamePlural = '' } = useParams();
-  const { objectNameSingular } = useObjectNameSingularFromPlural({
-    objectNamePlural,
-  });
-  const { objectMetadataItem } = useObjectMetadataItem({
-    objectNameSingular,
-  });
-
   const { currentView } = useGetCurrentViewOnly();
 
   const { mapViewFiltersToRecordFilters } = useMapViewFiltersToFilters();
 
-  const { recordIndexId } = useRecordIndexContextOrThrow();
+  const { recordIndexId, objectMetadataItem } = useRecordIndexContextOrThrow();
   const setCurrentRecordFilters = useSetAtomComponentState(
     currentRecordFiltersComponentState,
     recordIndexId,
@@ -40,13 +29,13 @@ export const QueryParamsFiltersEffect = () => {
     recordIndexId,
   );
 
-  const currentViewObjectMetadataItemIsDifferentFromURLObjectMetadataItem =
+  const currentViewObjectMetadataItemIsDifferentFromContextObjectMetadataItem =
     currentView?.objectMetadataId !== objectMetadataItem.id;
 
   useEffect(() => {
     if (
       !hasFiltersQueryParams ||
-      currentViewObjectMetadataItemIsDifferentFromURLObjectMetadataItem
+      currentViewObjectMetadataItemIsDifferentFromContextObjectMetadataItem
     ) {
       return;
     }
@@ -86,7 +75,7 @@ export const QueryParamsFiltersEffect = () => {
 
     loadFiltersFromQueryParams();
   }, [
-    currentViewObjectMetadataItemIsDifferentFromURLObjectMetadataItem,
+    currentViewObjectMetadataItemIsDifferentFromContextObjectMetadataItem,
     mapViewFiltersToRecordFilters,
     getFiltersFromQueryParams,
     getFilterGroupsFromQueryParams,

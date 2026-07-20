@@ -5,22 +5,46 @@ import { themeCssVariables } from 'twenty-ui/theme-constants';
 export const StyledContent = styled.div`
   display: flex;
   flex: 1;
-  justify-content: center;
   overflow: auto;
-  padding: ${themeCssVariables.spacing[6]};
+  padding: ${themeCssVariables.spacing[4]};
 `;
 
 export const StyledPanel = styled.div`
   display: flex;
   flex-direction: column;
-  gap: ${themeCssVariables.spacing[4]};
-  max-width: 720px;
+  gap: ${themeCssVariables.spacing[3]};
+  max-width: 560px;
   width: 100%;
+`;
+
+export const StyledExplorerHeader = styled.div`
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  min-height: 24px;
+  padding: 0 ${themeCssVariables.spacing[1]};
+`;
+
+export const StyledExplorerTitle = styled.span`
+  color: ${themeCssVariables.font.color.secondary};
+  font-size: ${themeCssVariables.font.size.sm};
+  font-weight: ${themeCssVariables.font.weight.medium};
+`;
+
+export const StyledManagementPanel = styled.div`
+  background: ${themeCssVariables.background.transparent.lighter};
+  border: 1px solid ${themeCssVariables.border.color.light};
+  border-radius: ${themeCssVariables.border.radius.md};
+  display: flex;
+  flex-direction: column;
+  gap: ${themeCssVariables.spacing[2]};
+  padding: ${themeCssVariables.spacing[3]};
 `;
 
 export const StyledForm = styled.form`
   align-items: center;
   display: flex;
+  flex-wrap: wrap;
   gap: ${themeCssVariables.spacing[2]};
 `;
 
@@ -30,10 +54,10 @@ export const StyledInput = styled.input`
   border-radius: ${themeCssVariables.border.radius.md};
   box-sizing: border-box;
   color: ${themeCssVariables.font.color.primary};
+  flex: 1 1 180px;
   height: 32px;
   min-width: 0;
   padding: 0 ${themeCssVariables.spacing[2]};
-  width: 100%;
 `;
 
 export const StyledSelect = styled.select`
@@ -49,25 +73,63 @@ export const StyledSelect = styled.select`
 export const StyledFolder = styled.section`
   display: flex;
   flex-direction: column;
-  gap: ${themeCssVariables.spacing[1]};
+  gap: 2px;
 `;
 
 export const StyledFolderHeader = styled.div`
   align-items: center;
+  border-radius: ${themeCssVariables.border.radius.sm};
   display: flex;
   justify-content: space-between;
+  min-height: 32px;
+  padding: 0 ${themeCssVariables.spacing[2]};
+  position: relative;
+
+  &:hover {
+    background: ${themeCssVariables.background.transparent.light};
+  }
+
+  &:hover > [data-record-list-actions],
+  &:focus-within > [data-record-list-actions] {
+    opacity: 1;
+  }
 `;
 
 export const StyledFolderTitle = styled.div`
+  align-items: center;
+  color: ${themeCssVariables.font.color.primary};
+  display: flex;
+  flex: 1;
+  font-size: ${themeCssVariables.font.size.md};
+  font-weight: ${themeCssVariables.font.weight.semiBold};
+  gap: ${themeCssVariables.spacing[2]};
+  min-width: 0;
+`;
+
+export const StyledFolderIcon = styled.span`
+  align-items: center;
+  color: ${themeCssVariables.color.blue};
+  display: flex;
+`;
+
+export const StyledFolderCount = styled.span`
   color: ${themeCssVariables.font.color.tertiary};
   font-size: ${themeCssVariables.font.size.sm};
-  font-weight: ${themeCssVariables.font.weight.semiBold};
+  font-weight: ${themeCssVariables.font.weight.regular};
+  margin-left: auto;
 `;
 
 export const StyledActions = styled.div`
   align-items: center;
+  background: ${themeCssVariables.background.primary};
   display: flex;
   gap: ${themeCssVariables.spacing[1]};
+  opacity: 0;
+  padding-left: ${themeCssVariables.spacing[2]};
+  position: absolute;
+  right: ${themeCssVariables.spacing[1]};
+  transition: opacity 100ms ease;
+  z-index: 1;
 `;
 
 export const StyledListRow = styled.div`
@@ -75,9 +137,16 @@ export const StyledListRow = styled.div`
   border-radius: ${themeCssVariables.border.radius.sm};
   display: flex;
   min-height: 36px;
+  padding-left: ${themeCssVariables.spacing[3]};
+  position: relative;
 
   &:hover {
     background: ${themeCssVariables.background.transparent.light};
+  }
+
+  &:hover > [data-record-list-actions],
+  &:focus-within > [data-record-list-actions] {
+    opacity: 1;
   }
 `;
 
@@ -92,10 +161,10 @@ export const StyledListLink = styled(Link)`
   text-decoration: none;
 `;
 
-export const StyledListType = styled.span`
-  color: ${themeCssVariables.font.color.tertiary};
-  font-size: ${themeCssVariables.font.size.sm};
-  margin-left: auto;
+export const StyledListIcon = styled.span`
+  align-items: center;
+  color: ${themeCssVariables.font.color.secondary};
+  display: flex;
 `;
 
 export const StyledEmptyState = styled.div`

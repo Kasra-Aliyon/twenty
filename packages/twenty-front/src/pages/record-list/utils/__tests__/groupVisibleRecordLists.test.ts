@@ -4,6 +4,14 @@ import { groupVisibleRecordLists } from '~/pages/record-list/utils/groupVisibleR
 
 const recordLists = [
   {
+    id: 'top-level-list-id',
+    name: 'Strategic accounts',
+    type: RECORD_LIST_TYPES.COMPANY,
+    position: 0,
+    folderId: null,
+    folder: null,
+  },
+  {
     id: 'company-list-id',
     name: 'Enterprise accounts',
     type: RECORD_LIST_TYPES.COMPANY,
@@ -42,7 +50,20 @@ describe('groupVisibleRecordLists', () => {
         canReadListType: (type) => type !== RECORD_LIST_TYPES.PERSON,
       }),
     ).toEqual({
+      '': [expect.objectContaining({ id: 'top-level-list-id' })],
       'sales-folder-id': [expect.objectContaining({ id: 'company-list-id' })],
+    });
+  });
+
+  it('groups lists without a folder at the root level', () => {
+    expect(
+      groupVisibleRecordLists({
+        recordLists,
+        search: 'strategic',
+        canReadListType: () => true,
+      }),
+    ).toEqual({
+      '': [expect.objectContaining({ id: 'top-level-list-id' })],
     });
   });
 });

@@ -10,7 +10,7 @@ export class RecordListWorkspaceEntity extends BaseWorkspaceEntity {
   type: RecordListType;
   position: number;
   searchVector: string;
-  folder: EntityRelation<RecordListFolderWorkspaceEntity>;
-  folderId: string;
+  folder: EntityRelation<RecordListFolderWorkspaceEntity> | null;
+  folderId: string | null;
   members: EntityRelation<RecordListMemberWorkspaceEntity[]>;
 }
