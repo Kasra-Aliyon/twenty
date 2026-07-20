@@ -21,7 +21,7 @@ import {
 } from 'twenty-shared/utils';
 
 export const useRecordIndexGroupCommonQueryVariables = () => {
-  const { objectMetadataItem } = useRecordIndexContextOrThrow();
+  const { objectMetadataItem, requiredFilter } = useRecordIndexContextOrThrow();
   const { objectMetadataItems } = useObjectMetadataItems();
 
   const currentRecordFilterGroups = useAtomComponentStateValue(
@@ -95,6 +95,7 @@ export const useRecordIndexGroupCommonQueryVariables = () => {
     anyFieldFilter,
     requestFilters,
     recordGroupOptionsFilter,
+    requiredFilter,
   ]);
 
   const recordGroupsLimit = visibleRecordGroupDefinitions.length;

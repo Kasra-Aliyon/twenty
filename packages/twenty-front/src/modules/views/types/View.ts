@@ -19,6 +19,7 @@ export type View = {
   type: ViewType;
   key?: ViewKey | null;
   objectMetadataId: string;
+  recordListId?: string | null;
   isCompact: boolean;
   viewFields: ViewField[];
   viewFieldGroups?: ViewFieldGroup[];

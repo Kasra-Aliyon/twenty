@@ -18,10 +18,13 @@ import { useAtomStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomState
 
 import { useStore } from 'jotai';
 import { useCallback, useMemo } from 'react';
-import { computeRecordGqlOperationFilter } from 'twenty-shared/utils';
+import {
+  combineFilters,
+  computeRecordGqlOperationFilter,
+} from 'twenty-shared/utils';
 
 export const RecordTableEmptyHasNewRecordEffect = () => {
-  const { objectMetadataItem } = useRecordIndexContextOrThrow();
+  const { objectMetadataItem, requiredFilter } = useRecordIndexContextOrThrow();
 
   const store = useStore();
 
@@ -62,12 +65,15 @@ export const RecordTableEmptyHasNewRecordEffect = () => {
     () => ({
       objectNameSingular: objectMetadataItem.nameSingular,
       variables: {
-        filter: computeRecordGqlOperationFilter({
-          fieldMetadataItems: flattenedFieldMetadataItems,
-          recordFilters: currentRecordFilters,
-          recordFilterGroups: currentRecordFilterGroups,
-          filterValueDependencies,
-        }),
+        filter: combineFilters([
+          computeRecordGqlOperationFilter({
+            fieldMetadataItems: flattenedFieldMetadataItems,
+            recordFilters: currentRecordFilters,
+            recordFilterGroups: currentRecordFilterGroups,
+            filterValueDependencies,
+          }),
+          requiredFilter,
+        ]),
         orderBy: turnSortsIntoOrderBy(objectMetadataItem, currentRecordSorts),
       },
     }),
@@ -78,6 +84,7 @@ export const RecordTableEmptyHasNewRecordEffect = () => {
       filterValueDependencies,
       currentRecordSorts,
       flattenedFieldMetadataItems,
+      requiredFilter,
     ],
   );
 

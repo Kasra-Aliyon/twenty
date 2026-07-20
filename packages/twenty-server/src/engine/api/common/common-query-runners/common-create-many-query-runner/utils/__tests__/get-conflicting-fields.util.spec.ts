@@ -1,8 +1,9 @@
-import { FieldMetadataType } from 'twenty-shared/types';
+import { FieldMetadataType, RelationType } from 'twenty-shared/types';
 
 import { getConflictingFields } from 'src/engine/api/common/common-query-runners/common-create-many-query-runner/utils/get-conflicting-fields.util';
 import { type FlatEntityMaps } from 'src/engine/metadata-modules/flat-entity/types/flat-entity-maps.type';
 import { type FlatFieldMetadata } from 'src/engine/metadata-modules/flat-field-metadata/types/flat-field-metadata.type';
+import { type FlatIndexMetadata } from 'src/engine/metadata-modules/flat-index-metadata/types/flat-index-metadata.type';
 import { type FlatObjectMetadata } from 'src/engine/metadata-modules/flat-object-metadata/types/flat-object-metadata.type';
 
 describe('getConflictingFields', () => {
@@ -75,8 +76,31 @@ describe('getConflictingFields', () => {
     isUnique: true,
   });
 
+  const recordListField = createMockField({
+    id: 'record-list-field-id',
+    name: 'recordList',
+    type: FieldMetadataType.RELATION,
+    isUnique: false,
+    settings: {
+      relationType: RelationType.MANY_TO_ONE,
+      joinColumnName: 'recordListId',
+    },
+  });
+
+  const targetCompanyField = createMockField({
+    id: 'target-company-field-id',
+    name: 'targetCompany',
+    type: FieldMetadataType.MORPH_RELATION,
+    isUnique: false,
+    settings: {
+      relationType: RelationType.MANY_TO_ONE,
+      joinColumnName: 'targetCompanyId',
+    },
+  });
+
   const buildFlatObjectMetadata = (
     fields: FlatFieldMetadata[],
+    indexMetadataIds: string[] = [],
   ): FlatObjectMetadata =>
     ({
       id: objectMetadataId,
@@ -92,7 +116,7 @@ describe('getConflictingFields', () => {
       updatedAt: new Date(),
       universalIdentifier: objectMetadataId,
       fieldIds: fields.map((f) => f.id),
-      indexMetadataIds: [],
+      indexMetadataIds,
       viewIds: [],
       applicationId: null,
     }) as unknown as FlatObjectMetadata;
@@ -113,6 +137,28 @@ describe('getConflictingFields', () => {
         acc[field.id] = field.universalIdentifier;
 
         return acc;
+      },
+      {} as Record<string, string>,
+    ),
+    universalIdentifiersByApplicationId: {},
+  });
+
+  const buildFlatIndexMetadataMaps = (
+    indexes: FlatIndexMetadata[],
+  ): FlatEntityMaps<FlatIndexMetadata> => ({
+    byUniversalIdentifier: indexes.reduce(
+      (accumulator, index) => {
+        accumulator[index.universalIdentifier] = index;
+
+        return accumulator;
+      },
+      {} as Record<string, FlatIndexMetadata>,
+    ),
+    universalIdentifierById: indexes.reduce(
+      (accumulator, index) => {
+        accumulator[index.id] = index.universalIdentifier;
+
+        return accumulator;
       },
       {} as Record<string, string>,
     ),
@@ -243,5 +289,45 @@ describe('getConflictingFields', () => {
         conflictingProperties: [{ fullPath: 'id', column: 'id' }],
       },
     ]);
+  });
+
+  it('returns compound unique relation indexes as one conflict group', () => {
+    const compoundIndex = {
+      id: 'record-list-company-unique-index-id',
+      universalIdentifier: 'record-list-company-unique-index-id',
+      name: 'recordListCompanyUniqueIndex',
+      objectMetadataId,
+      isUnique: true,
+      flatIndexFieldMetadatas: [
+        {
+          fieldMetadataId: targetCompanyField.id,
+          order: 0,
+          subFieldName: null,
+        },
+        {
+          fieldMetadataId: recordListField.id,
+          order: 1,
+          subFieldName: null,
+        },
+      ],
+    } as FlatIndexMetadata;
+    const fields = [idField, recordListField, targetCompanyField];
+    const flatObjectMetadata = buildFlatObjectMetadata(fields, [
+      compoundIndex.id,
+    ]);
+
+    const result = getConflictingFields(
+      flatObjectMetadata,
+      buildFlatFieldMetadataMaps(fields),
+      buildFlatIndexMetadataMaps([compoundIndex]),
+    );
+
+    expect(result).toContainEqual({
+      baseField: compoundIndex.name,
+      conflictingProperties: [
+        { fullPath: 'targetCompanyId', column: 'targetCompanyId' },
+        { fullPath: 'recordListId', column: 'recordListId' },
+      ],
+    });
   });
 });

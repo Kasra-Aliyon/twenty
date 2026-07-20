@@ -1,4 +1,5 @@
 import { msg } from '@lingui/core/macro';
+import { STANDARD_OBJECTS } from 'twenty-shared/metadata';
 import { i18nLabel } from 'src/engine/workspace-manager/twenty-standard-application/utils/i18n-label.util';
 import {
   DateDisplayFormat,
@@ -665,6 +666,29 @@ export const buildCompanyStandardFlatFieldMetadatas = ({
       settings: {
         relationType: RelationType.ONE_TO_MANY,
       },
+    },
+    standardObjectMetadataRelatedEntityIds,
+    dependencyFlatEntityMaps,
+    twentyStandardApplicationId,
+    now,
+  }),
+  recordListMemberships: createStandardRelationFieldFlatMetadata({
+    objectName,
+    workspaceId,
+    context: {
+      type: FieldMetadataType.RELATION,
+      morphId: null,
+      fieldName: 'recordListMemberships',
+      label: i18nLabel(msg`Lists`),
+      description: i18nLabel(msg`Static lists containing the company`),
+      icon: 'IconListDetails',
+      isUIEditable: false,
+      isNullable: true,
+      targetObjectName: 'recordListMember',
+      targetFieldName: 'targetCompany',
+      settings: { relationType: RelationType.ONE_TO_MANY },
+      junctionTargetFieldUniversalIdentifier:
+        STANDARD_OBJECTS.recordListMember.fields.recordList.universalIdentifier,
     },
     standardObjectMetadataRelatedEntityIds,
     dependencyFlatEntityMaps,

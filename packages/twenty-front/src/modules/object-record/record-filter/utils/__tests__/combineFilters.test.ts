@@ -26,4 +26,19 @@ describe('combineFilters', () => {
     const result = combineFilters([]);
     expect(result).toEqual({});
   });
+
+  it('keeps an immutable relation base filter alongside presentation filters', () => {
+    const presentationFilter: RecordGqlOperationFilter = {
+      name: { ilike: '%Acme%' },
+    };
+    const requiredFilter: RecordGqlOperationFilter = {
+      recordListMemberships: {
+        recordListId: { eq: 'record-list-id' },
+      },
+    };
+
+    expect(
+      combineFilters([undefined, presentationFilter, requiredFilter]),
+    ).toEqual({ and: [presentationFilter, requiredFilter] });
+  });
 });

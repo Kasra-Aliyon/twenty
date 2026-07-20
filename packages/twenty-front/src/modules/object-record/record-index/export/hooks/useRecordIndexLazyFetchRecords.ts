@@ -16,12 +16,13 @@ import { visibleRecordFieldsComponentSelector } from '@/object-record/record-fie
 import { type RecordField } from '@/object-record/record-field/types/RecordField';
 import { useFilterValueDependencies } from '@/object-record/record-filter/hooks/useFilterValueDependencies';
 import { useFindManyRecordIndexTableParams } from '@/object-record/record-index/hooks/useFindManyRecordIndexTableParams';
+import { useRecordIndexContextOrThrow } from '@/object-record/record-index/contexts/RecordIndexContext';
 import { recordIndexGroupFieldMetadataItemComponentState } from '@/object-record/record-index/states/recordIndexGroupFieldMetadataComponentState';
 import { useAtomComponentSelectorValue } from '@/ui/utilities/state/jotai/hooks/useAtomComponentSelectorValue';
 import { useAtomComponentStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomComponentStateValue';
 import { useAtomStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomStateValue';
 import { ViewType } from '@/views/types/ViewType';
-import { isDefined } from 'twenty-shared/utils';
+import { combineFilters, isDefined } from 'twenty-shared/utils';
 
 export const sleep = (ms: number) =>
   new Promise((resolve) => setTimeout(resolve, ms));
@@ -55,6 +56,7 @@ export const useRecordIndexLazyFetchRecords = ({
   callback,
   viewType = ViewType.TABLE,
 }: UseRecordDataOptions) => {
+  const { requiredFilter } = useRecordIndexContextOrThrow();
   const { hiddenBoardFields } = useObjectOptionsForBoard({
     objectNameSingular: objectMetadataItem.nameSingular,
     recordBoardId: recordIndexId,
@@ -114,7 +116,7 @@ export const useRecordIndexLazyFetchRecords = ({
 
   const queryFilter = isEmptySelection
     ? findManyRecordsParams.filter
-    : contextStoreFilter;
+    : combineFilters([contextStoreFilter, requiredFilter]);
 
   const visibleRecordFields = useAtomComponentSelectorValue(
     visibleRecordFieldsComponentSelector,

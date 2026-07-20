@@ -22,11 +22,13 @@ import { useStore } from 'jotai';
 type MultipleRecordPickerMenuItemsProps = {
   onChange?: (morphItem: RecordPickerPickableMorphItem) => void;
   focusId: string;
+  excludedRecordIds?: string[];
 };
 
 export const MultipleRecordPickerMenuItems = ({
   onChange,
   focusId,
+  excludedRecordIds = [],
 }: MultipleRecordPickerMenuItemsProps) => {
   const store = useStore();
   const componentInstanceId = useAvailableComponentInstanceIdOrThrow(
@@ -39,6 +41,9 @@ export const MultipleRecordPickerMenuItems = ({
   const pickableRecordIds = useAtomComponentSelectorValue(
     multipleRecordPickerPickableRecordIdsMatchingSearchComponentSelector,
     componentInstanceId,
+  );
+  const visiblePickableRecordIds = pickableRecordIds.filter(
+    (recordId) => !excludedRecordIds.includes(recordId),
   );
 
   const multipleRecordPickerPickableMorphItems =
@@ -79,7 +84,7 @@ export const MultipleRecordPickerMenuItems = ({
     multipleRecordPickerShouldShowSkeletonComponentState,
   );
 
-  const searchHasNoResults = pickableRecordIds.length === 0;
+  const searchHasNoResults = visiblePickableRecordIds.length === 0;
 
   return (
     <DropdownMenuItemsContainer hasMaxHeight>
@@ -92,10 +97,10 @@ export const MultipleRecordPickerMenuItems = ({
       ) : (
         <SelectableList
           selectableListInstanceId={selectableListComponentInstanceId}
-          selectableItemIdArray={pickableRecordIds}
+          selectableItemIdArray={visiblePickableRecordIds}
           focusId={focusId}
         >
-          {pickableRecordIds.map((recordId) => {
+          {visiblePickableRecordIds.map((recordId) => {
             return (
               <MultipleRecordPickerMenuItem
                 key={recordId}

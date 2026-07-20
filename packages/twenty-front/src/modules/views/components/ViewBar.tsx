@@ -1,4 +1,5 @@
 import { type ReactNode } from 'react';
+import { isDefined } from 'twenty-shared/utils';
 
 import { ObjectSortDropdownButton } from '@/object-record/object-sort-dropdown/components/ObjectSortDropdownButton';
 import { useRecordIndexContextOrThrow } from '@/object-record/record-index/contexts/RecordIndexContext';
@@ -35,7 +36,8 @@ export const ViewBar = ({
   optionsDropdownButton,
   isReadOnly = false,
 }: ViewBarProps) => {
-  const { objectNamePlural } = useRecordIndexContextOrThrow();
+  const { objectNamePlural, requiredFilter } = useRecordIndexContextOrThrow();
+  const isRecordListView = isDefined(requiredFilter);
 
   if (!objectNamePlural) {
     return;
@@ -43,7 +45,10 @@ export const ViewBar = ({
 
   if (isReadOnly) {
     return (
-      <TopBar className={className} leftComponent={<ViewPickerDropdown />} />
+      <TopBar
+        className={className}
+        leftComponent={isRecordListView ? null : <ViewPickerDropdown />}
+      />
     );
   }
 
@@ -62,7 +67,7 @@ export const ViewBar = ({
       <ViewBarPageTitle />
       <TopBar
         className={className}
-        leftComponent={<ViewPickerDropdown />}
+        leftComponent={isRecordListView ? null : <ViewPickerDropdown />}
         rightComponent={
           <>
             <ObjectFilterDropdownComponentInstanceContext.Provider

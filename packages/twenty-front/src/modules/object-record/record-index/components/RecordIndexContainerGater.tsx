@@ -22,7 +22,8 @@ import { PageTitle } from '@/ui/utilities/page-title/components/PageTitle';
 import { ViewComponentInstanceContext } from '@/views/states/contexts/ViewComponentInstanceContext';
 import { styled } from '@linaria/react';
 import { useStore } from 'jotai';
-import { useCallback } from 'react';
+import { type ReactNode, useCallback } from 'react';
+import { type RecordGqlOperationFilter } from 'twenty-shared/types';
 
 const StyledIndexContainer = styled.div`
   display: flex;
@@ -31,7 +32,19 @@ const StyledIndexContainer = styled.div`
   width: 100%;
 `;
 
-export const RecordIndexContainerGater = () => {
+export const RecordIndexContainerGater = ({
+  requiredFilter,
+  isInlineRecordCreationDisabled = false,
+  pageTitle,
+  pageHeaderTag,
+  pageActions,
+}: {
+  requiredFilter?: RecordGqlOperationFilter;
+  isInlineRecordCreationDisabled?: boolean;
+  pageTitle?: string;
+  pageHeaderTag?: string;
+  pageActions?: ReactNode;
+} = {}) => {
   const store = useStore();
 
   const { recordIndexId, objectMetadataItem } =
@@ -80,6 +93,11 @@ export const RecordIndexContainerGater = () => {
           labelIdentifierFieldMetadataItem,
           fieldMetadataItemByFieldMetadataItemId,
           fieldDefinitionByFieldMetadataItemId,
+          requiredFilter,
+          isInlineRecordCreationDisabled,
+          pageTitle,
+          pageHeaderTag,
+          pageActions,
         }}
       >
         <ViewComponentInstanceContext.Provider
@@ -93,7 +111,7 @@ export const RecordIndexContainerGater = () => {
                 instanceId: getCommandMenuIdFromRecordIndexId(recordIndexId),
               }}
             >
-              <PageTitle title={objectMetadataItem.labelPlural} />
+              <PageTitle title={pageTitle ?? objectMetadataItem.labelPlural} />
               <PageCardLayout
                 header={<RecordIndexPageHeader />}
                 secondaryBar={

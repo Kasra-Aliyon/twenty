@@ -6,6 +6,7 @@ import { isLayoutCustomizationModeEnabledState } from '@/layout-customization/st
 import { useNumberFormat } from '@/localization/hooks/useNumberFormat';
 import { useFilteredObjectMetadataItems } from '@/object-metadata/hooks/useFilteredObjectMetadataItems';
 import { RecordIndexPageHeaderIcon } from '@/object-record/record-index/components/RecordIndexPageHeaderIcon';
+import { AddToRecordListAction } from '@/record-list/components/AddToRecordListAction';
 import { useRecordIndexContextOrThrow } from '@/object-record/record-index/contexts/RecordIndexContext';
 import { SidePanelToggleButton } from '@/side-panel/components/SidePanelToggleButton';
 import { PageCardHeader } from '@/ui/layout/page/components/PageCardHeader';
@@ -42,12 +43,20 @@ export const RecordIndexPageHeader = () => {
 
   const { formatNumber } = useNumberFormat();
 
-  const { objectNamePlural } = useRecordIndexContextOrThrow();
+  const {
+    objectNamePlural,
+    objectNameSingular,
+    pageTitle,
+    pageHeaderTag,
+    pageActions,
+    requiredFilter,
+  } = useRecordIndexContextOrThrow();
 
   const objectMetadataItem =
     findObjectMetadataItemByNamePlural(objectNamePlural);
 
-  const label = objectMetadataItem?.labelPlural ?? objectNamePlural;
+  const label =
+    pageTitle ?? objectMetadataItem?.labelPlural ?? objectNamePlural;
 
   const pageHeaderTitle =
     contextStoreNumberOfSelectedRecords > 0 ? (
@@ -76,9 +85,14 @@ export const RecordIndexPageHeader = () => {
         <RecordIndexPageHeaderIcon objectMetadataItem={objectMetadataItem} />
       }
       title={pageHeaderTitle}
+      tag={pageHeaderTag}
       actionButton={
         isDefined(contextStoreCurrentViewId) ? (
           <>
+            {pageActions}
+            {!isDefined(requiredFilter) && (
+              <AddToRecordListAction objectNameSingular={objectNameSingular} />
+            )}
             <RecordIndexCommandMenu />
             {!isLayoutCustomizationModeEnabled && <SidePanelToggleButton />}
           </>

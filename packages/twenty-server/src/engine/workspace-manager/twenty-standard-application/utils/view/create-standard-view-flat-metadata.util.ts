@@ -125,6 +125,7 @@ export const createStandardViewFlatMetadata = <
       TWENTY_STANDARD_APPLICATION.universalIdentifier,
     workspaceId,
     objectMetadataId,
+    recordListId: null,
     name,
     type,
     key,

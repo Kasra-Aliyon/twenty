@@ -781,6 +781,9 @@ export const STANDARD_OBJECTS = {
       timelineActivities: {
         universalIdentifier: '20202020-0414-4daf-9c0d-64fe7b27f89f',
       },
+      recordListMemberships: {
+        universalIdentifier: 'de766bdf-707f-409d-9145-4e6c288aba59',
+      },
       searchVector: {
         universalIdentifier: '85c71601-72f9-4b7b-b343-d46100b2c74d',
       },
@@ -1108,6 +1111,153 @@ export const STANDARD_OBJECTS = {
       },
       personListUniqueIndex: {
         universalIdentifier: 'e5497dc2-1d72-418c-a389-a0645ca0195a',
+      },
+    },
+  },
+  recordListFolder: {
+    universalIdentifier: '614f1f14-4bb9-4e98-b7ab-16396dfdb408',
+    fields: {
+      id: { universalIdentifier: '7f742d4e-af13-4301-bf6c-4177834676b1' },
+      createdAt: {
+        universalIdentifier: '64164e69-0b0f-4cd7-b755-1a6ae5330412',
+      },
+      updatedAt: {
+        universalIdentifier: '5e4e34b3-18b3-4d1b-ae91-befe63581b09',
+      },
+      deletedAt: {
+        universalIdentifier: '247caf3b-7f43-478c-884f-fd04beb9fab6',
+      },
+      createdBy: {
+        universalIdentifier: '59f3483e-0bf9-40ab-8bea-b12becab7007',
+      },
+      updatedBy: {
+        universalIdentifier: 'd954f71d-05dd-48aa-b381-7a3c8ec55e9e',
+      },
+      position: {
+        universalIdentifier: 'de63bba0-05d3-4393-aee5-871380b86098',
+      },
+      searchVector: {
+        universalIdentifier: '6cdf1e37-a224-4ada-ab63-b0581ef87bad',
+      },
+      name: { universalIdentifier: '19c9fe66-d122-4846-b835-da6027a262ac' },
+      lists: {
+        universalIdentifier: 'e2e07c2f-5770-45b9-bf9b-3a42b392224c',
+      },
+    },
+    indexes: {
+      positionIndex: {
+        universalIdentifier: 'f650e3ff-fcc2-4ee9-b49c-3b160cd54ba9',
+      },
+    },
+  },
+  recordList: {
+    universalIdentifier: 'cc7b0bc4-3d46-4158-812d-ff6632e41daa',
+    fields: {
+      id: { universalIdentifier: '7446b45b-66ed-40ae-89e3-dbd5405fd2a1' },
+      createdAt: {
+        universalIdentifier: '120e1d3a-7766-41e7-8995-017114ebf867',
+      },
+      updatedAt: {
+        universalIdentifier: '008026f7-8c3e-4335-98ff-209b531cd174',
+      },
+      deletedAt: {
+        universalIdentifier: '8356153f-3c92-4c32-968d-7b33f17ff991',
+      },
+      createdBy: {
+        universalIdentifier: 'a969df77-a7a3-4cce-b40b-7f68ecf99b95',
+      },
+      updatedBy: {
+        universalIdentifier: '9daad302-764c-412e-9228-ee7b938b8e0b',
+      },
+      position: {
+        universalIdentifier: '315aefcc-de45-4b98-8715-116f422715ed',
+      },
+      searchVector: {
+        universalIdentifier: '5842c526-e9bb-4b69-9b1d-79f27a8253b6',
+      },
+      name: { universalIdentifier: '3b9abc7b-4017-48b6-830a-8e1a7dc33a58' },
+      type: { universalIdentifier: 'c66315d8-4662-4835-badb-66e2176b8b9c' },
+      folder: {
+        universalIdentifier: '41cc9b76-2fbc-44c9-a39d-914ee7de4195',
+      },
+      members: {
+        universalIdentifier: '0f3fa618-e4f6-4f91-88a2-98ae4c54c4f5',
+      },
+    },
+    indexes: {
+      folderIdIndex: {
+        universalIdentifier: '821c13f3-71a6-42ca-b131-4cc0f54e2cea',
+      },
+      folderPositionIndex: {
+        universalIdentifier: '298c80d0-b696-4213-9d95-8d17fd4a08de',
+      },
+      positionIndex: {
+        universalIdentifier: 'fa8ae70f-9377-4c5a-8b4e-f242ec86510b',
+      },
+    },
+  },
+  recordListMember: {
+    universalIdentifier: '1baecd58-aea6-4df4-9e40-2d114b4aedda',
+    fields: {
+      id: { universalIdentifier: 'c872008c-ba37-42c4-82ec-d77cf2e0617d' },
+      createdAt: {
+        universalIdentifier: '9b0f12fb-c26f-4139-89ff-1af8086a7242',
+      },
+      updatedAt: {
+        universalIdentifier: '4f508fee-0b65-47d0-ac56-06caa25b13c6',
+      },
+      deletedAt: {
+        universalIdentifier: 'c308a76c-868a-4f6b-9061-6d87ddc0bc32',
+      },
+      createdBy: {
+        universalIdentifier: 'a7c5a803-a3b3-4388-8573-e17440ac1e5b',
+      },
+      updatedBy: {
+        universalIdentifier: '79ff712b-164e-4705-843a-c98476e18c30',
+      },
+      position: {
+        universalIdentifier: '9633939e-e673-4446-a5ea-9399175e0d62',
+      },
+      searchVector: {
+        universalIdentifier: '4c0f5cef-ef1c-43a5-adbe-da01d6b51c7f',
+      },
+      recordList: {
+        universalIdentifier: 'd8ccb7dd-6329-485a-b162-90d6520f40eb',
+      },
+      targetCompany: {
+        universalIdentifier: 'c4435506-5c8a-47e3-b9e8-53cbe94a4016',
+      },
+      targetPerson: {
+        universalIdentifier: 'd571bc9e-ea2c-485f-9d3b-1fbc6d393236',
+      },
+      targetOpportunity: {
+        universalIdentifier: '7bf7e99a-a0d4-4244-8417-b07ce9e2d541',
+      },
+    },
+    morphIds: {
+      targetMorphId: { morphId: 'ae204e7c-6840-458e-abb2-fd966803d2c4' },
+    },
+    indexes: {
+      recordListIdIndex: {
+        universalIdentifier: '0b085814-f31e-424f-b064-5d420632cca6',
+      },
+      companyIdIndex: {
+        universalIdentifier: '05516bfc-7563-4268-9546-8d36995f2b3a',
+      },
+      personIdIndex: {
+        universalIdentifier: '781b7a1f-0e84-4b76-8b99-40a5867d844e',
+      },
+      opportunityIdIndex: {
+        universalIdentifier: '9e1fbbd9-7d11-48b0-866a-70efdc741316',
+      },
+      companyListUniqueIndex: {
+        universalIdentifier: '77972c09-21e3-49c9-ba1b-38a860f31bce',
+      },
+      personListUniqueIndex: {
+        universalIdentifier: '3a5b57fc-3e37-4036-a5b0-b719fda9bdcc',
+      },
+      opportunityListUniqueIndex: {
+        universalIdentifier: '76fb73dc-a465-4773-bca6-4662ddc58b56',
       },
     },
   },
@@ -1799,6 +1949,9 @@ export const STANDARD_OBJECTS = {
       timelineActivities: {
         universalIdentifier: '20202020-30e2-421f-96c7-19c69d1cf631',
       },
+      recordListMemberships: {
+        universalIdentifier: '5f238188-cca3-48f0-a6a2-9a044c76fc04',
+      },
       searchVector: {
         universalIdentifier: '428a0da5-4b2e-4ce3-b695-89a8b384e6e3',
       },
@@ -1998,6 +2151,9 @@ export const STANDARD_OBJECTS = {
       },
       listMemberships: {
         universalIdentifier: '8b8d1be0-4c94-4413-a2c9-c7ede205a81d',
+      },
+      recordListMemberships: {
+        universalIdentifier: 'f0c50e75-c18a-43d4-8897-5f5ac66ef9fa',
       },
       searchVector: {
         universalIdentifier: '57d1d7ad-fa10-44fc-82f3-ad0959ec2534',

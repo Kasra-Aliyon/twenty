@@ -21,6 +21,7 @@ export const fromViewManifestToUniversalFlatView = ({
     applicationUniversalIdentifier,
     name: viewManifest.name,
     objectMetadataUniversalIdentifier: viewManifest.objectUniversalIdentifier,
+    recordListId: null,
     type: viewManifest.type ?? ViewType.TABLE,
     icon: viewManifest.icon ?? 'IconList',
     position: viewManifest.position ?? 0,

@@ -65,6 +65,7 @@ export const fromCreateViewInputToFlatViewToCreate = ({
   const flatViewToCreate: UniversalFlatView & { id: string } = {
     id: viewId,
     objectMetadataUniversalIdentifier,
+    recordListId: createViewInput.recordListId ?? null,
     name: createViewInput.name,
     createdAt,
     updatedAt: createdAt,
@@ -88,7 +89,7 @@ export const fromCreateViewInputToFlatViewToCreate = ({
     visibility: createViewInput.visibility ?? ViewVisibility.WORKSPACE,
     createdByUserWorkspaceId: createdByUserWorkspaceId ?? null,
     isActive: true,
-    isSystemSideEffect: false,
+    isSystemSideEffect: createViewInput.isSystemSideEffect ?? false,
     universalOverrides: null,
     viewFieldUniversalIdentifiers: [],
     viewFilterUniversalIdentifiers: [],

@@ -201,7 +201,7 @@ export type NotObjectRecordFilter = {
 };
 
 export type LeafObjectRecordFilter = {
-  [fieldName: string]: LeafFilter;
+  [fieldName: string]: LeafFilter | RecordGqlOperationFilter;
 };
 
 export type RecordGqlOperationFilter =

@@ -7,6 +7,7 @@ import { useFilterValueDependencies } from '@/object-record/record-filter/hooks/
 import { anyFieldFilterValueComponentState } from '@/object-record/record-filter/states/anyFieldFilterValueComponentState';
 import { currentRecordFiltersComponentState } from '@/object-record/record-filter/states/currentRecordFiltersComponentState';
 import { useCurrentRecordGroupDefinition } from '@/object-record/record-group/hooks/useCurrentRecordGroupDefinition';
+import { useRecordIndexContextOrThrow } from '@/object-record/record-index/contexts/RecordIndexContext';
 import { useRecordGroupFilter } from '@/object-record/record-group/hooks/useRecordGroupFilter';
 import { currentRecordSortsComponentState } from '@/object-record/record-sort/states/currentRecordSortsComponentState';
 import { useAtomComponentStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomComponentStateValue';
@@ -21,6 +22,7 @@ export const useFindManyRecordIndexTableParams = (
   objectNameSingular: string,
   instanceId?: string,
 ) => {
+  const { requiredFilter } = useRecordIndexContextOrThrow();
   const { objectMetadataItem } = useObjectMetadataItem({
     objectNameSingular,
   });
@@ -81,6 +83,7 @@ export const useFindManyRecordIndexTableParams = (
     currentFilters,
     recordGroupFilter,
     anyFieldFilter,
+    requiredFilter,
   ]);
 
   return {

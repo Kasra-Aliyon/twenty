@@ -18,6 +18,7 @@ import { type MessageListMemberWorkspaceEntity } from 'src/modules/emailing/stan
 import { type MessageParticipantWorkspaceEntity } from 'src/modules/messaging/common/standard-objects/message-participant.workspace-entity';
 import { type NoteTargetWorkspaceEntity } from 'src/modules/note/standard-objects/note-target.workspace-entity';
 import { type OpportunityWorkspaceEntity } from 'src/modules/opportunity/standard-objects/opportunity.workspace-entity';
+import { type RecordListMemberWorkspaceEntity } from 'src/modules/record-list/standard-objects/record-list-member.workspace-entity';
 import { type TaskTargetWorkspaceEntity } from 'src/modules/task/standard-objects/task-target.workspace-entity';
 import { type TimelineActivityWorkspaceEntity } from 'src/modules/timeline/standard-objects/timeline-activity.workspace-entity';
 
@@ -59,5 +60,6 @@ export class PersonWorkspaceEntity extends BaseWorkspaceEntity {
   >;
   timelineActivities: EntityRelation<TimelineActivityWorkspaceEntity[]>;
   listMemberships: EntityRelation<MessageListMemberWorkspaceEntity[]>;
+  recordListMemberships: EntityRelation<RecordListMemberWorkspaceEntity[]>;
   searchVector: string;
 }

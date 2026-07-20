@@ -4,7 +4,13 @@ import { msg } from '@lingui/core/macro';
 import { QUERY_MAX_RECORDS } from 'twenty-shared/constants';
 import { ObjectRecord } from 'twenty-shared/types';
 import { isDefined } from 'twenty-shared/utils';
-import { FindOptionsRelations, In, InsertResult, ObjectLiteral } from 'typeorm';
+import {
+  FindOptionsRelations,
+  In,
+  InsertResult,
+  ObjectLiteral,
+  QueryFailedError,
+} from 'typeorm';
 
 import { CommonBaseQueryRunnerService } from 'src/engine/api/common/common-query-runners/common-base-query-runner.service';
 import { type ConflictingFieldGroup } from 'src/engine/api/common/common-query-runners/common-create-many-query-runner/types/conflicting-field-group.type';
@@ -29,6 +35,7 @@ import { CommonSelectedFieldsResult } from 'src/engine/api/common/types/common-s
 import { buildColumnsToReturn } from 'src/engine/api/graphql/graphql-query-runner/utils/build-columns-to-return';
 import { buildColumnsToSelect } from 'src/engine/api/graphql/graphql-query-runner/utils/build-columns-to-select';
 import { assertIsValidUuid } from 'src/engine/api/graphql/workspace-query-runner/utils/assert-is-valid-uuid.util';
+import { POSTGRESQL_ERROR_CODES } from 'src/engine/api/graphql/workspace-query-runner/constants/postgres-error-codes.constants';
 import { getAllSelectableColumnNames } from 'src/engine/api/utils/get-all-selectable-column-names.utils';
 import { WorkspaceAuthContext } from 'src/engine/core-modules/auth/types/workspace-auth-context.type';
 import { RecordPositionService } from 'src/engine/core-modules/record-position/services/record-position.service';
@@ -248,6 +255,7 @@ export class CommonCreateManyQueryRunnerService extends CommonBaseQueryRunnerSer
     const conflictingFieldGroups = getConflictingFields(
       flatObjectMetadata,
       flatFieldMetadataMaps,
+      repository.internalContext.flatIndexMaps,
     );
     const existingRecords = await this.findExistingRecords({
       repository,
@@ -295,12 +303,49 @@ export class CommonCreateManyQueryRunnerService extends CommonBaseQueryRunnerSer
       });
     }
 
-    await this.processRecordsToInsert({
-      recordsToInsert: recordsToInsertWithPosition,
-      repository,
-      result,
-      columnsToReturn,
-    });
+    try {
+      await this.processRecordsToInsert({
+        recordsToInsert: recordsToInsertWithPosition,
+        repository,
+        result,
+        columnsToReturn,
+      });
+    } catch (error) {
+      const isConcurrentUniqueConflict =
+        error instanceof QueryFailedError &&
+        (error as QueryFailedError & { code?: string }).code ===
+          POSTGRESQL_ERROR_CODES.UNIQUE_VIOLATION;
+
+      if (!isConcurrentUniqueConflict) {
+        throw error;
+      }
+
+      const concurrentRecords = await this.findExistingRecords({
+        repository,
+        flatObjectMetadata,
+        flatFieldMetadataMaps,
+        args: { ...args, data: recordsToInsertWithPosition },
+        conflictingFieldGroups,
+      });
+      const retry = categorizeRecords(
+        recordsToInsertWithPosition,
+        conflictingFieldGroups,
+        concurrentRecords,
+      );
+
+      if (retry.recordsToInsert.length > 0) {
+        throw error;
+      }
+
+      await this.processRecordsToUpdate({
+        partialRecordsToUpdate: retry.recordsToUpdate,
+        repository,
+        flatObjectMetadata,
+        flatFieldMetadataMaps,
+        result,
+        columnsToReturn,
+      });
+    }
 
     return result;
   }

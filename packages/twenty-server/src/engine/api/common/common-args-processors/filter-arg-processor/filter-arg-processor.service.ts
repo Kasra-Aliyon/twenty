@@ -200,7 +200,10 @@ export class FilterArgProcessorService {
     flatFieldMetadataMaps: FlatEntityMaps<FlatFieldMetadata>,
     depth: number,
   ): ObjectRecordFilter {
-    if (fieldMetadata.settings?.relationType !== RelationType.MANY_TO_ONE) {
+    if (
+      fieldMetadata.settings?.relationType !== RelationType.MANY_TO_ONE &&
+      fieldMetadata.settings?.relationType !== RelationType.ONE_TO_MANY
+    ) {
       throw new CommonQueryRunnerException(
         `Cannot filter by relation field "${key}"`,
         CommonQueryRunnerExceptionCode.INVALID_ARGS_FILTER,

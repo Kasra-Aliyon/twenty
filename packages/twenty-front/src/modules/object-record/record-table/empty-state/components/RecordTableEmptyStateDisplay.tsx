@@ -2,6 +2,7 @@ import { isLayoutCustomizationModeEnabledState } from '@/layout-customization/st
 import { useObjectPermissionsForObject } from '@/object-record/hooks/useObjectPermissionsForObject';
 import { hasAnySoftDeleteFilterOnViewComponentSelector } from '@/object-record/record-filter/states/hasAnySoftDeleteFilterOnView';
 import { useRecordTableContextOrThrow } from '@/object-record/record-table/contexts/RecordTableContext';
+import { useRecordIndexContextOrThrow } from '@/object-record/record-index/contexts/RecordIndexContext';
 import { canCreateRecordsForObjectMetadataItem } from '@/object-record/utils/canCreateRecordsForObjectMetadataItem';
 import { useScrollWrapperHTMLElement } from '@/ui/utilities/scroll/hooks/useScrollWrapperHTMLElement';
 import { useAtomComponentSelectorValue } from '@/ui/utilities/state/jotai/hooks/useAtomComponentSelectorValue';
@@ -47,6 +48,7 @@ export const RecordTableEmptyStateDisplay = (
   props: RecordTableEmptyStateDisplayProps,
 ) => {
   const { objectMetadataItem } = useRecordTableContextOrThrow();
+  const { isInlineRecordCreationDisabled } = useRecordIndexContextOrThrow();
   const objectPermissions = useObjectPermissionsForObject(
     objectMetadataItem.id,
   );
@@ -83,6 +85,7 @@ export const RecordTableEmptyStateDisplay = (
         {'buttonComponent' in props && props.buttonComponent}
         {'buttonTitle' in props &&
           canCreateRecords &&
+          !isInlineRecordCreationDisabled &&
           !hasAnySoftDeleteFilterOnView && (
             <Button
               Icon={props.ButtonIcon}

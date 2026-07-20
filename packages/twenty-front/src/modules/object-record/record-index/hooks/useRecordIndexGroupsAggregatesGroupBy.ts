@@ -10,6 +10,7 @@ import { useFilterValueDependencies } from '@/object-record/record-filter/hooks/
 import { anyFieldFilterValueComponentState } from '@/object-record/record-filter/states/anyFieldFilterValueComponentState';
 import { currentRecordFiltersComponentState } from '@/object-record/record-filter/states/currentRecordFiltersComponentState';
 import { useAggregateGqlFieldsFromRecordIndexGroupAggregates } from '@/object-record/record-index/hooks/useAggregateGqlFieldsFromRecordIndexGroupAggregates';
+import { useRecordIndexContextOrThrow } from '@/object-record/record-index/contexts/RecordIndexContext';
 import { type ExtendedAggregateOperations } from '@/object-record/record-table/types/ExtendedAggregateOperations';
 import { buildGroupByFieldObject } from '@/page-layout/widgets/graph/utils/buildGroupByFieldObject';
 import { useAtomComponentStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomComponentStateValue';
@@ -18,6 +19,7 @@ import { useQuery } from '@apollo/client/react';
 import { useMemo } from 'react';
 import { type Nullable } from 'twenty-shared/types';
 import {
+  combineFilters,
   computeRecordGqlOperationFilter,
   isDefined,
   turnAnyFieldFilterIntoRecordGqlFilter,
@@ -36,6 +38,7 @@ export const useRecordIndexGroupsAggregatesGroupBy = ({
   recordIndexGroupAggregateFieldMetadataItem: Nullable<FieldMetadataItem>;
   recordIndexGroupAggregateOperation: ExtendedAggregateOperations;
 }) => {
+  const { requiredFilter } = useRecordIndexContextOrThrow();
   const apolloCoreClient = useApolloCoreClient();
 
   const currentRecordFilterGroups = useAtomComponentStateValue(
@@ -105,7 +108,7 @@ export const useRecordIndexGroupsAggregatesGroupBy = ({
       skip ||
       !isDefined(recordAggregateGqlField),
     variables: {
-      filter: { ...requestFilters, ...anyFieldFilter },
+      filter: combineFilters([requestFilters, anyFieldFilter, requiredFilter]),
       groupBy: {
         ...groupByGqlInput,
       },

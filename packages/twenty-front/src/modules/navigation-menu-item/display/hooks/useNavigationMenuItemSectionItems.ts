@@ -6,12 +6,14 @@ import { getWorkspaceSidebarOrphanItemsInDisplayOrder } from '@/navigation-menu-
 import { objectMetadataItemsSelector } from '@/object-metadata/states/objectMetadataItemsSelector';
 import { type EnrichedObjectMetadataItem } from '@/object-metadata/types/EnrichedObjectMetadataItem';
 import { useObjectPermissions } from '@/object-record/hooks/useObjectPermissions';
+import { useIsFeatureEnabled } from '@/workspace/hooks/useIsFeatureEnabled';
 import { useAtomStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomStateValue';
 import { viewsSelector } from '@/views/states/selectors/viewsSelector';
 
 import { useNavigationMenuItemsByFolder } from '@/navigation-menu-item/display/folder/hooks/useNavigationMenuItemsByFolder';
 import { useNavigationMenuItemsData } from './useNavigationMenuItemsData';
 import { useSortedNavigationMenuItems } from './useSortedNavigationMenuItems';
+import { AppPath, FeatureFlagKey } from 'twenty-shared/types';
 
 export type NavigationMenuItemClickParams = {
   item: NavigationMenuItem;
@@ -29,6 +31,9 @@ export const useNavigationMenuItemSectionItems = (): NavigationMenuItem[] => {
   const views = useAtomStateValue(viewsSelector);
   const objectMetadataItems = useAtomStateValue(objectMetadataItemsSelector);
   const { objectPermissionsByObjectMetadataId } = useObjectPermissions();
+  const isRecordListsEnabled = useIsFeatureEnabled(
+    FeatureFlagKey.IS_RECORD_LISTS_ENABLED,
+  );
 
   const flatItems = getWorkspaceSidebarOrphanItemsInDisplayOrder({
     workspaceNavigationMenuItems,
@@ -42,5 +47,7 @@ export const useNavigationMenuItemSectionItems = (): NavigationMenuItem[] => {
   return flattenNavigationMenuItemsWithFolderChildren(
     flatItems,
     workspaceNavigationMenuItemsByFolder,
+  ).filter(
+    (item) => isRecordListsEnabled || item.link !== AppPath.RecordListsPage,
   );
 };

@@ -679,6 +679,7 @@ export class ObjectMetadataService extends TypeOrmQueryService<ObjectMetadataEnt
     return {
       id: v4(),
       objectMetadataUniversalIdentifier: objectMetadata.universalIdentifier,
+      recordListId: null,
       name: `All {objectLabelPlural}`,
       key: ViewKey.INDEX,
       icon: 'IconList',

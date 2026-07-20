@@ -30,6 +30,18 @@ const RecordShowPage = lazy(() =>
   })),
 );
 
+const RecordListsPage = lazy(() =>
+  import('~/pages/record-list/RecordListsPage').then((module) => ({
+    default: module.RecordListsPage,
+  })),
+);
+
+const RecordListPage = lazy(() =>
+  import('~/pages/record-list/RecordListPage').then((module) => ({
+    default: module.RecordListPage,
+  })),
+);
+
 const SignInUp = lazy(() =>
   import('~/pages/auth/SignInUp').then((module) => ({
     default: module.SignInUp,
@@ -226,6 +238,22 @@ export const useCreateAppRouter = (
               element={
                 <LazyRoute>
                   <RecordShowPage />
+                </LazyRoute>
+              }
+            />
+            <Route
+              path={AppPath.RecordListsPage}
+              element={
+                <LazyRoute>
+                  <RecordListsPage />
+                </LazyRoute>
+              }
+            />
+            <Route
+              path={AppPath.RecordListPage}
+              element={
+                <LazyRoute fallback={<RecordIndexSkeletonLoader />}>
+                  <RecordListPage />
                 </LazyRoute>
               }
             />

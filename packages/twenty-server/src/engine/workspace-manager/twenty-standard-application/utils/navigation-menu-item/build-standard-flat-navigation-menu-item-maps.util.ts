@@ -5,8 +5,13 @@ import { type FlatEntityMaps } from 'src/engine/metadata-modules/flat-entity/typ
 import { type FlatNavigationMenuItemMaps } from 'src/engine/metadata-modules/flat-navigation-menu-item/types/flat-navigation-menu-item-maps.type';
 import { addFlatNavigationMenuItemToMapsAndUpdateIndex } from 'src/engine/metadata-modules/flat-navigation-menu-item/utils/add-flat-navigation-menu-item-to-maps-and-update-index.util';
 import { type FlatView } from 'src/engine/metadata-modules/flat-view/types/flat-view.type';
-import { STANDARD_NAVIGATION_MENU_ITEMS } from 'src/engine/workspace-manager/twenty-standard-application/constants/standard-navigation-menu-item.constant';
+import { NavigationMenuItemType } from 'src/engine/metadata-modules/navigation-menu-item/enums/navigation-menu-item-type.enum';
+import {
+  STANDARD_NAVIGATION_MENU_ITEMS,
+  STANDARD_NAVIGATION_MENU_ITEM_DEFAULT_COLORS,
+} from 'src/engine/workspace-manager/twenty-standard-application/constants/standard-navigation-menu-item.constant';
 import { createStandardNavigationMenuItemFlatMetadata } from 'src/engine/workspace-manager/twenty-standard-application/utils/navigation-menu-item/create-standard-navigation-menu-item-flat-metadata.util';
+import { TWENTY_STANDARD_APPLICATION } from 'src/engine/workspace-manager/twenty-standard-application/constants/twenty-standard-applications';
 import {
   createStandardNavigationMenuItemFolderFlatMetadata,
   createStandardNavigationMenuItemFolderItemFlatMetadata,
@@ -70,6 +75,38 @@ export const buildStandardFlatNavigationMenuItemMaps = ({
       flatNavigationMenuItemMaps,
     });
   }
+
+  const listsDefinition = STANDARD_NAVIGATION_MENU_ITEMS.lists;
+
+  addFlatNavigationMenuItemToMapsAndUpdateIndex({
+    flatNavigationMenuItem: {
+      id: v4(),
+      type: NavigationMenuItemType.LINK,
+      universalIdentifier: listsDefinition.universalIdentifier,
+      applicationId: twentyStandardApplicationId,
+      applicationUniversalIdentifier:
+        TWENTY_STANDARD_APPLICATION.universalIdentifier,
+      workspaceId,
+      userWorkspaceId: null,
+      targetRecordId: null,
+      targetObjectMetadataId: null,
+      targetObjectMetadataUniversalIdentifier: null,
+      viewId: null,
+      viewUniversalIdentifier: null,
+      folderId: null,
+      folderUniversalIdentifier: null,
+      pageLayoutId: null,
+      pageLayoutUniversalIdentifier: null,
+      name: listsDefinition.name,
+      link: listsDefinition.link,
+      icon: listsDefinition.icon,
+      color: STANDARD_NAVIGATION_MENU_ITEM_DEFAULT_COLORS.lists ?? null,
+      position: listsDefinition.position,
+      createdAt: now,
+      updatedAt: now,
+    },
+    flatNavigationMenuItemMaps,
+  });
 
   const workflowsFolderDefinition =
     STANDARD_NAVIGATION_MENU_ITEMS.workflowsFolder;

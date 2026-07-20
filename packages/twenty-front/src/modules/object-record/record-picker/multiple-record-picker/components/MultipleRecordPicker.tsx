@@ -34,6 +34,7 @@ type MultipleRecordPickerProps = {
   focusId: string;
   objectMetadataItemIdForCreate?: string;
   dropdownWidth?: number;
+  excludedRecordIds?: string[];
 };
 
 export const MultipleRecordPicker = ({
@@ -46,6 +47,7 @@ export const MultipleRecordPicker = ({
   focusId,
   objectMetadataItemIdForCreate,
   dropdownWidth,
+  excludedRecordIds,
 }: MultipleRecordPickerProps) => {
   const selectableListComponentInstanceId =
     getMultipleRecordPickerSelectableListId(componentInstanceId);
@@ -150,6 +152,7 @@ export const MultipleRecordPicker = ({
             <MultipleRecordPickerItemsDisplay
               onChange={onChange}
               focusId={focusId}
+              excludedRecordIds={excludedRecordIds}
             />
           </>
         )}
@@ -159,6 +162,7 @@ export const MultipleRecordPicker = ({
             <MultipleRecordPickerItemsDisplay
               onChange={onChange}
               focusId={focusId}
+              excludedRecordIds={excludedRecordIds}
             />
             {createNewButtonSection}
           </>

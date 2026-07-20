@@ -93,6 +93,21 @@ export class GraphqlQueryFilterFieldParser {
       );
     }
 
+    if (
+      isFilterKeyARelation &&
+      isMorphOrRelationFlatFieldMetadata(fieldMetadata) &&
+      fieldMetadata.settings?.relationType === RelationType.ONE_TO_MANY
+    ) {
+      return this.parseOneToManyRelationSubFilter(
+        queryBuilder,
+        outerQueryBuilder,
+        objectNameSingular,
+        fieldMetadata,
+        filterValue,
+        isFirst,
+      );
+    }
+
     if (isCompositeFieldMetadataType(fieldMetadata.type)) {
       return this.parseCompositeFieldForFilter(
         queryBuilder,
@@ -207,6 +222,111 @@ export class GraphqlQueryFilterFieldParser {
       queryBuilder.where(subBrackets);
     } else {
       queryBuilder.andWhere(subBrackets);
+    }
+  }
+
+  private parseOneToManyRelationSubFilter(
+    queryBuilder: WhereExpressionBuilder,
+    outerQueryBuilder: WorkspaceSelectQueryBuilder<ObjectLiteral>,
+    parentAlias: string,
+    fieldMetadata: FlatFieldMetadata,
+    filterValue: Partial<ObjectRecordFilter>,
+    isFirst: boolean,
+  ): void {
+    if (this.depth >= MAX_RELATION_FILTER_DEPTH) {
+      throw new GraphqlQueryRunnerException(
+        `Relation filter nesting deeper than ${MAX_RELATION_FILTER_DEPTH} hop is not supported`,
+        GraphqlQueryRunnerExceptionCode.INVALID_QUERY_INPUT,
+        {
+          userFriendlyMessage: msg`Relation filters can only traverse one relation deep`,
+        },
+      );
+    }
+
+    if (
+      !isDefined(this.flatObjectMetadataMaps) ||
+      !isDefined(fieldMetadata.relationTargetObjectMetadataId)
+    ) {
+      throw new GraphqlQueryRunnerException(
+        `Relation filter on "${fieldMetadata.name}" requires target object metadata`,
+        GraphqlQueryRunnerExceptionCode.INVALID_QUERY_INPUT,
+        { userFriendlyMessage: msg`Relation filter is misconfigured` },
+      );
+    }
+
+    const targetObjectMetadata =
+      findFlatEntityByIdInFlatEntityMaps<FlatObjectMetadata>({
+        flatEntityId: fieldMetadata.relationTargetObjectMetadataId,
+        flatEntityMaps: this.flatObjectMetadataMaps,
+      });
+
+    if (!isDefined(targetObjectMetadata)) {
+      throw new GraphqlQueryRunnerException(
+        `Target object not found for relation "${fieldMetadata.name}"`,
+        GraphqlQueryRunnerExceptionCode.INVALID_QUERY_INPUT,
+        { userFriendlyMessage: msg`Relation filter is misconfigured` },
+      );
+    }
+
+    const parentAliasMetadata = outerQueryBuilder.expressionMap.aliases.find(
+      (alias) => alias.name === parentAlias && alias.hasMetadata,
+    )?.metadata;
+    const relationMetadata = parentAliasMetadata?.findRelationWithPropertyPath(
+      fieldMetadata.name,
+    );
+    const inverseJoinColumn = relationMetadata?.inverseRelation?.joinColumns[0];
+    const parentPrimaryColumn =
+      inverseJoinColumn?.referencedColumn ??
+      parentAliasMetadata?.primaryColumns[0];
+
+    if (
+      !isDefined(relationMetadata) ||
+      !isDefined(inverseJoinColumn) ||
+      !isDefined(parentPrimaryColumn)
+    ) {
+      throw new GraphqlQueryRunnerException(
+        `Relation "${fieldMetadata.name}" has no inverse join column`,
+        GraphqlQueryRunnerExceptionCode.INVALID_QUERY_INPUT,
+        { userFriendlyMessage: msg`Relation filter is misconfigured` },
+      );
+    }
+
+    const childAlias = `relationFilter_${fieldMetadata.id.replace(/-/g, '')}`;
+    const escape = (identifier: string) => outerQueryBuilder.escape(identifier);
+    const subQueryBuilder = outerQueryBuilder
+      .subQuery()
+      .select('1')
+      .from(relationMetadata.inverseEntityMetadata.target, childAlias)
+      .where(
+        `${escape(childAlias)}.${escape(inverseJoinColumn.databaseName)} = ${escape(parentAlias)}.${escape(parentPrimaryColumn.databaseName)}`,
+      );
+
+    const childConditionParser = new GraphqlQueryFilterConditionParser(
+      targetObjectMetadata,
+      this.flatFieldMetadataMaps,
+      this.flatObjectMetadataMaps,
+      this.depth + 1,
+    );
+
+    subQueryBuilder.andWhere(
+      new Brackets((subQueryWhereBuilder) => {
+        childConditionParser.applyFilterEntriesToWhereBrackets(
+          subQueryWhereBuilder,
+          outerQueryBuilder,
+          childAlias,
+          filterValue,
+        );
+      }),
+    );
+
+    const existsCondition = `EXISTS ${subQueryBuilder.getQuery()}`;
+
+    outerQueryBuilder.setParameters(subQueryBuilder.getParameters());
+
+    if (isFirst) {
+      queryBuilder.where(existsCondition);
+    } else {
+      queryBuilder.andWhere(existsCondition);
     }
   }
 

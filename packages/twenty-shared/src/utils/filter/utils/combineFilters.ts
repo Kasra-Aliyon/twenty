@@ -1,10 +1,11 @@
 import { type RecordGqlOperationFilter } from '@/types';
 
 export const combineFilters = (
-  filters: RecordGqlOperationFilter[],
+  filters: (RecordGqlOperationFilter | undefined)[],
 ): RecordGqlOperationFilter => {
   const nonEmptyFilters = filters.filter(
-    (filter) => Object.keys(filter).length > 0,
+    (filter): filter is RecordGqlOperationFilter =>
+      filter !== undefined && Object.keys(filter).length > 0,
   );
 
   if (nonEmptyFilters.length === 0) {

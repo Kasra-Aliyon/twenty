@@ -43,6 +43,16 @@ export class CreateViewInput {
   @Field(() => UUIDScalarType, { nullable: false })
   objectMetadataId: string;
 
+  @IsOptional()
+  @IsUUID()
+  @HideField()
+  recordListId?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  @HideField()
+  isSystemSideEffect?: boolean;
+
   @IsEnum(ViewType)
   @Field(() => ViewType, { nullable: true, defaultValue: ViewType.TABLE })
   type?: ViewType;

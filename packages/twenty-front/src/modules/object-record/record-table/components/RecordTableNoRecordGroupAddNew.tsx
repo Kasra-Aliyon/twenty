@@ -2,6 +2,7 @@ import { useObjectPermissionsForObject } from '@/object-record/hooks/useObjectPe
 import { hasAnySoftDeleteFilterOnViewComponentSelector } from '@/object-record/record-filter/states/hasAnySoftDeleteFilterOnView';
 import { useUpsertRecordsInStore } from '@/object-record/record-store/hooks/useUpsertRecordsInStore';
 import { useRecordTableContextOrThrow } from '@/object-record/record-table/contexts/RecordTableContext';
+import { useRecordIndexContextOrThrow } from '@/object-record/record-index/contexts/RecordIndexContext';
 import { useCreateNewIndexRecord } from '@/object-record/record-table/hooks/useCreateNewIndexRecord';
 import { isRecordTableCellsNonEditableComponentState } from '@/object-record/record-table/states/isRecordTableCellsNonEditableComponentState';
 import { RecordTableActionRow } from '@/object-record/record-table/record-table-row/components/RecordTableActionRow';
@@ -16,6 +17,7 @@ import { isDefined } from 'twenty-shared/utils';
 import { IconPlus } from 'twenty-ui/icon';
 
 export const RecordTableNoRecordGroupAddNew = () => {
+  const { isInlineRecordCreationDisabled } = useRecordIndexContextOrThrow();
   const { objectMetadataItem } = useRecordTableContextOrThrow();
 
   const isRecordTableCellsNonEditable = useAtomComponentStateValue(
@@ -61,7 +63,7 @@ export const RecordTableNoRecordGroupAddNew = () => {
     totalNumberOfRecordsToVirtualize,
   ]);
 
-  if (isRecordTableCellsNonEditable) {
+  if (isRecordTableCellsNonEditable || isInlineRecordCreationDisabled) {
     return null;
   }
 

@@ -10,10 +10,13 @@ import { currentRecordSortsComponentState } from '@/object-record/record-sort/st
 import { useListenToEventsForQuery } from '@/sse-db-event/hooks/useListenToEventsForQuery';
 import { useAtomComponentStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomComponentStateValue';
 import { useAtomStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomStateValue';
-import { computeRecordGqlOperationFilter } from 'twenty-shared/utils';
+import {
+  combineFilters,
+  computeRecordGqlOperationFilter,
+} from 'twenty-shared/utils';
 
 export const RecordTableVirtualizedSSESubscribeEffect = () => {
-  const { objectMetadataItem } = useRecordIndexContextOrThrow();
+  const { objectMetadataItem, requiredFilter } = useRecordIndexContextOrThrow();
   const { filterValueDependencies } = useFilterValueDependencies();
 
   const flattenedFieldMetadataItems = useAtomStateValue(
@@ -38,12 +41,15 @@ export const RecordTableVirtualizedSSESubscribeEffect = () => {
     () => ({
       objectNameSingular: objectMetadataItem.nameSingular,
       variables: {
-        filter: computeRecordGqlOperationFilter({
-          fieldMetadataItems: flattenedFieldMetadataItems,
-          recordFilters: currentRecordFilters,
-          recordFilterGroups: currentRecordFilterGroups,
-          filterValueDependencies,
-        }),
+        filter: combineFilters([
+          computeRecordGqlOperationFilter({
+            fieldMetadataItems: flattenedFieldMetadataItems,
+            recordFilters: currentRecordFilters,
+            recordFilterGroups: currentRecordFilterGroups,
+            filterValueDependencies,
+          }),
+          requiredFilter,
+        ]),
         orderBy: turnSortsIntoOrderBy(objectMetadataItem, currentRecordSorts),
       },
     }),
@@ -54,6 +60,7 @@ export const RecordTableVirtualizedSSESubscribeEffect = () => {
       filterValueDependencies,
       currentRecordSorts,
       flattenedFieldMetadataItems,
+      requiredFilter,
     ],
   );
 

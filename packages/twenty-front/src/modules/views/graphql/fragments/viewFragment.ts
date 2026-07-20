@@ -18,6 +18,7 @@ export const VIEW_FRAGMENT = gql`
     id
     name
     objectMetadataId
+    recordListId
     type
     key
     icon

@@ -42,6 +42,9 @@ export class ViewDTO {
   @Field(() => UUIDScalarType, { nullable: false })
   objectMetadataId: string;
 
+  @Field(() => UUIDScalarType, { nullable: true })
+  recordListId?: string | null;
+
   @Field(() => ViewType, { nullable: false, defaultValue: ViewType.TABLE })
   type: ViewType;
 

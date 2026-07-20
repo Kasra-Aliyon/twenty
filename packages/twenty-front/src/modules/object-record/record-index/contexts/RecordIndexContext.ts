@@ -3,7 +3,11 @@ import { type EnrichedObjectMetadataItem } from '@/object-metadata/types/Enriche
 import { type RecordField } from '@/object-record/record-field/types/RecordField';
 import { type FieldMetadata } from '@/object-record/record-field/ui/types/FieldMetadata';
 import { type ColumnDefinition } from '@/object-record/record-table/types/ColumnDefinition';
-import { type ObjectPermissions } from 'twenty-shared/types';
+import { type ReactNode } from 'react';
+import {
+  type ObjectPermissions,
+  type RecordGqlOperationFilter,
+} from 'twenty-shared/types';
 import { createRequiredContext } from '~/utils/createRequiredContext';
 
 export type RecordIndexContextValue = {
@@ -26,6 +30,11 @@ export type RecordIndexContextValue = {
     ColumnDefinition<FieldMetadata>
   >;
   recordLimit?: number;
+  requiredFilter?: RecordGqlOperationFilter;
+  isInlineRecordCreationDisabled?: boolean;
+  pageTitle?: string;
+  pageHeaderTag?: string;
+  pageActions?: ReactNode;
 };
 
 export const [RecordIndexContextProvider, useRecordIndexContextOrThrow] =

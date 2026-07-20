@@ -2,6 +2,7 @@ import { useObjectPermissionsForObject } from '@/object-record/hooks/useObjectPe
 import { useCurrentRecordGroupId } from '@/object-record/record-group/hooks/useCurrentRecordGroupId';
 import { recordGroupDefinitionFamilyState } from '@/object-record/record-group/states/recordGroupDefinitionFamilyState';
 import { recordIndexGroupFieldMetadataItemComponentState } from '@/object-record/record-index/states/recordIndexGroupFieldMetadataComponentState';
+import { useRecordIndexContextOrThrow } from '@/object-record/record-index/contexts/RecordIndexContext';
 import { useRecordTableContextOrThrow } from '@/object-record/record-table/contexts/RecordTableContext';
 import { useCreateNewIndexRecord } from '@/object-record/record-table/hooks/useCreateNewIndexRecord';
 import { RecordTableActionRow } from '@/object-record/record-table/record-table-row/components/RecordTableActionRow';
@@ -12,6 +13,7 @@ import { t } from '@lingui/core/macro';
 import { IconPlus } from 'twenty-ui/icon';
 
 export const RecordTableRecordGroupSectionAddNew = () => {
+  const { isInlineRecordCreationDisabled } = useRecordIndexContextOrThrow();
   const { objectMetadataItem } = useRecordTableContextOrThrow();
 
   const currentRecordGroupId = useCurrentRecordGroupId();
@@ -38,6 +40,7 @@ export const RecordTableRecordGroupSectionAddNew = () => {
   );
 
   if (
+    isInlineRecordCreationDisabled ||
     !canCreateRecordsForObjectMetadataItem({
       objectPermissions,
       objectMetadataItem,

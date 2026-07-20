@@ -155,6 +155,90 @@ describe('FilterArgProcessorService', () => {
   });
 
   describe('logical operators', () => {
+    it('processes a one-to-many existential relation filter inside logical operators', () => {
+      const parentObject = {
+        id: 'parent-object-id',
+        nameSingular: 'company',
+        namePlural: 'companies',
+        fieldIds: ['memberships-id'],
+        universalIdentifier: 'parent-object-universal-id',
+      } as unknown as FlatObjectMetadata;
+      const memberObject = {
+        id: 'member-object-id',
+        nameSingular: 'recordListMember',
+        namePlural: 'recordListMembers',
+        fieldIds: ['record-list-id-field-id'],
+        universalIdentifier: 'member-object-universal-id',
+      } as unknown as FlatObjectMetadata;
+      const membershipsField = {
+        id: 'memberships-id',
+        name: 'recordListMemberships',
+        type: FieldMetadataType.RELATION,
+        objectMetadataId: parentObject.id,
+        universalIdentifier: 'memberships-universal-id',
+        relationTargetObjectMetadataId: memberObject.id,
+        settings: { relationType: RelationType.ONE_TO_MANY },
+      } as unknown as FlatFieldMetadata;
+      const recordListIdField = {
+        id: 'record-list-id-field-id',
+        name: 'recordListId',
+        type: FieldMetadataType.UUID,
+        objectMetadataId: memberObject.id,
+        universalIdentifier: 'record-list-id-field-universal-id',
+      } as unknown as FlatFieldMetadata;
+      const flatFieldMetadataMaps = {
+        byUniversalIdentifier: {
+          [membershipsField.universalIdentifier]: membershipsField,
+          [recordListIdField.universalIdentifier]: recordListIdField,
+        },
+        universalIdentifierById: {
+          [membershipsField.id]: membershipsField.universalIdentifier,
+          [recordListIdField.id]: recordListIdField.universalIdentifier,
+        },
+        universalIdentifiersByApplicationId: {},
+      } as unknown as FlatEntityMaps<FlatFieldMetadata>;
+      const flatObjectMetadataMaps = {
+        byUniversalIdentifier: {
+          [parentObject.universalIdentifier]: parentObject,
+          [memberObject.universalIdentifier]: memberObject,
+        },
+        universalIdentifierById: {
+          [parentObject.id]: parentObject.universalIdentifier,
+          [memberObject.id]: memberObject.universalIdentifier,
+        },
+        universalIdentifiersByApplicationId: {},
+      } as unknown as FlatEntityMaps<FlatObjectMetadata>;
+      const filter = {
+        and: [
+          {
+            recordListMemberships: {
+              recordListId: {
+                eq: '20202020-1111-4111-8111-111111111111',
+              },
+            },
+          },
+          {
+            not: {
+              recordListMemberships: {
+                recordListId: {
+                  eq: '20202020-2222-4222-8222-222222222222',
+                },
+              },
+            },
+          },
+        ],
+      };
+
+      expect(
+        filterArgProcessorService.process({
+          filter,
+          flatObjectMetadata: parentObject,
+          flatObjectMetadataMaps,
+          flatFieldMetadataMaps,
+        }),
+      ).toEqual(filter);
+    });
+
     it('should process filter with "and" operator', () => {
       const fieldNames = ['textField', 'numberField'];
       const flatFieldMetadataMaps = createFlatFieldMetadataMaps(fieldNames);

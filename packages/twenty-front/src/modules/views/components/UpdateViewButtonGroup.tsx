@@ -1,6 +1,7 @@
 import { styled } from '@linaria/react';
 
 import { contextStoreCurrentViewIdComponentState } from '@/context-store/states/contextStoreCurrentViewIdComponentState';
+import { useRecordIndexContextOrThrow } from '@/object-record/record-index/contexts/RecordIndexContext';
 import { Dropdown } from '@/ui/layout/dropdown/components/Dropdown';
 import { DropdownContent } from '@/ui/layout/dropdown/components/DropdownContent';
 import { DropdownMenuItemsContainer } from '@/ui/layout/dropdown/components/DropdownMenuItemsContainer';
@@ -21,6 +22,7 @@ import { VIEW_PICKER_DROPDOWN_ID } from '@/views/view-picker/constants/ViewPicke
 import { useViewPickerMode } from '@/views/view-picker/hooks/useViewPickerMode';
 import { viewPickerReferenceViewIdComponentState } from '@/views/view-picker/states/viewPickerReferenceViewIdComponentState';
 import { t } from '@lingui/core/macro';
+import { isDefined } from 'twenty-shared/utils';
 import { IconChevronDown, IconPlus } from 'twenty-ui/icon';
 import { Button, ButtonGroup, IconButton } from 'twenty-ui/input';
 import { MenuItem } from 'twenty-ui/navigation';
@@ -34,6 +36,8 @@ const StyledContainer = styled.div`
 `;
 
 export const UpdateViewButtonGroup = () => {
+  const { requiredFilter } = useRecordIndexContextOrThrow();
+  const isRecordListView = isDefined(requiredFilter);
   const { saveCurrentViewFilterAndSorts } = useSaveCurrentViewFiltersAndSorts();
   const { canPersistChanges } = useCanPersistViewChanges();
 
@@ -105,7 +109,13 @@ export const UpdateViewButtonGroup = () => {
 
   return (
     <StyledContainer>
-      {currentView?.key !== 'INDEX' ? (
+      {isRecordListView ? (
+        <Button
+          title={t`Update view`}
+          onClick={handleUpdateViewClick}
+          disabled={!canPersistChanges}
+        />
+      ) : currentView?.key !== 'INDEX' ? (
         <ButtonGroup size="small" accent="blue">
           <Button
             title={t`Update view`}

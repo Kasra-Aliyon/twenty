@@ -551,6 +551,93 @@ export const STANDARD_FLAT_OBJECT_METADATA_BUILDERS_BY_OBJECT_NAME = {
       twentyStandardApplicationId,
       now,
     }),
+  recordListFolder: ({
+    now,
+    workspaceId,
+    standardObjectMetadataRelatedEntityIds,
+    twentyStandardApplicationId,
+    dependencyFlatEntityMaps,
+  }: Omit<
+    CreateStandardObjectArgs<'recordListFolder'>,
+    'context' | 'objectName'
+  >) =>
+    createStandardObjectFlatMetadata({
+      objectName: 'recordListFolder',
+      dependencyFlatEntityMaps,
+      context: {
+        universalIdentifier:
+          STANDARD_OBJECTS.recordListFolder.universalIdentifier,
+        nameSingular: 'recordListFolder',
+        namePlural: 'recordListFolders',
+        labelSingular: i18nLabel(msg`List Folder`),
+        labelPlural: i18nLabel(msg`List Folders`),
+        description: i18nLabel(msg`A folder for organizing record lists`),
+        icon: 'IconFolder',
+        isSystem: true,
+        labelIdentifierFieldMetadataName: 'name',
+      },
+      workspaceId,
+      standardObjectMetadataRelatedEntityIds,
+      twentyStandardApplicationId,
+      now,
+    }),
+  recordList: ({
+    now,
+    workspaceId,
+    standardObjectMetadataRelatedEntityIds,
+    twentyStandardApplicationId,
+    dependencyFlatEntityMaps,
+  }: Omit<CreateStandardObjectArgs<'recordList'>, 'context' | 'objectName'>) =>
+    createStandardObjectFlatMetadata({
+      objectName: 'recordList',
+      dependencyFlatEntityMaps,
+      context: {
+        universalIdentifier: STANDARD_OBJECTS.recordList.universalIdentifier,
+        nameSingular: 'recordList',
+        namePlural: 'recordLists',
+        labelSingular: i18nLabel(msg`Record List`),
+        labelPlural: i18nLabel(msg`Record Lists`),
+        description: i18nLabel(msg`A static list of records`),
+        icon: 'IconListDetails',
+        isSystem: true,
+        labelIdentifierFieldMetadataName: 'name',
+      },
+      workspaceId,
+      standardObjectMetadataRelatedEntityIds,
+      twentyStandardApplicationId,
+      now,
+    }),
+  recordListMember: ({
+    now,
+    workspaceId,
+    standardObjectMetadataRelatedEntityIds,
+    twentyStandardApplicationId,
+    dependencyFlatEntityMaps,
+  }: Omit<
+    CreateStandardObjectArgs<'recordListMember'>,
+    'context' | 'objectName'
+  >) =>
+    createStandardObjectFlatMetadata({
+      objectName: 'recordListMember',
+      dependencyFlatEntityMaps,
+      context: {
+        universalIdentifier:
+          STANDARD_OBJECTS.recordListMember.universalIdentifier,
+        nameSingular: 'recordListMember',
+        namePlural: 'recordListMembers',
+        labelSingular: i18nLabel(msg`Record List Member`),
+        labelPlural: i18nLabel(msg`Record List Members`),
+        description: i18nLabel(msg`A record's membership in a static list`),
+        icon: 'IconListDetails',
+        isSystem: true,
+        isUICreatable: false,
+        labelIdentifierFieldMetadataName: 'id',
+      },
+      workspaceId,
+      standardObjectMetadataRelatedEntityIds,
+      twentyStandardApplicationId,
+      now,
+    }),
   opportunity: ({
     now,
     workspaceId,

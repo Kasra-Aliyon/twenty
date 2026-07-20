@@ -1,6 +1,7 @@
 import { isLayoutCustomizationModeEnabledState } from '@/layout-customization/states/isLayoutCustomizationModeEnabledState';
 import { hasAnySoftDeleteFilterOnViewComponentSelector } from '@/object-record/record-filter/states/hasAnySoftDeleteFilterOnView';
 import { useRecordTableContextOrThrow } from '@/object-record/record-table/contexts/RecordTableContext';
+import { useRecordIndexContextOrThrow } from '@/object-record/record-index/contexts/RecordIndexContext';
 import { useCreateNewIndexRecord } from '@/object-record/record-table/hooks/useCreateNewIndexRecord';
 import { canCreateRecordsForObjectMetadataItem } from '@/object-record/utils/canCreateRecordsForObjectMetadataItem';
 import { useAtomComponentSelectorValue } from '@/ui/utilities/state/jotai/hooks/useAtomComponentSelectorValue';
@@ -17,6 +18,7 @@ const StyledHeaderIcon = styled.div`
 `;
 
 export const RecordTableHeaderLabelIdentifierCellPlusButton = () => {
+  const { isInlineRecordCreationDisabled } = useRecordIndexContextOrThrow();
   const { objectMetadataItem, objectPermissions } =
     useRecordTableContextOrThrow();
 
@@ -43,6 +45,7 @@ export const RecordTableHeaderLabelIdentifierCellPlusButton = () => {
     !isMobile &&
     !isLayoutCustomizationModeEnabled &&
     !hasAnySoftDeleteFilterOnView &&
+    !isInlineRecordCreationDisabled &&
     canCreateRecordsForObjectMetadataItem({
       objectPermissions,
       objectMetadataItem,

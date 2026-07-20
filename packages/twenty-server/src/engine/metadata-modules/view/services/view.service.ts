@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
+import { msg } from '@lingui/core/macro';
 import { APP_LOCALES, SOURCE_LOCALE } from 'twenty-shared/translations';
 import { ViewType, ViewVisibility } from 'twenty-shared/types';
 import { isDefined } from 'twenty-shared/utils';
@@ -30,6 +31,10 @@ import { DestroyViewInput } from 'src/engine/metadata-modules/view/dtos/inputs/d
 import { UpdateViewInput } from 'src/engine/metadata-modules/view/dtos/inputs/update-view.input';
 import { ViewDTO } from 'src/engine/metadata-modules/view/dtos/view.dto';
 import { ViewEntity } from 'src/engine/metadata-modules/view/entities/view.entity';
+import {
+  ViewException,
+  ViewExceptionCode,
+} from 'src/engine/metadata-modules/view/exceptions/view.exception';
 import { fromFlatViewToViewDto } from 'src/engine/metadata-modules/view/utils/from-flat-view-to-view-dto.util';
 import { InjectWorkspaceScopedRepository } from 'src/engine/twenty-orm/workspace-scoped-repository/inject-workspace-scoped-repository.decorator';
 import { WorkspaceScopedRepository } from 'src/engine/twenty-orm/workspace-scoped-repository/workspace-scoped-repository';
@@ -221,9 +226,11 @@ export class ViewService {
   async deleteOne({
     deleteViewInput,
     workspaceId,
+    isRecordListLifecycleOperation = false,
   }: {
     deleteViewInput: DeleteViewInput;
     workspaceId: string;
+    isRecordListLifecycleOperation?: boolean;
   }): Promise<ViewDTO> {
     const { workspaceCustomFlatApplication } =
       await this.applicationService.findWorkspaceTwentyStandardAndCustomApplicationOrThrow(
@@ -239,6 +246,22 @@ export class ViewService {
           flatMapsKeys: ['flatViewMaps'],
         },
       );
+
+    const existingFlatView = findFlatEntityByIdInFlatEntityMapsOrThrow({
+      flatEntityId: deleteViewInput.id,
+      flatEntityMaps: existingFlatViewMaps,
+    });
+
+    if (
+      isDefined(existingFlatView.recordListId) &&
+      !isRecordListLifecycleOperation
+    ) {
+      throw new ViewException(
+        'Record list views cannot be deleted independently',
+        ViewExceptionCode.VIEW_MODIFY_PERMISSION_DENIED,
+        { userFriendlyMessage: msg`Delete the list to remove this view.` },
+      );
+    }
 
     const optimisticallyUpdatedFlatViewWithDeletedAt =
       fromDeleteViewInputToFlatViewOrThrow({
@@ -293,9 +316,11 @@ export class ViewService {
   async destroyOne({
     destroyViewInput,
     workspaceId,
+    isRecordListLifecycleOperation = false,
   }: {
     destroyViewInput: DestroyViewInput;
     workspaceId: string;
+    isRecordListLifecycleOperation?: boolean;
   }): Promise<ViewDTO> {
     const { workspaceCustomFlatApplication } =
       await this.applicationService.findWorkspaceTwentyStandardAndCustomApplicationOrThrow(
@@ -321,6 +346,17 @@ export class ViewService {
       universalIdentifier: flatViewFromDestroyInput.universalIdentifier,
       flatEntityMaps: existingFlatViewMaps,
     });
+
+    if (
+      isDefined(existingFlatView.recordListId) &&
+      !isRecordListLifecycleOperation
+    ) {
+      throw new ViewException(
+        'Record list views cannot be destroyed independently',
+        ViewExceptionCode.VIEW_MODIFY_PERMISSION_DENIED,
+        { userFriendlyMessage: msg`Delete the list to remove this view.` },
+      );
+    }
 
     const shouldDeactivate = isCallerOverridingEntity({
       callerApplicationUniversalIdentifier:
