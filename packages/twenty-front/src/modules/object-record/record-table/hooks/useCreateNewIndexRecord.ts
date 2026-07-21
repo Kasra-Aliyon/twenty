@@ -5,15 +5,18 @@ import { getLabelIdentifierFieldMetadataItem } from '@/object-metadata/utils/get
 import { useBuildRecordInputFromRLSPredicates } from '@/object-record/hooks/useBuildRecordInputFromRLSPredicates';
 import { useCreateOneRecord } from '@/object-record/hooks/useCreateOneRecord';
 import { recordGroupDefinitionsComponentSelector } from '@/object-record/record-group/states/selectors/recordGroupDefinitionsComponentSelector';
+import { useRecordIndexContextOrThrow } from '@/object-record/record-index/contexts/RecordIndexContext';
 import { recordIndexGroupFieldMetadataItemComponentState } from '@/object-record/record-index/states/recordIndexGroupFieldMetadataComponentState';
 import { recordIndexOpenRecordInState } from '@/object-record/record-index/states/recordIndexOpenRecordInState';
 import { recordIndexRecordIdsByGroupComponentFamilyState } from '@/object-record/record-index/states/recordIndexRecordIdsByGroupComponentFamilyState';
+import { recordTableReloadRequestIdComponentState } from '@/object-record/record-table/states/recordTableReloadRequestIdComponentState';
 import { useUpsertRecordsInStore } from '@/object-record/record-store/hooks/useUpsertRecordsInStore';
 import { useBuildRecordInputFromFilters } from '@/object-record/record-table/hooks/useBuildRecordInputFromFilters';
 import { type ObjectRecord } from '@/object-record/types/ObjectRecord';
 import { canOpenObjectInSidePanel } from '@/object-record/utils/canOpenObjectInSidePanel';
 import { useAtomComponentFamilyStateCallbackState } from '@/ui/utilities/state/jotai/hooks/useAtomComponentFamilyStateCallbackState';
 import { useAtomComponentSelectorValue } from '@/ui/utilities/state/jotai/hooks/useAtomComponentSelectorValue';
+import { useSetAtomComponentState } from '@/ui/utilities/state/jotai/hooks/useSetAtomComponentState';
 import { useAtomComponentStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomComponentStateValue';
 import { ViewOpenRecordIn } from '~/generated-metadata/graphql';
 import { useStore } from 'jotai';
@@ -32,6 +35,12 @@ export const useCreateNewIndexRecord = ({
   objectMetadataItem,
   instanceId,
 }: UseCreateNewIndexRecordProps) => {
+  const { onRecordCreated, skipPostOptimisticEffectOnRecordCreate = false } =
+    useRecordIndexContextOrThrow();
+  const setRecordTableReloadRequestId = useSetAtomComponentState(
+    recordTableReloadRequestIdComponentState,
+    instanceId,
+  );
   const recordGroupDefinitions = useAtomComponentSelectorValue(
     recordGroupDefinitionsComponentSelector,
     instanceId,
@@ -56,6 +65,7 @@ export const useCreateNewIndexRecord = ({
   const { createOneRecord } = useCreateOneRecord({
     objectNameSingular: objectMetadataItem.nameSingular,
     shouldMatchRootQueryFilter: true,
+    skipPostOptimisticEffect: skipPostOptimisticEffectOnRecordCreate,
   });
 
   const { upsertRecordsInStore } = useUpsertRecordsInStore();
@@ -92,6 +102,12 @@ export const useCreateNewIndexRecord = ({
         id: recordId,
         ...mergedRecordInput,
       });
+
+      await onRecordCreated?.(createdRecord);
+
+      if (onRecordCreated) {
+        setRecordTableReloadRequestId((requestId) => requestId + 1);
+      }
 
       if (
         recordIndexOpenRecordIn === ViewOpenRecordIn.SIDE_PANEL &&
@@ -172,6 +188,8 @@ export const useCreateNewIndexRecord = ({
       recordIndexRecordIdsByGroupCallbackState,
       upsertRecordsInStore,
       closeSidePanelMenu,
+      onRecordCreated,
+      setRecordTableReloadRequestId,
     ],
   );
 

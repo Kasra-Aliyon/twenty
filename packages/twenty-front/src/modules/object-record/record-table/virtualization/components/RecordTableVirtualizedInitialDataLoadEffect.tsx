@@ -2,6 +2,7 @@ import { useRecordIndexTableLazyQuery } from '@/object-record/record-index/hooks
 import { useRecordTableContextOrThrow } from '@/object-record/record-table/contexts/RecordTableContext';
 
 import { visibleRecordFieldsComponentSelector } from '@/object-record/record-field/states/visibleRecordFieldsComponentSelector';
+import { recordTableReloadRequestIdComponentState } from '@/object-record/record-table/states/recordTableReloadRequestIdComponentState';
 import { recordTableWentFromEmptyToNotEmptyComponentState } from '@/object-record/record-table/states/recordTableWentFromEmptyToNotEmptyComponentState';
 import { useTriggerInitialRecordTableDataLoad } from '@/object-record/record-table/virtualization/hooks/useTriggerInitialRecordTableDataLoad';
 import { isInitializingVirtualTableDataLoadingComponentState } from '@/object-record/record-table/virtualization/states/isInitializingVirtualTableDataLoadingComponentState';
@@ -26,6 +27,12 @@ export const RecordTableVirtualizedInitialDataLoadEffect = () => {
     useAtomComponentState(lastRecordTableQueryIdentifierComponentState);
 
   const [isInitializedOnMount, setIsInitializedOnMount] = useState(false);
+
+  const [recordTableReloadRequestId] = useAtomComponentState(
+    recordTableReloadRequestIdComponentState,
+  );
+  const [lastProcessedReloadRequestId, setLastProcessedReloadRequestId] =
+    useState(recordTableReloadRequestId);
 
   const visibleRecordFields = useAtomComponentSelectorValue(
     visibleRecordFieldsComponentSelector,
@@ -93,6 +100,12 @@ export const RecordTableVirtualizedInitialDataLoadEffect = () => {
         setRecordTableWentFromEmptyToNotEmpty(false);
 
         await triggerInitialRecordTableDataLoad();
+      } else if (recordTableReloadRequestId !== lastProcessedReloadRequestId) {
+        setLastProcessedReloadRequestId(recordTableReloadRequestId);
+
+        await triggerInitialRecordTableDataLoad({
+          shouldScrollToStart: false,
+        });
       } else if (
         JSON.stringify(lastContextStoreVirtualizedVisibleRecordFields) !==
         JSON.stringify(visibleRecordFields)
@@ -117,6 +130,8 @@ export const RecordTableVirtualizedInitialDataLoadEffect = () => {
   }, [
     recordTableWentFromEmptyToNotEmpty,
     setRecordTableWentFromEmptyToNotEmpty,
+    recordTableReloadRequestId,
+    lastProcessedReloadRequestId,
     queryIdentifier,
     lastRecordTableQueryIdentifier,
     triggerInitialRecordTableDataLoad,

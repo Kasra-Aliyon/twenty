@@ -7,12 +7,15 @@ import { useFindManyRecords } from '@/object-record/hooks/useFindManyRecords';
 import { useLazyFindManyRecords } from '@/object-record/hooks/useLazyFindManyRecords';
 import { useObjectPermissionsForObject } from '@/object-record/hooks/useObjectPermissionsForObject';
 import { useOpenFormMultiRecordPicker } from '@/object-record/record-field/ui/form-types/hooks/useOpenFormMultiRecordPicker';
+import { useRecordIndexContextOrThrow } from '@/object-record/record-index/contexts/RecordIndexContext';
 import { MultipleRecordPicker } from '@/object-record/record-picker/multiple-record-picker/components/MultipleRecordPicker';
 import { multipleRecordPickerPickableMorphItemsComponentState } from '@/object-record/record-picker/multiple-record-picker/states/multipleRecordPickerPickableMorphItemsComponentState';
+import { recordTableReloadRequestIdComponentState } from '@/object-record/record-table/states/recordTableReloadRequestIdComponentState';
 import { useSnackBar } from '@/ui/feedback/snack-bar-manager/hooks/useSnackBar';
 import { Dropdown } from '@/ui/layout/dropdown/components/Dropdown';
 import { GenericDropdownContentWidth } from '@/ui/layout/dropdown/constants/GenericDropdownContentWidth';
 import { useCloseDropdown } from '@/ui/layout/dropdown/hooks/useCloseDropdown';
+import { useSetAtomComponentState } from '@/ui/utilities/state/jotai/hooks/useSetAtomComponentState';
 import { t } from '@lingui/core/macro';
 import { useStore } from 'jotai';
 import { useMemo, useState } from 'react';
@@ -43,6 +46,11 @@ export const RecordListMembershipActions = ({
   requiredFilter: RecordGqlOperationFilter;
 }) => {
   const pickerInstanceId = `record-list-add-records-${recordListId}`;
+  const { recordIndexId } = useRecordIndexContextOrThrow();
+  const setRecordTableReloadRequestId = useSetAtomComponentState(
+    recordTableReloadRequestIdComponentState,
+    recordIndexId,
+  );
   const store = useStore();
   const apolloCoreClient = useApolloCoreClient();
   const { closeDropdown } = useCloseDropdown();
@@ -135,6 +143,7 @@ export const RecordListMembershipActions = ({
         upsert: true,
       });
       await refreshActiveQueries();
+      setRecordTableReloadRequestId((requestId) => requestId + 1);
       enqueueSuccessSnackBar({ message: t`Records added to the list.` });
     } catch {
       enqueueErrorSnackBar({
@@ -162,6 +171,7 @@ export const RecordListMembershipActions = ({
         skipOptimisticEffect: true,
       });
       await refreshActiveQueries();
+      setRecordTableReloadRequestId((requestId) => requestId + 1);
       enqueueSuccessSnackBar({ message: t`Records removed from the list.` });
     } catch {
       enqueueErrorSnackBar({
@@ -192,10 +202,11 @@ export const RecordListMembershipActions = ({
             componentInstanceId={pickerInstanceId}
             focusId={pickerInstanceId}
             onSubmit={handleAddRecords}
-            onClickOutside={() => closeDropdown(pickerInstanceId)}
+            onClickOutside={handleAddRecords}
             layoutDirection="search-bar-on-top"
             dropdownWidth={GenericDropdownContentWidth.ExtraLarge}
             excludedRecordIds={[...existingTargetIds]}
+            submitButtonTitle={t`Add selected records`}
           />
         }
       />

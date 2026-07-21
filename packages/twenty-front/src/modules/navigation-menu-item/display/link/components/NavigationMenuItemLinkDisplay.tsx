@@ -12,8 +12,11 @@ import { useDoObjectMetadataItemsExist } from '@/object-metadata/hooks/useDoObje
 import { useObjectMetadataItems } from '@/object-metadata/hooks/useObjectMetadataItems';
 import { useFindManyRecords } from '@/object-record/hooks/useFindManyRecords';
 import { useObjectPermissions } from '@/object-record/hooks/useObjectPermissions';
+import { isRecordListsPanelOpenState } from '@/record-list/states/isRecordListsPanelOpenState';
 import { NavigationDrawerItem } from '@/ui/navigation/navigation-drawer/components/NavigationDrawerItem';
+import { useIsMobile } from '@/ui/utilities/responsive/hooks/useIsMobile';
 import { useAtomStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomStateValue';
+import { useSetAtomState } from '@/ui/utilities/state/jotai/hooks/useSetAtomState';
 import { styled } from '@linaria/react';
 
 const OBJECT_NAME_BY_LIST_TYPE = {
@@ -86,6 +89,11 @@ export const NavigationMenuItemLinkDisplay = ({
   const isLayoutCustomizationModeEnabled = useAtomStateValue(
     isLayoutCustomizationModeEnabledState,
   );
+  const isRecordListsPanelOpen = useAtomStateValue(isRecordListsPanelOpenState);
+  const setIsRecordListsPanelOpen = useSetAtomState(
+    isRecordListsPanelOpenState,
+  );
+  const isMobile = useIsMobile();
   const { theme } = useContext(ThemeContext);
 
   const label = getLinkNavigationMenuItemLabel(item);
@@ -94,6 +102,8 @@ export const NavigationMenuItemLinkDisplay = ({
   const doesRecordListMetadataItemExist = useDoObjectMetadataItemsExist([
     'recordList',
   ]);
+  const shouldOpenListsPanel =
+    isListsItem && !isMobile && !isLayoutCustomizationModeEnabled;
 
   const defaultRightOptions = !isLayoutCustomizationModeEnabled ? (
     isListsItem ? (
@@ -113,17 +123,19 @@ export const NavigationMenuItemLinkDisplay = ({
     <NavigationDrawerItem
       label={label}
       to={
-        isLayoutCustomizationModeEnabled || isDragging
+        isLayoutCustomizationModeEnabled || isDragging || shouldOpenListsPanel
           ? undefined
           : computedLink
       }
       onClick={
         isLayoutCustomizationModeEnabled
           ? editModeProps?.onEditModeClick
-          : undefined
+          : shouldOpenListsPanel
+            ? () => setIsRecordListsPanelOpen(true)
+            : undefined
       }
       Icon={() => <NavigationMenuItemIcon navigationMenuItem={item} />}
-      active={false}
+      active={shouldOpenListsPanel && isRecordListsPanelOpen}
       isSelectedInEditMode={editModeProps?.isSelectedInEditMode}
       isDragging={isDragging}
       triggerEvent="CLICK"

@@ -22,7 +22,8 @@ import { useAtomComponentStateCallbackState } from '@/ui/utilities/state/jotai/h
 import { Key } from 'ts-key-enum';
 import { isDefined } from 'twenty-shared/utils';
 import { t } from '@lingui/core/macro';
-import { IconPlus } from 'twenty-ui/icon';
+import { IconCheck, IconPlus } from 'twenty-ui/icon';
+import { MenuItem } from 'twenty-ui/navigation';
 
 type MultipleRecordPickerProps = {
   onChange?: (morphItem: RecordPickerPickableMorphItem) => void;
@@ -35,6 +36,7 @@ type MultipleRecordPickerProps = {
   objectMetadataItemIdForCreate?: string;
   dropdownWidth?: number;
   excludedRecordIds?: string[];
+  submitButtonTitle?: string;
 };
 
 export const MultipleRecordPicker = ({
@@ -48,6 +50,7 @@ export const MultipleRecordPicker = ({
   objectMetadataItemIdForCreate,
   dropdownWidth,
   excludedRecordIds,
+  submitButtonTitle,
 }: MultipleRecordPickerProps) => {
   const selectableListComponentInstanceId =
     getMultipleRecordPickerSelectableListId(componentInstanceId);
@@ -166,6 +169,15 @@ export const MultipleRecordPicker = ({
             />
             {createNewButtonSection}
           </>
+        )}
+        {isDefined(submitButtonTitle) && (
+          <DropdownMenuItemsContainer scrollable={false}>
+            <MenuItem
+              LeftIcon={IconCheck}
+              text={submitButtonTitle}
+              onClick={handleSubmit}
+            />
+          </DropdownMenuItemsContainer>
         )}
       </DropdownContent>
     </MultipleRecordPickerComponentInstanceContext.Provider>

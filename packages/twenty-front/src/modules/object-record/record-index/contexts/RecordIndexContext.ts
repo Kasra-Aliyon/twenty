@@ -3,6 +3,7 @@ import { type EnrichedObjectMetadataItem } from '@/object-metadata/types/Enriche
 import { type RecordField } from '@/object-record/record-field/types/RecordField';
 import { type FieldMetadata } from '@/object-record/record-field/ui/types/FieldMetadata';
 import { type ColumnDefinition } from '@/object-record/record-table/types/ColumnDefinition';
+import { type ObjectRecord } from '@/object-record/types/ObjectRecord';
 import { type ReactNode } from 'react';
 import {
   type ObjectPermissions,
@@ -13,6 +14,7 @@ import { createRequiredContext } from '~/utils/createRequiredContext';
 export type RecordIndexContextValue = {
   indexIdentifierUrl: (recordId: string) => string;
   onIndexRecordsLoaded: () => void;
+  onRecordCreated?: (record: ObjectRecord) => Promise<void> | void;
   objectNamePlural: string;
   objectNameSingular: string;
   objectMetadataItem: EnrichedObjectMetadataItem;
@@ -32,6 +34,7 @@ export type RecordIndexContextValue = {
   recordLimit?: number;
   requiredFilter?: RecordGqlOperationFilter;
   isInlineRecordCreationDisabled?: boolean;
+  skipPostOptimisticEffectOnRecordCreate?: boolean;
   pageTitle?: string;
   pageHeaderTag?: string;
   pageActions?: ReactNode;

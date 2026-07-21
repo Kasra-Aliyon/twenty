@@ -16,6 +16,7 @@ import { RecordIndexViewFieldsSSESyncEffect } from '@/object-record/record-index
 import { useHandleIndexIdentifierClick } from '@/object-record/record-index/hooks/useHandleIndexIdentifierClick';
 import { useRecordIndexFieldMetadataDerivedStates } from '@/object-record/record-index/hooks/useRecordIndexFieldMetadataDerivedStates';
 import { useRecordIndexIdFromCurrentContextStore } from '@/object-record/record-index/hooks/useRecordIndexIdFromCurrentContextStore';
+import { type ObjectRecord } from '@/object-record/types/ObjectRecord';
 import { RECORD_INDEX_DRAG_SELECT_BOUNDARY_CLASS } from '@/ui/utilities/drag-select/constants/RecordIndecDragSelectBoundaryClass';
 import { PageCardLayout } from '@/ui/layout/page/components/PageCardLayout';
 import { PageTitle } from '@/ui/utilities/page-title/components/PageTitle';
@@ -35,15 +36,19 @@ const StyledIndexContainer = styled.div`
 export const RecordIndexContainerGater = ({
   requiredFilter,
   isInlineRecordCreationDisabled = false,
+  skipPostOptimisticEffectOnRecordCreate = false,
   pageTitle,
   pageHeaderTag,
   pageActions,
+  onRecordCreated,
 }: {
   requiredFilter?: RecordGqlOperationFilter;
   isInlineRecordCreationDisabled?: boolean;
+  skipPostOptimisticEffectOnRecordCreate?: boolean;
   pageTitle?: string;
   pageHeaderTag?: string;
   pageActions?: ReactNode;
+  onRecordCreated?: (record: ObjectRecord) => Promise<void> | void;
 } = {}) => {
   const store = useStore();
 
@@ -88,6 +93,7 @@ export const RecordIndexContainerGater = ({
           objectNameSingular: objectMetadataItem.nameSingular,
           objectMetadataItem,
           onIndexRecordsLoaded: handleIndexRecordsLoaded,
+          onRecordCreated,
           indexIdentifierUrl,
           recordFieldByFieldMetadataItemId,
           labelIdentifierFieldMetadataItem,
@@ -95,6 +101,7 @@ export const RecordIndexContainerGater = ({
           fieldDefinitionByFieldMetadataItemId,
           requiredFilter,
           isInlineRecordCreationDisabled,
+          skipPostOptimisticEffectOnRecordCreate,
           pageTitle,
           pageHeaderTag,
           pageActions,

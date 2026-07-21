@@ -9,6 +9,7 @@ import { LayoutCustomizationBar } from '@/layout-customization/components/Layout
 import { AppNavigationDrawer } from '@/navigation/components/AppNavigationDrawer';
 import { MobileNavigationBar } from '@/navigation/components/MobileNavigationBar';
 import { PageDragDropProvider } from '@/navigation-menu-item/display/dnd/providers/PageDragDropProvider';
+import { RecordListsPanelForDesktop } from '@/record-list/components/RecordListsPanelForDesktop';
 import { BackgroundMockNavigationDrawer } from '@/sign-in-background-mock/components/BackgroundMockNavigationDrawer';
 import { Suspense, lazy } from 'react';
 
@@ -45,6 +46,7 @@ const StyledPageContainer = styled.div`
   flex-direction: row;
   min-height: 0;
   min-width: 0;
+  position: relative;
 `;
 
 const StyledNavigationDrawerWrapper = styled.div`
@@ -78,9 +80,12 @@ export const DefaultLayout = () => {
                     <BackgroundMockNavigationDrawer />
                   </StyledNavigationDrawerWrapper>
                 ) : useShowFullScreen ? null : (
-                  <StyledNavigationDrawerWrapper>
-                    <AppNavigationDrawer />
-                  </StyledNavigationDrawerWrapper>
+                  <>
+                    <StyledNavigationDrawerWrapper>
+                      <AppNavigationDrawer />
+                    </StyledNavigationDrawerWrapper>
+                    {!isMobile && <RecordListsPanelForDesktop />}
+                  </>
                 )}
                 {showAuthModal ? (
                   <>

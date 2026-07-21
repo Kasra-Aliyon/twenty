@@ -8,12 +8,14 @@ import { type RecordListFolderRecord } from '../types/RecordListRecords';
 import { StyledForm, StyledInput, StyledSelect } from './RecordListsPageStyles';
 
 export const RecordListManagementForms = ({
+  mode,
   folders,
   nextListPositionByFolderId,
   isSaving,
   onCreateFolder,
   onCreateList,
 }: {
+  mode: 'folder' | 'list';
   folders: RecordListFolderRecord[];
   nextListPositionByFolderId: Record<string, number>;
   isSaving: boolean;
@@ -34,73 +36,77 @@ export const RecordListManagementForms = ({
 
   return (
     <>
-      <StyledForm
-        onSubmit={(event) => {
-          event.preventDefault();
-          onCreateFolder(newFolderName);
-          setNewFolderName('');
-        }}
-      >
-        <StyledInput
-          value={newFolderName}
-          onChange={(event) => setNewFolderName(event.target.value)}
-          placeholder={t`New folder name`}
-          aria-label={t`New folder name`}
-          required
-        />
-        <Button
-          title={t`Create folder`}
-          type="submit"
-          variant="secondary"
-          disabled={isSaving}
-        />
-      </StyledForm>
-      <StyledForm
-        onSubmit={(event) => {
-          event.preventDefault();
-          onCreateList({
-            name: newListName,
-            type: newListType,
-            folderId: newListFolderId || null,
-            position: nextListPositionByFolderId[newListFolderId] ?? 0,
-          });
-          setNewListName('');
-        }}
-      >
-        <StyledInput
-          value={newListName}
-          onChange={(event) => setNewListName(event.target.value)}
-          placeholder={t`New list name`}
-          aria-label={t`New list name`}
-          required
-        />
-        <StyledSelect
-          value={newListType}
-          onChange={(event) =>
-            setNewListType(event.target.value as RecordListType)
-          }
-          aria-label={t`List type`}
+      {mode === 'folder' && (
+        <StyledForm
+          onSubmit={(event) => {
+            event.preventDefault();
+            onCreateFolder(newFolderName);
+            setNewFolderName('');
+          }}
         >
-          <option value={RECORD_LIST_TYPES.COMPANY}>{t`Companies`}</option>
-          <option value={RECORD_LIST_TYPES.PERSON}>{t`People`}</option>
-          <option value={RECORD_LIST_TYPES.OPPORTUNITY}>
-            {t`Opportunities`}
-          </option>
-        </StyledSelect>
-        <StyledSelect
-          value={newListFolderId}
-          onChange={(event) => setNewListFolderId(event.target.value)}
-          aria-label={t`List folder`}
+          <StyledInput
+            value={newFolderName}
+            onChange={(event) => setNewFolderName(event.target.value)}
+            placeholder={t`New folder name`}
+            aria-label={t`New folder name`}
+            required
+          />
+          <Button
+            title={t`Create folder`}
+            type="submit"
+            variant="secondary"
+            disabled={isSaving}
+          />
+        </StyledForm>
+      )}
+      {mode === 'list' && (
+        <StyledForm
+          onSubmit={(event) => {
+            event.preventDefault();
+            onCreateList({
+              name: newListName,
+              type: newListType,
+              folderId: newListFolderId || null,
+              position: nextListPositionByFolderId[newListFolderId] ?? 0,
+            });
+            setNewListName('');
+          }}
         >
-          <option value={ROOT_RECORD_LIST_FOLDER_ID}>{t`No folder`}</option>
-          {folders.map((folder) => (
-            <option key={folder.id} value={folder.id}>
-              {folder.name}
+          <StyledInput
+            value={newListName}
+            onChange={(event) => setNewListName(event.target.value)}
+            placeholder={t`New list name`}
+            aria-label={t`New list name`}
+            required
+          />
+          <StyledSelect
+            value={newListType}
+            onChange={(event) =>
+              setNewListType(event.target.value as RecordListType)
+            }
+            aria-label={t`List type`}
+          >
+            <option value={RECORD_LIST_TYPES.COMPANY}>{t`Companies`}</option>
+            <option value={RECORD_LIST_TYPES.PERSON}>{t`People`}</option>
+            <option value={RECORD_LIST_TYPES.OPPORTUNITY}>
+              {t`Opportunities`}
             </option>
-          ))}
-        </StyledSelect>
-        <Button title={t`Create list`} type="submit" disabled={isSaving} />
-      </StyledForm>
+          </StyledSelect>
+          <StyledSelect
+            value={newListFolderId}
+            onChange={(event) => setNewListFolderId(event.target.value)}
+            aria-label={t`List folder`}
+          >
+            <option value={ROOT_RECORD_LIST_FOLDER_ID}>{t`No folder`}</option>
+            {folders.map((folder) => (
+              <option key={folder.id} value={folder.id}>
+                {folder.name}
+              </option>
+            ))}
+          </StyledSelect>
+          <Button title={t`Create list`} type="submit" disabled={isSaving} />
+        </StyledForm>
+      )}
     </>
   );
 };

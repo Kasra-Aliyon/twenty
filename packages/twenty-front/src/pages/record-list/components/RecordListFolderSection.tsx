@@ -3,34 +3,30 @@ import { generatePath } from 'react-router-dom';
 import { AppPath, RECORD_LIST_TYPES } from 'twenty-shared/types';
 import {
   IconBuildingSkyscraper,
-  IconChevronDown,
-  IconChevronUp,
   IconFolder,
-  IconPencil,
   IconTargetArrow,
-  IconTrash,
   IconUser,
 } from 'twenty-ui/icon';
-import { Button } from 'twenty-ui/input';
 
-import { ROOT_RECORD_LIST_FOLDER_ID } from '../constants/record-list-folder.constants';
-import {
-  type EditingRecordListItem,
-  type RecordListFolderRecord,
-  type RecordListRecord,
-} from '../types/RecordListRecords';
+import { RecordListItemActionsDropdown } from './RecordListItemActionsDropdown';
+import { RecordListSortableItem } from './RecordListSortableItem';
 import {
   StyledActions,
   StyledFolder,
   StyledFolderCount,
   StyledFolderHeader,
   StyledFolderIcon,
+  StyledFolderNameInput,
   StyledFolderTitle,
   StyledListIcon,
   StyledListLink,
   StyledListRow,
-  StyledSelect,
 } from './RecordListsPageStyles';
+import {
+  type EditingRecordListItem,
+  type RecordListFolderRecord,
+  type RecordListRecord,
+} from '../types/RecordListRecords';
 
 const LIST_ICON_BY_TYPE = {
   [RECORD_LIST_TYPES.COMPANY]: IconBuildingSkyscraper,
@@ -38,42 +34,45 @@ const LIST_ICON_BY_TYPE = {
   [RECORD_LIST_TYPES.OPPORTUNITY]: IconTargetArrow,
 } as const;
 
-export const RecordListFolderSection = ({
-  folder,
-  folderIndex,
-  folderCount,
-  lists,
-  folders,
-  listCountByFolderId,
-  nextListPositionByFolderId,
-  canManageLists,
-  isReorderingDisabled,
-  isSaving,
-  onUpdateFolderPosition,
-  onDeleteFolder,
-  onUpdateList,
-  onDeleteList,
-  onStartRename,
-}: {
-  folder: RecordListFolderRecord | null;
-  folderIndex: number;
-  folderCount: number;
-  lists: RecordListRecord[];
-  folders: RecordListFolderRecord[];
-  listCountByFolderId: Record<string, number>;
-  nextListPositionByFolderId: Record<string, number>;
+type RecordListFolderSectionProps = {
   canManageLists: boolean;
+  folder: RecordListFolderRecord | null;
+  isFolderDeleteDisabled?: boolean;
+  isFolderPinDisabled?: boolean;
   isReorderingDisabled: boolean;
   isSaving: boolean;
-  onUpdateFolderPosition: (folderId: string, position: number) => void;
+  listSortableGroup: string;
+  lists: RecordListRecord[];
+  newFolderDraft: EditingRecordListItem | null;
+  onChangeNewFolderDraft: (item: EditingRecordListItem) => void;
   onDeleteFolder: (folderId: string) => void;
-  onUpdateList: (
-    listId: string,
-    input: { position?: number; folderId?: string | null },
-  ) => void;
   onDeleteList: (listId: string) => void;
+  onPinFolder: (folderId: string) => void;
+  onPinList: (listId: string) => void;
+  onSaveNewFolderName: (name: string) => void;
+  onSelectList?: () => void;
   onStartRename: (item: EditingRecordListItem) => void;
-}) => (
+};
+
+export const RecordListFolderSection = ({
+  canManageLists,
+  folder,
+  isFolderDeleteDisabled = false,
+  isFolderPinDisabled = false,
+  isReorderingDisabled,
+  isSaving,
+  listSortableGroup,
+  lists,
+  newFolderDraft,
+  onChangeNewFolderDraft,
+  onDeleteFolder,
+  onDeleteList,
+  onPinFolder,
+  onPinList,
+  onSaveNewFolderName,
+  onSelectList,
+  onStartRename,
+}: RecordListFolderSectionProps) => (
   <StyledFolder>
     {folder && (
       <StyledFolderHeader>
@@ -81,70 +80,49 @@ export const RecordListFolderSection = ({
           <StyledFolderIcon>
             <IconFolder size={16} />
           </StyledFolderIcon>
-          <span>{folder.name}</span>
+          {newFolderDraft?.id === folder.id ? (
+            <StyledFolderNameInput
+              autoFocus
+              value={newFolderDraft.name}
+              onChange={(event) =>
+                onChangeNewFolderDraft({
+                  ...newFolderDraft,
+                  name: event.target.value,
+                })
+              }
+              onFocus={(event) => event.currentTarget.select()}
+              onBlur={(event) => onSaveNewFolderName(event.currentTarget.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  event.currentTarget.blur();
+                }
+              }}
+              aria-label={t`Folder name`}
+            />
+          ) : (
+            <span>{folder.name}</span>
+          )}
           <StyledFolderCount>{lists.length}</StyledFolderCount>
         </StyledFolderTitle>
         {canManageLists && (
           <StyledActions data-record-list-actions>
-            <Button
-              ariaLabel={t`Move folder up`}
-              Icon={IconChevronUp}
-              variant="tertiary"
-              size="small"
-              disabled={folderIndex === 0 || isReorderingDisabled || isSaving}
-              onClick={() =>
-                onUpdateFolderPosition(
-                  folder.id,
-                  folderIndex === 1
-                    ? folders[0].position - 1
-                    : (folders[folderIndex - 2].position +
-                        folders[folderIndex - 1].position) /
-                        2,
-                )
+            <RecordListItemActionsDropdown
+              itemId={folder.id}
+              itemKind="folder"
+              isPinDisabled={
+                isFolderPinDisabled || isReorderingDisabled || isSaving
               }
-            />
-            <Button
-              ariaLabel={t`Move folder down`}
-              Icon={IconChevronDown}
-              variant="tertiary"
-              size="small"
-              disabled={
-                folderIndex === folderCount - 1 ||
-                isReorderingDisabled ||
-                isSaving
-              }
-              onClick={() =>
-                onUpdateFolderPosition(
-                  folder.id,
-                  folderIndex === folderCount - 2
-                    ? folders[folderIndex + 1].position + 1
-                    : (folders[folderIndex + 1].position +
-                        folders[folderIndex + 2].position) /
-                        2,
-                )
-              }
-            />
-            <Button
-              ariaLabel={t`Rename folder`}
-              Icon={IconPencil}
-              variant="tertiary"
-              size="small"
-              onClick={() =>
+              isDeleteDisabled={isFolderDeleteDisabled || isSaving}
+              onPin={() => onPinFolder(folder.id)}
+              onRename={() =>
                 onStartRename({
                   kind: 'folder',
                   id: folder.id,
                   name: folder.name,
                 })
               }
-            />
-            <Button
-              ariaLabel={t`Delete folder`}
-              Icon={IconTrash}
-              variant="tertiary"
-              accent="danger"
-              size="small"
-              disabled={(listCountByFolderId[folder.id] ?? 0) > 0 || isSaving}
-              onClick={() => onDeleteFolder(folder.id)}
+              onDelete={() => onDeleteFolder(folder.id)}
             />
           </StyledActions>
         )}
@@ -154,102 +132,53 @@ export const RecordListFolderSection = ({
       const ListIcon = LIST_ICON_BY_TYPE[recordList.type];
 
       return (
-        <StyledListRow key={recordList.id}>
-          <StyledListLink
-            to={generatePath(AppPath.RecordListPage, {
-              recordListId: recordList.id,
-            })}
-          >
-            <StyledListIcon>
-              <ListIcon size={16} />
-            </StyledListIcon>
-            <span>{recordList.name}</span>
-          </StyledListLink>
-          {canManageLists && (
-            <StyledActions data-record-list-actions>
-              <Button
-                ariaLabel={t`Move list up`}
-                Icon={IconChevronUp}
-                variant="tertiary"
-                size="small"
-                disabled={listIndex === 0 || isReorderingDisabled || isSaving}
-                onClick={() =>
-                  onUpdateList(recordList.id, {
-                    position:
-                      listIndex === 1
-                        ? lists[0].position - 1
-                        : (lists[listIndex - 2].position +
-                            lists[listIndex - 1].position) /
-                          2,
-                  })
-                }
-              />
-              <Button
-                ariaLabel={t`Move list down`}
-                Icon={IconChevronDown}
-                variant="tertiary"
-                size="small"
-                disabled={
-                  listIndex === lists.length - 1 ||
-                  isReorderingDisabled ||
-                  isSaving
-                }
-                onClick={() =>
-                  onUpdateList(recordList.id, {
-                    position:
-                      listIndex === lists.length - 2
-                        ? lists[listIndex + 1].position + 1
-                        : (lists[listIndex + 1].position +
-                            lists[listIndex + 2].position) /
-                          2,
-                  })
-                }
-              />
-              <StyledSelect
-                value={recordList.folderId ?? ROOT_RECORD_LIST_FOLDER_ID}
-                aria-label={t`Move list to folder`}
-                onChange={(event) =>
-                  onUpdateList(recordList.id, {
-                    folderId: event.target.value || null,
-                    position:
-                      nextListPositionByFolderId[event.target.value] ?? 0,
-                  })
-                }
-              >
-                <option
-                  value={ROOT_RECORD_LIST_FOLDER_ID}
-                >{t`No folder`}</option>
-                {folders.map((folderOption) => (
-                  <option key={folderOption.id} value={folderOption.id}>
-                    {folderOption.name}
-                  </option>
-                ))}
-              </StyledSelect>
-              <Button
-                ariaLabel={t`Rename list`}
-                Icon={IconPencil}
-                variant="tertiary"
-                size="small"
-                onClick={() =>
-                  onStartRename({
-                    kind: 'list',
-                    id: recordList.id,
-                    name: recordList.name,
-                  })
-                }
-              />
-              <Button
-                ariaLabel={t`Delete list`}
-                Icon={IconTrash}
-                variant="tertiary"
-                accent="danger"
-                size="small"
-                disabled={isSaving}
-                onClick={() => onDeleteList(recordList.id)}
-              />
-            </StyledActions>
-          )}
-        </StyledListRow>
+        <RecordListSortableItem
+          key={recordList.id}
+          id={`record-list:${recordList.id}`}
+          index={listIndex}
+          group={listSortableGroup}
+          disabled={
+            !canManageLists ||
+            isReorderingDisabled ||
+            isSaving ||
+            lists.length === 1
+          }
+        >
+          <StyledListRow>
+            <StyledListLink
+              to={generatePath(AppPath.RecordListPage, {
+                recordListId: recordList.id,
+              })}
+              onClick={onSelectList}
+            >
+              <StyledListIcon>
+                <ListIcon size={16} />
+              </StyledListIcon>
+              <span>{recordList.name}</span>
+            </StyledListLink>
+            {canManageLists && (
+              <StyledActions data-record-list-actions>
+                <RecordListItemActionsDropdown
+                  itemId={recordList.id}
+                  itemKind="list"
+                  isPinDisabled={
+                    listIndex === 0 || isReorderingDisabled || isSaving
+                  }
+                  isDeleteDisabled={isSaving}
+                  onPin={() => onPinList(recordList.id)}
+                  onRename={() =>
+                    onStartRename({
+                      kind: 'list',
+                      id: recordList.id,
+                      name: recordList.name,
+                    })
+                  }
+                  onDelete={() => onDeleteList(recordList.id)}
+                />
+              </StyledActions>
+            )}
+          </StyledListRow>
+        </RecordListSortableItem>
       );
     })}
   </StyledFolder>

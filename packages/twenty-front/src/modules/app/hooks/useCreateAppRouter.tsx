@@ -36,6 +36,12 @@ const RecordListsPage = lazy(() =>
   })),
 );
 
+const RecordListCreatePage = lazy(() =>
+  import('~/pages/record-list/RecordListCreatePage').then((module) => ({
+    default: module.RecordListCreatePage,
+  })),
+);
+
 const RecordListPage = lazy(() =>
   import('~/pages/record-list/RecordListPage').then((module) => ({
     default: module.RecordListPage,
@@ -246,6 +252,14 @@ export const useCreateAppRouter = (
               element={
                 <LazyRoute>
                   <RecordListsPage />
+                </LazyRoute>
+              }
+            />
+            <Route
+              path={AppPath.RecordListCreatePage}
+              element={
+                <LazyRoute>
+                  <RecordListCreatePage />
                 </LazyRoute>
               }
             />

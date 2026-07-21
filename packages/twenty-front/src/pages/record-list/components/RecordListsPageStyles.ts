@@ -3,10 +3,14 @@ import { Link } from 'react-router-dom';
 import { themeCssVariables } from 'twenty-ui/theme-constants';
 
 export const StyledContent = styled.div`
+  box-sizing: border-box;
   display: flex;
   flex: 1;
+  min-height: 0;
+  min-width: 0;
   overflow: auto;
   padding: ${themeCssVariables.spacing[4]};
+  width: 100%;
 `;
 
 export const StyledPanel = styled.div`
@@ -15,6 +19,31 @@ export const StyledPanel = styled.div`
   gap: ${themeCssVariables.spacing[3]};
   max-width: 560px;
   width: 100%;
+`;
+
+export const StyledSidePanel = styled.div`
+  background: ${themeCssVariables.background.primary};
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+`;
+
+export const StyledSidePanelHeader = styled.div`
+  align-items: center;
+  box-sizing: border-box;
+  display: flex;
+  flex-shrink: 0;
+  height: 52px;
+  justify-content: space-between;
+  padding: 0 ${themeCssVariables.spacing[3]} 0 ${themeCssVariables.spacing[4]};
+`;
+
+export const StyledSidePanelTitle = styled.span`
+  color: ${themeCssVariables.font.color.primary};
+  font-size: ${themeCssVariables.font.size.lg};
+  font-weight: ${themeCssVariables.font.weight.semiBold};
 `;
 
 export const StyledExplorerHeader = styled.div`
@@ -83,15 +112,9 @@ export const StyledFolderHeader = styled.div`
   justify-content: space-between;
   min-height: 32px;
   padding: 0 ${themeCssVariables.spacing[2]};
-  position: relative;
 
   &:hover {
     background: ${themeCssVariables.background.transparent.light};
-  }
-
-  &:hover > [data-record-list-actions],
-  &:focus-within > [data-record-list-actions] {
-    opacity: 1;
   }
 `;
 
@@ -112,6 +135,19 @@ export const StyledFolderIcon = styled.span`
   display: flex;
 `;
 
+export const StyledFolderNameInput = styled.input`
+  background: transparent;
+  border: 0;
+  color: ${themeCssVariables.font.color.primary};
+  flex: 1;
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  min-width: 0;
+  outline: 0;
+  padding: 0;
+`;
+
 export const StyledFolderCount = styled.span`
   color: ${themeCssVariables.font.color.tertiary};
   font-size: ${themeCssVariables.font.size.sm};
@@ -121,15 +157,8 @@ export const StyledFolderCount = styled.span`
 
 export const StyledActions = styled.div`
   align-items: center;
-  background: ${themeCssVariables.background.primary};
   display: flex;
-  gap: ${themeCssVariables.spacing[1]};
-  opacity: 0;
-  padding-left: ${themeCssVariables.spacing[2]};
-  position: absolute;
-  right: ${themeCssVariables.spacing[1]};
-  transition: opacity 100ms ease;
-  z-index: 1;
+  flex-shrink: 0;
 `;
 
 export const StyledListRow = styled.div`
@@ -138,15 +167,9 @@ export const StyledListRow = styled.div`
   display: flex;
   min-height: 36px;
   padding-left: ${themeCssVariables.spacing[3]};
-  position: relative;
 
   &:hover {
     background: ${themeCssVariables.background.transparent.light};
-  }
-
-  &:hover > [data-record-list-actions],
-  &:focus-within > [data-record-list-actions] {
-    opacity: 1;
   }
 `;
 

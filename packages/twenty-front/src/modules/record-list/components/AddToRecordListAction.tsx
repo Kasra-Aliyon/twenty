@@ -29,8 +29,8 @@ import { MenuItem } from 'twenty-ui/navigation';
 type CompatibleRecordList = ObjectRecord & {
   name: string;
   type: RecordListType;
-  folderId: string;
-  folder: { id: string; name: string };
+  folderId: string | null;
+  folder: { id: string; name: string } | null;
 };
 
 const LIST_TYPE_BY_OBJECT_NAME = {
@@ -58,6 +58,8 @@ const AddToRecordListActionContent = ({
   const { selectedRecords } = useCurrentCommandMenuContextApi();
   const { objectMetadataItem: recordListObjectMetadataItem } =
     useObjectMetadataItem({ objectNameSingular: 'recordList' });
+  const { objectMetadataItem: targetObjectMetadataItem } =
+    useObjectMetadataItem({ objectNameSingular });
   const recordListPermissions = useObjectPermissionsForObject(
     recordListObjectMetadataItem.id,
   );
@@ -101,10 +103,9 @@ const AddToRecordListActionContent = ({
   const listsByFolder = compatibleLists.reduce<
     Record<string, CompatibleRecordList[]>
   >((accumulator, recordList) => {
-    accumulator[recordList.folder.name] = [
-      ...(accumulator[recordList.folder.name] ?? []),
-      recordList,
-    ];
+    const folderName = recordList.folder?.name ?? t`No folder`;
+
+    accumulator[folderName] = [...(accumulator[folderName] ?? []), recordList];
 
     return accumulator;
   }, {});
@@ -121,7 +122,11 @@ const AddToRecordListActionContent = ({
         })),
         upsert: true,
       });
-      await apolloCoreClient.refetchQueries({ include: 'active' });
+      await apolloCoreClient.refetchQueries({
+        updateCache: (cache) => {
+          cache.evict({ fieldName: targetObjectMetadataItem.namePlural });
+        },
+      });
       enqueueSuccessSnackBar({ message: t`Records added to the list.` });
     } catch {
       enqueueErrorSnackBar({

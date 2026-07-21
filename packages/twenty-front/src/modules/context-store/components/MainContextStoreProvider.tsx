@@ -72,7 +72,15 @@ const RecordListMainContextStoreProvider = ({
   const objectMetadataItem = objectMetadataItems.find(
     (item) => item.nameSingular === recordListObjectName,
   );
-  const viewId = views.find((view) => view.recordListId === recordListId)?.id;
+  const recordListViewId = views.find(
+    (view) => view.recordListId === recordListId,
+  )?.id;
+  const fallbackIndexViewId = views.find(
+    (view) =>
+      view.objectMetadataId === objectMetadataItem?.id &&
+      view.key === ViewKey.INDEX,
+  )?.id;
+  const viewId = recordListViewId ?? fallbackIndexViewId;
 
   return (
     <MainContextStoreProviderEffect
@@ -93,7 +101,13 @@ export const MainContextStoreProvider = () => {
     AppPath.RecordIndexPage,
   );
   const isRecordShowPage = isMatchingLocation(location, AppPath.RecordShowPage);
-  const isRecordListPage = isMatchingLocation(location, AppPath.RecordListPage);
+  const isRecordListCreatePage = isMatchingLocation(
+    location,
+    AppPath.RecordListCreatePage,
+  );
+  const isRecordListPage =
+    !isRecordListCreatePage &&
+    isMatchingLocation(location, AppPath.RecordListPage);
   const isStandalonePage = isMatchingLocation(location, AppPath.PageLayoutPage);
   const isSettingsPage = useIsSettingsPage();
 
