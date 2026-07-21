@@ -698,6 +698,37 @@ export const STANDARD_FLAT_OBJECT_METADATA_BUILDERS_BY_OBJECT_NAME = {
       twentyStandardApplicationId,
       now,
     }),
+  linkedinAction: ({
+    now,
+    workspaceId,
+    standardObjectMetadataRelatedEntityIds,
+    twentyStandardApplicationId,
+    dependencyFlatEntityMaps,
+  }: Omit<
+    CreateStandardObjectArgs<'linkedinAction'>,
+    'context' | 'objectName'
+  >) =>
+    createStandardObjectFlatMetadata({
+      objectName: 'linkedinAction',
+      dependencyFlatEntityMaps,
+      context: {
+        universalIdentifier:
+          STANDARD_OBJECTS.linkedinAction.universalIdentifier,
+        nameSingular: 'linkedinAction',
+        namePlural: 'linkedinActions',
+        labelSingular: i18nLabel(msg`LinkedIn Action`),
+        labelPlural: i18nLabel(msg`LinkedIn Actions`),
+        description: i18nLabel(msg`A browser-executed LinkedIn action`),
+        icon: 'IconBrandLinkedin',
+        isSystem: true,
+        isUICreatable: false,
+        labelIdentifierFieldMetadataName: 'linkedinUrl',
+      },
+      workspaceId,
+      standardObjectMetadataRelatedEntityIds,
+      twentyStandardApplicationId,
+      now,
+    }),
   sequence: ({
     now,
     workspaceId,

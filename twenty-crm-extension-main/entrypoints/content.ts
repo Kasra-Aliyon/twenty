@@ -1,5 +1,13 @@
-import { scrapeCurrentPage, getLinkedInPageType } from '../utils/linkedin-scraper';
-import type { CaptureState, LinkedInData, ExtensionResponse, TwentyPerson, TwentyCompany } from '../types';
+import {
+  scrapeCurrentPage,
+  getLinkedInPageType,
+} from '../utils/linkedin-scraper';
+import type {
+  CaptureState,
+  LinkedInData,
+  ExtensionResponse,
+  TwentyRecordList,
+} from '../types';
 
 // Content script CSS
 const FLOATING_BUTTON_STYLES = `
@@ -303,6 +311,63 @@ const FLOATING_BUTTON_STYLES = `
     color: #6b7280;
     font-size: 13px;
   }
+
+  .twenty-list-group-title {
+    background: #f9fafb;
+    color: #6b7280;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    padding: 8px 16px;
+    text-transform: uppercase;
+  }
+
+  .twenty-list-row {
+    align-items: center;
+    border-bottom: 1px solid #f3f4f6;
+    color: #1f2937;
+    cursor: pointer;
+    display: flex;
+    font-size: 14px;
+    gap: 10px;
+    padding: 10px 16px;
+  }
+
+  .twenty-list-row:hover {
+    background: #f9fafb;
+  }
+
+  .twenty-list-new-row,
+  .twenty-list-footer {
+    align-items: center;
+    border-top: 1px solid #e5e7eb;
+    display: flex;
+    gap: 8px;
+    padding: 12px 16px;
+  }
+
+  .twenty-list-new-row input {
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    flex: 1;
+    min-width: 0;
+    padding: 8px;
+  }
+
+  .twenty-list-action {
+    background: #6366f1;
+    border: none;
+    border-radius: 6px;
+    color: white;
+    cursor: pointer;
+    font-size: 13px;
+    padding: 8px 12px;
+  }
+
+  .twenty-list-action:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
 `;
 
 // SVG Icons
@@ -327,13 +392,14 @@ type SearchResult = {
 export default defineContentScript({
   matches: ['*://*.linkedin.com/in/*', '*://*.linkedin.com/company/*'],
   runAt: 'document_idle',
-  
+
   main(ctx) {
     console.log('Twenty CRM content script loaded on:', window.location.href);
-    
+
     // State
     let state: CaptureState = {
       status: 'idle',
+      showListPanel: false,
       data: undefined,
       existingRecord: undefined,
       error: undefined,
@@ -346,26 +412,31 @@ export default defineContentScript({
     let searchResults: SearchResult[] = [];
     let isSearching = false;
     let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-    
+    let recordLists: TwentyRecordList[] = [];
+    let selectedRecordListIds = new Set<string>();
+    let newRecordListName = '';
+    let isCreatingRecordList = false;
+    let isAddingToRecordLists = false;
+
     // DOM elements
     let container: HTMLDivElement | null = null;
     let styleEl: HTMLStyleElement | null = null;
-    
+
     // Initialize
     function init() {
       // Inject styles
       styleEl = document.createElement('style');
       styleEl.textContent = FLOATING_BUTTON_STYLES;
       document.head.appendChild(styleEl);
-      
+
       // Create container for floating button
       container = document.createElement('div');
       container.id = 'twenty-capture-root';
       document.body.appendChild(container);
-      
+
       // Initial render
       render();
-      
+
       // Check for existing record after a short delay
       setTimeout(checkExisting, 1500);
     }
@@ -383,46 +454,64 @@ export default defineContentScript({
 
       return null;
     }
-    
+
     // Check for existing record
     async function checkExisting() {
       const pageType = getLinkedInPageType(window.location.href);
-      console.log('Checking page type:', pageType, 'URL:', window.location.href);
-      
+      console.log(
+        'Checking page type:',
+        pageType,
+        'URL:',
+        window.location.href,
+      );
+
       if (!pageType) {
         console.log('Not a profile or company page');
         return;
       }
-      
+
       setState({ status: 'loading' });
-      
+
       // Scrape page data first for better duplicate matching
       const scrapedData = await scrapeCurrentPageWithRetry();
       console.log('Scraped data for duplicate check:', scrapedData);
-      
+
       try {
-        const response = await browser.runtime.sendMessage({
+        const response = (await browser.runtime.sendMessage({
           type: 'CHECK_DUPLICATE',
           payload: {
             linkedinUrl: window.location.href.split('?')[0],
             pageType,
             scrapedData,
           },
-        }) as ExtensionResponse<{ exists: boolean; record?: { id: string; type: string }; matchedBy?: string }>;
-        
+        })) as ExtensionResponse<{
+          exists: boolean;
+          record?: { id: string; type: string };
+          matchedBy?: string;
+        }>;
+
         console.log('Check duplicate response:', response);
-        
+
         if (!response.success) {
-          if (response.error?.includes('not configured') || response.error?.includes('No authentication')) {
-            setState({ status: 'idle', error: 'Configure Twenty URL in extension popup' });
+          if (
+            response.error?.includes('not configured') ||
+            response.error?.includes('No authentication')
+          ) {
+            setState({
+              status: 'idle',
+              error: 'Configure Twenty URL in extension popup',
+            });
           } else {
             setState({ status: 'error', error: response.error });
           }
           return;
         }
-        
+
         if (response.data?.exists && response.data.record) {
-          console.log('Found existing record, matched by:', response.data.matchedBy);
+          console.log(
+            'Found existing record, matched by:',
+            response.data.matchedBy,
+          );
           setState({
             status: 'exists',
             existingRecord: {
@@ -442,33 +531,33 @@ export default defineContentScript({
         setState({ status: 'error', error: 'Failed to check CRM' });
       }
     }
-    
+
     // Handle capture button click
     async function handleCapture() {
       if (state.status !== 'ready') return;
-      
-      const data = state.data || await scrapeCurrentPageWithRetry();
+
+      const data = state.data || (await scrapeCurrentPageWithRetry());
       if (!data) {
         showToast('Could not extract profile data');
         return;
       }
-      
+
       setState({ status: 'saving', data });
-      
+
       try {
-        const response = await browser.runtime.sendMessage({
+        const response = (await browser.runtime.sendMessage({
           type: 'CREATE_RECORD',
           payload: data,
-        }) as ExtensionResponse<{ id: string }>;
-        
+        })) as ExtensionResponse<{ id: string }>;
+
         console.log('Create record response:', response);
-        
+
         if (!response.success) {
           setState({ status: 'error', error: response.error, data });
           showToast(response.error || 'Failed to save');
           return;
         }
-        
+
         setState({
           status: 'saved',
           existingRecord: {
@@ -478,7 +567,11 @@ export default defineContentScript({
           data,
         });
         showToast('Added to Twenty CRM!');
-        
+        await openRecordListPanel({
+          recordId: response.data!.id,
+          recordType: data.type,
+        });
+
         setTimeout(() => {
           if (state.status === 'saved') {
             setState({ ...state, status: 'exists' });
@@ -489,16 +582,16 @@ export default defineContentScript({
         setState({ status: 'error', error: 'Failed to save', data });
       }
     }
-    
+
     // Open record in Twenty
     async function openInTwenty() {
       if (!state.existingRecord) return;
-      
+
       try {
-        const response = await browser.runtime.sendMessage({
+        const response = (await browser.runtime.sendMessage({
           type: 'GET_SETTINGS',
-        }) as ExtensionResponse<{ twentyAppUrl: string }>;
-        
+        })) as ExtensionResponse<{ twentyAppUrl: string }>;
+
         if (response.success && response.data?.twentyAppUrl) {
           const { id, type } = state.existingRecord;
           const url = `${response.data.twentyAppUrl}/object/${type}/${id}`;
@@ -508,7 +601,7 @@ export default defineContentScript({
         console.error('Error opening in Twenty:', error);
       }
     }
-    
+
     // Search CRM for contacts
     async function searchCRM(query: string) {
       if (!query.trim()) {
@@ -516,17 +609,17 @@ export default defineContentScript({
         render();
         return;
       }
-      
+
       isSearching = true;
       render();
-      
+
       try {
         const pageType = getLinkedInPageType(window.location.href);
-        const response = await browser.runtime.sendMessage({
+        const response = (await browser.runtime.sendMessage({
           type: 'SEARCH_RECORDS',
           payload: { query, type: pageType },
-        }) as ExtensionResponse<SearchResult[]>;
-        
+        })) as ExtensionResponse<SearchResult[]>;
+
         if (response.success && response.data) {
           searchResults = response.data;
         } else {
@@ -536,38 +629,38 @@ export default defineContentScript({
         console.error('Error searching:', error);
         searchResults = [];
       }
-      
+
       isSearching = false;
       render();
     }
-    
+
     // Link to existing record and update it
     async function linkToRecord(record: SearchResult) {
-      const data = state.data || await scrapeCurrentPageWithRetry();
+      const data = state.data || (await scrapeCurrentPageWithRetry());
       if (!data) {
         showToast('Could not extract profile data');
         return;
       }
-      
+
       showSearchPanel = false;
       setState({ status: 'saving', data });
-      
+
       try {
-        const response = await browser.runtime.sendMessage({
+        const response = (await browser.runtime.sendMessage({
           type: 'UPDATE_RECORD',
           payload: {
             id: record.id,
             type: record.type,
             data,
           },
-        }) as ExtensionResponse<{ id: string }>;
-        
+        })) as ExtensionResponse<{ id: string }>;
+
         if (!response.success) {
           setState({ status: 'error', error: response.error, data });
           showToast(response.error || 'Failed to update');
           return;
         }
-        
+
         setState({
           status: 'saved',
           existingRecord: {
@@ -577,7 +670,11 @@ export default defineContentScript({
           data,
         });
         showToast(`Linked & updated ${record.name}!`);
-        
+        await openRecordListPanel({
+          recordId: record.id,
+          recordType: record.type,
+        });
+
         setTimeout(() => {
           if (state.status === 'saved') {
             setState({ ...state, status: 'exists' });
@@ -588,53 +685,173 @@ export default defineContentScript({
         setState({ status: 'error', error: 'Failed to update', data });
       }
     }
-    
+
+    async function openRecordListPanel({
+      recordId,
+      recordType,
+    }: {
+      recordId: string;
+      recordType: 'person' | 'company';
+    }) {
+      try {
+        const response = (await browser.runtime.sendMessage({
+          type: 'GET_RECORD_LISTS',
+          payload: { recordType },
+        })) as ExtensionResponse<{
+          lists: TwentyRecordList[];
+          isAvailable: boolean;
+        }>;
+
+        if (!response.success || !response.data?.isAvailable) {
+          return;
+        }
+
+        recordLists = response.data.lists;
+        selectedRecordListIds = new Set<string>();
+        newRecordListName = '';
+        setState({
+          showListPanel: true,
+          existingRecord: { id: recordId, type: recordType },
+        });
+      } catch (error) {
+        console.warn('Record lists are not available:', error);
+      }
+    }
+
+    async function createRecordList() {
+      const recordType = state.existingRecord?.type;
+      const name = newRecordListName.trim();
+
+      if (!recordType || !name || isCreatingRecordList) {
+        return;
+      }
+
+      isCreatingRecordList = true;
+      render();
+
+      try {
+        const response = (await browser.runtime.sendMessage({
+          type: 'CREATE_RECORD_LIST',
+          payload: { name, recordType },
+        })) as ExtensionResponse<TwentyRecordList>;
+
+        if (!response.success || !response.data) {
+          showToast(response.error || 'Could not create the list');
+          return;
+        }
+
+        recordLists = [...recordLists, response.data];
+        selectedRecordListIds.add(response.data.id);
+        newRecordListName = '';
+      } catch (error) {
+        console.error('Error creating record list:', error);
+        showToast('Could not create the list');
+      } finally {
+        isCreatingRecordList = false;
+        render();
+      }
+    }
+
+    async function addToSelectedRecordLists() {
+      if (
+        !state.existingRecord ||
+        selectedRecordListIds.size === 0 ||
+        isAddingToRecordLists
+      ) {
+        return;
+      }
+
+      isAddingToRecordLists = true;
+      render();
+
+      try {
+        const response = (await browser.runtime.sendMessage({
+          type: 'ADD_TO_RECORD_LISTS',
+          payload: {
+            recordId: state.existingRecord.id,
+            recordType: state.existingRecord.type,
+            recordListIds: [...selectedRecordListIds],
+          },
+        })) as ExtensionResponse;
+
+        if (!response.success) {
+          showToast(response.error || 'Could not add the record to lists');
+          return;
+        }
+
+        const listCount = selectedRecordListIds.size;
+
+        setState({ showListPanel: false });
+        showToast(
+          `Added to ${listCount} ${listCount === 1 ? 'list' : 'lists'}!`,
+        );
+      } catch (error) {
+        console.error('Error adding to record lists:', error);
+        showToast('Could not add the record to lists');
+      } finally {
+        isAddingToRecordLists = false;
+        render();
+      }
+    }
+
     // Update state and re-render
     function setState(newState: Partial<CaptureState>) {
       state = { ...state, ...newState };
       render();
     }
-    
+
     // Show toast notification
     function showToast(message: string) {
       toastMessage = message;
       render();
-      
+
       if (toastTimeout) clearTimeout(toastTimeout);
       toastTimeout = setTimeout(() => {
         toastMessage = null;
         render();
       }, 3000);
     }
-    
+
     // Get button text based on state
     function getButtonText(): string {
       switch (state.status) {
-        case 'loading': return 'Checking...';
-        case 'ready': return 'Add to Twenty';
-        case 'exists': return 'Open in Twenty';
-        case 'saving': return 'Saving...';
-        case 'saved': return 'Saved!';
-        case 'error': return state.error || 'Error';
-        case 'idle': 
-        default: return 'Twenty CRM';
+        case 'loading':
+          return 'Checking...';
+        case 'ready':
+          return 'Add to Twenty';
+        case 'exists':
+          return 'Open in Twenty';
+        case 'saving':
+          return 'Saving...';
+        case 'saved':
+          return 'Saved!';
+        case 'error':
+          return state.error || 'Error';
+        case 'idle':
+        default:
+          return 'Twenty CRM';
       }
     }
-    
+
     // Get button icon
     function getButtonIcon(): string {
       switch (state.status) {
         case 'loading':
         case 'saving':
           return '<div class="twenty-capture-spinner"></div>';
-        case 'ready': return ICONS.add;
-        case 'exists': return ICONS.link;
-        case 'saved': return ICONS.check;
-        case 'error': return ICONS.error;
-        default: return ICONS.add;
+        case 'ready':
+          return ICONS.add;
+        case 'exists':
+          return ICONS.link;
+        case 'saved':
+          return ICONS.check;
+        case 'error':
+          return ICONS.error;
+        default:
+          return ICONS.add;
       }
     }
-    
+
     // Handle button click
     function handleClick() {
       console.log('Button clicked, current state:', state.status);
@@ -646,65 +863,67 @@ export default defineContentScript({
         checkExisting();
       }
     }
-    
+
     // Handle menu button click
     function handleMenuClick(e: Event) {
       e.stopPropagation();
       showMenuDropdown = !showMenuDropdown;
       showSearchPanel = false;
+      state = { ...state, showListPanel: false };
       render();
     }
-    
+
     // Handle menu option selection
     function handleMenuOption(option: 'update' | 'link') {
       showMenuDropdown = false;
-      
+
       if (option === 'update') {
         updateExistingRecord();
       } else if (option === 'link') {
         showSearchPanel = true;
+        state = { ...state, showListPanel: false };
         searchQuery = '';
         searchResults = [];
         render();
       }
     }
-    
+
     // Update existing record with fresh LinkedIn data
     async function updateExistingRecord() {
       if (!state.existingRecord) return;
-      
+
       const data = await scrapeCurrentPageWithRetry();
       if (!data) {
         showToast('Could not extract profile data');
         return;
       }
-      
+
       const previousStatus = state.status;
       setState({ status: 'saving', data });
-      
+
       try {
-        const response = await browser.runtime.sendMessage({
+        const response = (await browser.runtime.sendMessage({
           type: 'UPDATE_RECORD',
           payload: {
             id: state.existingRecord.id,
             type: state.existingRecord.type,
             data,
           },
-        }) as ExtensionResponse<{ id: string }>;
-        
+        })) as ExtensionResponse<{ id: string }>;
+
         if (!response.success) {
           setState({ status: previousStatus, error: response.error, data });
           showToast(response.error || 'Failed to update');
           return;
         }
-        
+
         setState({
           status: 'saved',
           existingRecord: state.existingRecord,
           data,
         });
         showToast('Updated from LinkedIn!');
-        
+
         setTimeout(() => {
           if (state.status === 'saved') {
             setState({ ...state, status: 'exists' });
@@ -715,37 +934,37 @@ export default defineContentScript({
         setState({ status: previousStatus, error: 'Failed to update', data });
       }
     }
-    
+
     // Handle search input
     function handleSearchInput(e: Event) {
       const input = e.target as HTMLInputElement;
       searchQuery = input.value;
-      
+
       if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
       searchDebounceTimer = setTimeout(() => {
         searchCRM(searchQuery);
       }, 300);
     }
-    
+
     // Render function
     function render() {
       if (!container) return;
-      
+
       const wrapper = document.createElement('div');
       wrapper.className = 'twenty-capture-container';
-      
+
       // Button group - show menu for 'ready' (link to existing) and 'exists' (update from LinkedIn)
       const hasMenu = state.status === 'ready' || state.status === 'exists';
       const btnGroup = document.createElement('div');
       btnGroup.className = `twenty-btn-group${hasMenu ? ' has-menu' : ''}`;
-      
+
       // Main button
       const btn = document.createElement('button');
       btn.className = `twenty-capture-btn twenty-capture-btn--${state.status}`;
       btn.innerHTML = `${getButtonIcon()}<span>${getButtonText()}</span>`;
       btn.addEventListener('click', handleClick);
       btnGroup.appendChild(btn);
-      
+
       // Menu button
       if (hasMenu) {
         const menuBtn = document.createElement('button');
@@ -755,23 +974,25 @@ export default defineContentScript({
         menuBtn.addEventListener('click', handleMenuClick);
         btnGroup.appendChild(menuBtn);
       }
-      
+
       wrapper.appendChild(btnGroup);
-      
+
       // Menu dropdown
       if (showMenuDropdown) {
         const dropdown = document.createElement('div');
         dropdown.className = 'twenty-menu-dropdown';
-        
+
         if (state.status === 'exists') {
           // Update option when record exists
           const updateItem = document.createElement('button');
           updateItem.className = 'twenty-menu-item';
           updateItem.innerHTML = `${ICONS.refresh}<span>Update from LinkedIn</span>`;
-          updateItem.addEventListener('click', () => handleMenuOption('update'));
+          updateItem.addEventListener('click', () =>
+            handleMenuOption('update'),
+          );
           dropdown.appendChild(updateItem);
         }
-        
+
         if (state.status === 'ready') {
           // Link to existing option when ready to add
           const linkItem = document.createElement('button');
@@ -780,15 +1001,15 @@ export default defineContentScript({
           linkItem.addEventListener('click', () => handleMenuOption('link'));
           dropdown.appendChild(linkItem);
         }
-        
+
         wrapper.appendChild(dropdown);
       }
-      
+
       // Search panel
       if (showSearchPanel) {
         const panel = document.createElement('div');
         panel.className = 'twenty-search-panel';
-        
+
         // Header
         const header = document.createElement('div');
         header.className = 'twenty-search-header';
@@ -804,7 +1025,7 @@ export default defineContentScript({
         });
         header.appendChild(closeBtn);
         panel.appendChild(header);
-        
+
         // Search input
         const inputWrap = document.createElement('div');
         inputWrap.className = 'twenty-search-input-wrap';
@@ -816,15 +1037,17 @@ export default defineContentScript({
         input.addEventListener('input', handleSearchInput);
         inputWrap.appendChild(input);
         panel.appendChild(inputWrap);
-        
+
         // Results
         const resultsDiv = document.createElement('div');
         resultsDiv.className = 'twenty-search-results';
-        
+
         if (isSearching) {
-          resultsDiv.innerHTML = '<div class="twenty-search-loading">Searching...</div>';
+          resultsDiv.innerHTML =
+            '<div class="twenty-search-loading">Searching...</div>';
         } else if (searchQuery && searchResults.length === 0) {
-          resultsDiv.innerHTML = '<div class="twenty-search-empty">No contacts found</div>';
+          resultsDiv.innerHTML =
+            '<div class="twenty-search-empty">No contacts found</div>';
         } else if (searchResults.length > 0) {
           searchResults.forEach((result) => {
             const item = document.createElement('div');
@@ -837,16 +1060,133 @@ export default defineContentScript({
             resultsDiv.appendChild(item);
           });
         } else {
-          resultsDiv.innerHTML = '<div class="twenty-search-empty">Type to search...</div>';
+          resultsDiv.innerHTML =
+            '<div class="twenty-search-empty">Type to search...</div>';
         }
-        
+
         panel.appendChild(resultsDiv);
         wrapper.appendChild(panel);
-        
+
         // Focus input after render
         setTimeout(() => input.focus(), 50);
       }
-      
+
+      if (state.showListPanel && state.existingRecord) {
+        const panel = document.createElement('div');
+        panel.className = 'twenty-search-panel';
+
+        const header = document.createElement('div');
+        header.className = 'twenty-search-header';
+        const title = document.createElement('span');
+        title.className = 'twenty-search-title';
+        title.textContent = 'Add to lists';
+        const closeButton = document.createElement('button');
+        closeButton.className = 'twenty-search-close';
+        closeButton.innerHTML = ICONS.close;
+        closeButton.addEventListener('click', () =>
+          setState({ showListPanel: false }),
+        );
+        header.append(title, closeButton);
+        panel.appendChild(header);
+
+        const results = document.createElement('div');
+        results.className = 'twenty-search-results';
+        const listsByFolder = new Map<string, TwentyRecordList[]>();
+
+        for (const recordList of recordLists) {
+          const folderName = recordList.folder?.name || 'No folder';
+          const folderLists = listsByFolder.get(folderName) ?? [];
+
+          folderLists.push(recordList);
+          listsByFolder.set(folderName, folderLists);
+        }
+
+        if (recordLists.length === 0) {
+          const empty = document.createElement('div');
+          empty.className = 'twenty-search-empty';
+          empty.textContent = 'No lists yet. Create one below.';
+          results.appendChild(empty);
+        } else {
+          for (const [folderName, folderLists] of [
+            ...listsByFolder.entries(),
+          ].sort(([firstFolder], [secondFolder]) =>
+            firstFolder.localeCompare(secondFolder),
+          )) {
+            const groupTitle = document.createElement('div');
+            groupTitle.className = 'twenty-list-group-title';
+            groupTitle.textContent = folderName;
+            results.appendChild(groupTitle);
+
+            for (const recordList of folderLists.sort((first, second) =>
+              first.name.localeCompare(second.name),
+            )) {
+              const row = document.createElement('label');
+              row.className = 'twenty-list-row';
+              const checkbox = document.createElement('input');
+              checkbox.type = 'checkbox';
+              checkbox.checked = selectedRecordListIds.has(recordList.id);
+              checkbox.addEventListener('change', () => {
+                if (checkbox.checked) {
+                  selectedRecordListIds.add(recordList.id);
+                } else {
+                  selectedRecordListIds.delete(recordList.id);
+                }
+
+                render();
+              });
+              const name = document.createElement('span');
+              name.textContent = recordList.name;
+              row.append(checkbox, name);
+              results.appendChild(row);
+            }
+          }
+        }
+
+        panel.appendChild(results);
+
+        const newListRow = document.createElement('div');
+        newListRow.className = 'twenty-list-new-row';
+        const newListInput = document.createElement('input');
+        newListInput.value = newRecordListName;
+        newListInput.placeholder = '＋ New list';
+        newListInput.addEventListener('input', (event) => {
+          newRecordListName = (event.target as HTMLInputElement).value;
+        });
+        newListInput.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter') {
+            void createRecordList();
+          }
+        });
+        const createButton = document.createElement('button');
+        createButton.className = 'twenty-list-action';
+        createButton.textContent = isCreatingRecordList
+          ? 'Creating…'
+          : 'Create';
+        createButton.disabled = isCreatingRecordList;
+        createButton.addEventListener('click', () => void createRecordList());
+        newListRow.append(newListInput, createButton);
+        panel.appendChild(newListRow);
+
+        const footer = document.createElement('div');
+        footer.className = 'twenty-list-footer';
+        const confirmButton = document.createElement('button');
+        confirmButton.className = 'twenty-list-action';
+        confirmButton.textContent = isAddingToRecordLists
+          ? 'Adding…'
+          : `Add to ${selectedRecordListIds.size} ${
+              selectedRecordListIds.size === 1 ? 'list' : 'lists'
+            }`;
+        confirmButton.disabled =
+          isAddingToRecordLists || selectedRecordListIds.size === 0;
+        confirmButton.addEventListener(
+          'click',
+          () => void addToSelectedRecordLists(),
+        );
+        footer.appendChild(confirmButton);
+        panel.appendChild(footer);
+        wrapper.appendChild(panel);
+      }
+
       // Toast
       if (toastMessage) {
         const toastEl = document.createElement('div');
@@ -854,11 +1194,11 @@ export default defineContentScript({
         toastEl.textContent = toastMessage;
         wrapper.appendChild(toastEl);
       }
-      
+
       container.innerHTML = '';
       container.appendChild(wrapper);
     }
-    
+
     // Watch for URL changes (LinkedIn SPA navigation)
     let lastUrl = window.location.href;
     const urlObserver = new MutationObserver(() => {
@@ -867,7 +1207,13 @@ export default defineContentScript({
         console.log('URL changed to:', lastUrl);
         const pageType = getLinkedInPageType(lastUrl);
         if (pageType) {
-          state = { status: 'idle', data: undefined, existingRecord: undefined, error: undefined };
+          state = {
+            status: 'idle',
+            showListPanel: false,
+            data: undefined,
+            existingRecord: undefined,
+            error: undefined,
+          };
           showMenuDropdown = false;
           showSearchPanel = false;
           render();
@@ -875,7 +1221,7 @@ export default defineContentScript({
         }
       }
     });
-    
+
     // Close dropdown when clicking outside
     function handleDocumentClick(e: Event) {
       const target = e.target as HTMLElement;
@@ -886,14 +1232,14 @@ export default defineContentScript({
         }
       }
     }
-    
+
     // Initialize on load
     init();
     document.addEventListener('click', handleDocumentClick);
-    
+
     // Start observing URL changes
     urlObserver.observe(document.body, { childList: true, subtree: true });
-    
+
     // Cleanup on context invalidation
     ctx.onInvalidated(() => {
       console.log('Content script invalidated, cleaning up');

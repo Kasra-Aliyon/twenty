@@ -60,6 +60,15 @@ const TaskQueuePageContent = () => {
       priority: true,
       sequenceEnrollmentId: true,
       sequenceStepId: true,
+      taskTargets: {
+        id: true,
+        targetPerson: {
+          id: true,
+          linkedinLink: {
+            primaryLinkUrl: true,
+          },
+        },
+      },
     },
     limit: QUERY_MAX_RECORDS,
     skip: !currentWorkspaceMember?.id,

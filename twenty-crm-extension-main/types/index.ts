@@ -57,6 +57,58 @@ export type TwentyCompany = {
   idealCustomerProfile?: boolean;
 };
 
+export type TwentyRecordList = {
+  id: string;
+  name: string;
+  type: 'PERSON' | 'COMPANY';
+  folder: {
+    id: string;
+    name: string;
+  } | null;
+};
+
+export type LinkedInActionType =
+  | 'SEND_CONNECTION_REQUEST'
+  | 'WITHDRAW_CONNECTION_REQUEST';
+
+export type LinkedInActionStatus =
+  | 'SCHEDULED'
+  | 'CLAIMED'
+  | 'COMPLETED'
+  | 'SKIPPED'
+  | 'FAILED'
+  | 'CANCELLED';
+
+export type LinkedInConnectionState =
+  | 'UNKNOWN'
+  | 'NOT_CONNECTED'
+  | 'PENDING'
+  | 'CONNECTED'
+  | 'WITHDRAWN';
+
+export type TwentyLinkedInAction = {
+  id: string;
+  type: LinkedInActionType;
+  status: LinkedInActionStatus;
+  scheduledAt: string;
+  claimedAt: string | null;
+  linkedinUrl: string;
+  noteText: string;
+  connectionState: LinkedInConnectionState;
+  attemptCount: number;
+  errorMessage: string | null;
+};
+
+export type LinkedInRunnerSessionState = {
+  enabled: boolean;
+  tabId: number | null;
+  activeAction: TwentyLinkedInAction | null;
+  activeActionStartedAt: number | null;
+  lastExecutedAt: number | null;
+  completedCount: number;
+  failedCount: number;
+};
+
 export type TwentyTokenPair = {
   accessOrWorkspaceAgnosticToken: {
     token: string;
@@ -69,7 +121,7 @@ export type TwentyTokenPair = {
 };
 
 // Extension State Types
-export type CaptureStatus = 
+export type CaptureStatus =
   | 'idle'
   | 'loading'
   | 'exists'
@@ -80,6 +132,7 @@ export type CaptureStatus =
 
 export type CaptureState = {
   status: CaptureStatus;
+  showListPanel: boolean;
   existingRecord?: {
     id: string;
     type: 'person' | 'company';
@@ -97,6 +150,17 @@ export type MessageType =
   | 'CREATE_RECORD'
   | 'UPDATE_RECORD'
   | 'SEARCH_RECORDS'
+  | 'GET_RECORD_LISTS'
+  | 'ADD_TO_RECORD_LISTS'
+  | 'CREATE_RECORD_LIST'
+  | 'FETCH_DUE_LINKEDIN_ACTIONS'
+  | 'FETCH_LINKEDIN_ACTION_QUEUE'
+  | 'CLAIM_LINKEDIN_ACTION'
+  | 'REPORT_LINKEDIN_ACTION'
+  | 'MARK_LINKEDIN_ACTION_EXECUTING'
+  | 'GET_LINKEDIN_RUNNER_STATE'
+  | 'SET_LINKEDIN_RUNNER_STATE'
+  | 'RUN_LINKEDIN_POLL'
   | 'GET_SETTINGS'
   | 'SAVE_SETTINGS'
   | 'TEST_CONNECTION'

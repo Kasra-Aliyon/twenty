@@ -62,6 +62,11 @@ const StyledToggleRow = styled.label`
   justify-content: space-between;
 `;
 
+const StyledHelperText = styled.span`
+  color: ${themeCssVariables.font.color.tertiary};
+  font-size: ${themeCssVariables.font.size.xs};
+`;
+
 type SequenceSettingsSectionProps = {
   sequence: SequenceRecord;
   canUpdate: boolean;
@@ -76,6 +81,12 @@ export const SequenceSettingsSection = ({
     ...defaults,
     ...sequence.settings,
   });
+  const [linkedinDelayPatternText, setLinkedinDelayPatternText] = useState(
+    (
+      sequence.settings.linkedinDelayPatternMinutes ??
+      defaults.linkedinDelayPatternMinutes
+    ).join(','),
+  );
   const [senderConnectedAccountId, setSenderConnectedAccountId] = useState(
     sequence.senderConnectedAccountId ?? '',
   );
@@ -106,6 +117,24 @@ export const SequenceSettingsSection = ({
   };
 
   const save = async () => {
+    const linkedinDelayPatternParts = linkedinDelayPatternText
+      .split(',')
+      .map((part) => part.trim());
+    const linkedinDelayPatternMinutes = linkedinDelayPatternParts.map(Number);
+
+    if (
+      linkedinDelayPatternParts.some((part) => part.length === 0) ||
+      linkedinDelayPatternMinutes.length === 0 ||
+      linkedinDelayPatternMinutes.some(
+        (delay) => !Number.isFinite(delay) || delay <= 0,
+      )
+    ) {
+      enqueueErrorSnackBar({
+        message: t`Enter a comma-separated LinkedIn delay pattern using positive numbers.`,
+      });
+      return;
+    }
+
     if (
       !effectiveSenderConnectedAccountId ||
       settings.activeDays.length === 0
@@ -123,7 +152,10 @@ export const SequenceSettingsSection = ({
         objectNameSingular: 'sequence',
         idToUpdate: sequence.id,
         updateOneRecordInput: {
-          settings,
+          settings: {
+            ...settings,
+            linkedinDelayPatternMinutes,
+          },
           senderConnectedAccountId: effectiveSenderConnectedAccountId,
         },
       });
@@ -261,6 +293,40 @@ export const SequenceSettingsSection = ({
           toggleSize="small"
         />
       </StyledToggleRow>
+
+      <StyledSectionTitle>{t`LinkedIn`}</StyledSectionTitle>
+      <StyledFieldsGrid>
+        <StyledField>
+          <span>{t`Daily LinkedIn actions`}</span>
+          <StyledInput
+            type="number"
+            min={1}
+            value={settings.linkedinDailyActions}
+            onChange={(event) =>
+              setSettings((currentSettings) => ({
+                ...currentSettings,
+                linkedinDailyActions: Math.max(
+                  1,
+                  Number(event.target.value) || 1,
+                ),
+              }))
+            }
+          />
+        </StyledField>
+        <StyledField>
+          <span>{t`Delay pattern in minutes`}</span>
+          <StyledInput
+            value={linkedinDelayPatternText}
+            onChange={(event) =>
+              setLinkedinDelayPatternText(event.target.value)
+            }
+            placeholder="1,3,5,2,8,4,6"
+          />
+        </StyledField>
+      </StyledFieldsGrid>
+      <StyledHelperText>
+        {t`LinkedIn automation can put your account at risk. Keep the runner opt-in, use a conservative daily ceiling, and vary the delay between actions.`}
+      </StyledHelperText>
 
       <StyledActions>
         <Button

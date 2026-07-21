@@ -11,10 +11,12 @@ import { SequenceTickCronCommand } from 'src/modules/sequence/crons/commands/seq
 import { SequenceTickCronJob } from 'src/modules/sequence/crons/jobs/sequence-tick.cron.job';
 import { SequenceProcessEnrollmentJob } from 'src/modules/sequence/jobs/sequence-process-enrollment.job';
 import { SequenceEnrollmentListener } from 'src/modules/sequence/listeners/sequence-enrollment.listener';
+import { SequenceLinkedinActionListener } from 'src/modules/sequence/listeners/sequence-linkedin-action.listener';
 import { SequenceReplyListener } from 'src/modules/sequence/listeners/sequence-reply.listener';
 import { SequenceTaskListener } from 'src/modules/sequence/listeners/sequence-task.listener';
 import { SequenceEmailSenderService } from 'src/modules/sequence/services/sequence-email-sender.service';
 import { SequenceExecutorService } from 'src/modules/sequence/services/sequence-executor.service';
+import { SequenceLinkedinThrottleService } from 'src/modules/sequence/services/sequence-linkedin-throttle.service';
 import { SequenceMetricsService } from 'src/modules/sequence/services/sequence-metrics.service';
 import { SequenceMailboxThrottleService } from 'src/modules/sequence/services/sequence-mailbox-throttle.service';
 import { SequenceQueueService } from 'src/modules/sequence/services/sequence-queue.service';
@@ -34,6 +36,8 @@ import { SequenceVariableService } from 'src/modules/sequence/services/sequence-
     SequenceEmailSenderService,
     SequenceEnrollmentListener,
     SequenceExecutorService,
+    SequenceLinkedinActionListener,
+    SequenceLinkedinThrottleService,
     SequenceMailboxThrottleService,
     SequenceMetricsService,
     SequenceProcessEnrollmentJob,

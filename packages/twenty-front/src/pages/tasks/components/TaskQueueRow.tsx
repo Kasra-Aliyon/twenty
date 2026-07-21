@@ -3,8 +3,11 @@ import { useOpenRecordInSidePanel } from '@/side-panel/hooks/useOpenRecordInSide
 import { useSnackBar } from '@/ui/feedback/snack-bar-manager/hooks/useSnackBar';
 import { styled } from '@linaria/react';
 import { t } from '@lingui/core/macro';
-import { CoreObjectNameSingular } from 'twenty-shared/types';
-import { IconCalendar, IconSend } from 'twenty-ui/icon';
+import {
+  CoreObjectNameSingular,
+  SEQUENCE_TASK_TYPES,
+} from 'twenty-shared/types';
+import { IconBrandLinkedin, IconCalendar, IconSend } from 'twenty-ui/icon';
 import { Checkbox, CheckboxShape } from 'twenty-ui/input';
 import { themeCssVariables } from 'twenty-ui/theme-constants';
 import { beautifyExactDateTime } from '~/utils/date-utils';
@@ -49,6 +52,19 @@ const StyledTag = styled.span`
   padding: ${themeCssVariables.spacing['0.5']} ${themeCssVariables.spacing[1]};
 `;
 
+const StyledLinkedinLink = styled.a`
+  align-items: center;
+  color: ${themeCssVariables.font.color.secondary};
+  display: inline-flex;
+  gap: ${themeCssVariables.spacing[1]};
+  text-decoration: none;
+
+  &:hover {
+    color: ${themeCssVariables.font.color.primary};
+    text-decoration: underline;
+  }
+`;
+
 type TaskQueueRowProps = {
   task: TaskQueueRecord;
   onCompleted: () => Promise<void>;
@@ -63,6 +79,12 @@ export const TaskQueueRow = ({
   const { updateOneRecord } = useUpdateOneRecord();
   const { openRecordInSidePanel } = useOpenRecordInSidePanel();
   const { enqueueErrorSnackBar } = useSnackBar();
+  const linkedinUrl = task.taskTargets?.find(
+    (taskTarget) => taskTarget.targetPerson?.linkedinLink?.primaryLinkUrl,
+  )?.targetPerson?.linkedinLink?.primaryLinkUrl;
+  const isLinkedinTask =
+    task.type === SEQUENCE_TASK_TYPES.LINKEDIN_CONNECTION ||
+    task.type === SEQUENCE_TASK_TYPES.LINKEDIN_MESSAGE;
 
   const completeTask = async (isCompleted: boolean) => {
     if (!canUpdate) {
@@ -103,6 +125,17 @@ export const TaskQueueRow = ({
       {task.sequenceEnrollmentId && <IconSend size={16} />}
       <StyledTitle>{task.title || t`Untitled task`}</StyledTitle>
       <StyledMeta>
+        {isLinkedinTask && linkedinUrl && (
+          <StyledLinkedinLink
+            href={linkedinUrl}
+            target="_blank"
+            rel="noreferrer"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <IconBrandLinkedin size={14} />
+            {t`Open in LinkedIn`}
+          </StyledLinkedinLink>
+        )}
         {task.type && <StyledTag>{task.type}</StyledTag>}
         {task.priority && <StyledTag>{task.priority}</StyledTag>}
         {task.dueAt && (

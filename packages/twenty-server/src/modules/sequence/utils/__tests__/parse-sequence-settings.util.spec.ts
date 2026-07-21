@@ -22,6 +22,8 @@ describe('parseSequenceSettings', () => {
         timezone: 'Europe/Helsinki',
         dailyStarts: 12.9,
         staggerMinutes: 0.5,
+        linkedinDailyActions: 15.9,
+        linkedinDelayPatternMinutes: [2, 4, 1.5],
         stopOnReply: false,
       }),
     ).toEqual({
@@ -31,6 +33,8 @@ describe('parseSequenceSettings', () => {
       timezone: 'Europe/Helsinki',
       dailyStarts: 12,
       staggerMinutes: 0.5,
+      linkedinDailyActions: 15,
+      linkedinDelayPatternMinutes: [2, 4, 1.5],
       stopOnReply: false,
     });
   });
@@ -44,6 +48,8 @@ describe('parseSequenceSettings', () => {
         timezone: 'Not/A_Timezone',
         dailyStarts: -1,
         staggerMinutes: Number.NaN,
+        linkedinDailyActions: 0,
+        linkedinDelayPatternMinutes: [1, -2],
         stopOnReply: 'true',
       }),
     ).toEqual(DEFAULT_SEQUENCE_SETTINGS);
@@ -68,5 +74,9 @@ describe('parseSequenceSettings', () => {
       dailyStarts: DEFAULT_SEQUENCE_SETTINGS.dailyStarts,
       staggerMinutes: DEFAULT_SEQUENCE_SETTINGS.staggerMinutes,
     });
+
+    expect(
+      parseSequenceSettings({ linkedinDailyActions: 0.5 }).linkedinDailyActions,
+    ).toBe(1);
   });
 });

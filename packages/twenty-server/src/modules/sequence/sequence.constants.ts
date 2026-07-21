@@ -7,6 +7,8 @@ export const DEFAULT_SEQUENCE_SETTINGS: SequenceSettings = {
   timezone: 'UTC',
   dailyStarts: 25,
   staggerMinutes: 5,
+  linkedinDailyActions: 20,
+  linkedinDelayPatternMinutes: [1, 3, 5, 2, 8, 4, 6],
   stopOnReply: true,
 };
 
@@ -28,6 +30,28 @@ export const SEQUENCE_SEND_ATTEMPT_LEASE_MILLISECONDS =
 
 export const SEQUENCE_SEND_SLOT_LOOKAHEAD_MILLISECONDS = 30 * 1000;
 
+export const SEQUENCE_LINKEDIN_LAST_ACTION_AT_CACHE_KEY_PREFIX =
+  'sequence:linkedin:last-action-at';
+
+export const SEQUENCE_LINKEDIN_PATTERN_INDEX_CACHE_KEY_PREFIX =
+  'sequence:linkedin:pattern-index';
+
+export const SEQUENCE_LINKEDIN_DAILY_COUNT_CACHE_KEY_PREFIX =
+  'sequence:linkedin:daily-count';
+
+export const SEQUENCE_LINKEDIN_ACTION_LOCK_KEY_PREFIX =
+  'sequence:linkedin:action-lock';
+
+export const SEQUENCE_LINKEDIN_THROTTLE_CACHE_TTL = 8 * 24 * 60 * 60 * 1000;
+
+export const SEQUENCE_LINKEDIN_ACTION_LOCK_TTL = 30 * 1000;
+
+export const LINKEDIN_ACTION_CLAIM_LEASE_MS = 10 * 60 * 1000;
+
+export const LINKEDIN_ACTION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+export const LINKEDIN_CONNECTION_NOTE_MAX_LENGTH = 200;
+
 export const SEQUENCE_ERROR_MESSAGE_MAX_LENGTH = 1000;
 
 export const SEQUENCE_EXECUTION_ERROR = {
@@ -35,6 +59,8 @@ export const SEQUENCE_EXECUTION_ERROR = {
   MISSING_EMAIL: 'MISSING_EMAIL',
   MISSING_PERSON: 'MISSING_PERSON',
   MISSING_CONNECTED_ACCOUNT: 'MISSING_CONNECTED_ACCOUNT',
+  MISSING_LINKEDIN_URL: 'MISSING_LINKEDIN_URL',
+  LINKEDIN_ACTION_EXPIRED: 'LINKEDIN_ACTION_EXPIRED',
   INVALID_STEP_SETTINGS: 'INVALID_STEP_SETTINGS',
   SEND_INTERRUPTED: 'SEND_INTERRUPTED',
 } as const;

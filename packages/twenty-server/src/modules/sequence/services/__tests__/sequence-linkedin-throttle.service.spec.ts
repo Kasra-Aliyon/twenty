@@ -1,0 +1,102 @@
+import { type SequenceSettings } from 'twenty-shared/types';
+
+import { type CacheStorageService } from 'src/engine/core-modules/cache-storage/services/cache-storage.service';
+import { SequenceLinkedinThrottleService } from 'src/modules/sequence/services/sequence-linkedin-throttle.service';
+import { DEFAULT_SEQUENCE_SETTINGS } from 'src/modules/sequence/sequence.constants';
+import { isWithinSendingWindow } from 'src/modules/sequence/utils/sequence-window.util';
+
+describe('SequenceLinkedinThrottleService', () => {
+  const workspaceId = 'workspace-id';
+  const sequenceId = 'sequence-id';
+
+  const buildService = () => {
+    const values = new Map<string, unknown>();
+    const cacheStorageService = {
+      acquireLock: jest.fn().mockResolvedValue(true),
+      releaseLock: jest.fn(),
+      get: jest.fn(async (key: string) => values.get(key)),
+      set: jest.fn(
+        async (key: string, value: unknown) => void values.set(key, value),
+      ),
+    } as unknown as CacheStorageService;
+
+    return {
+      service: new SequenceLinkedinThrottleService(cacheStorageService),
+      values,
+    };
+  };
+
+  const buildSettings = (
+    overrides: Partial<SequenceSettings> = {},
+  ): SequenceSettings => ({
+    ...DEFAULT_SEQUENCE_SETTINGS,
+    timezone: 'UTC',
+    activeDays: [1, 2, 3, 4, 5],
+    windowStart: '09:00',
+    windowEnd: '17:00',
+    ...overrides,
+  });
+
+  it('cycles the configured delay pattern and wraps', async () => {
+    const { service } = buildService();
+    const now = new Date('2026-07-20T09:00:00.000Z');
+    const settings = buildSettings();
+    const slots: Date[] = [];
+
+    for (let index = 0; index < 8; index += 1) {
+      slots.push(
+        await service.reserveSlot({ workspaceId, sequenceId, settings, now }),
+      );
+    }
+
+    expect(
+      slots.map((slot, index) =>
+        index === 0
+          ? (slot.getTime() - now.getTime()) / 60_000
+          : (slot.getTime() - slots[index - 1].getTime()) / 60_000,
+      ),
+    ).toEqual([1, 3, 5, 2, 8, 4, 6, 1]);
+  });
+
+  it('rolls actions beyond the daily cap to the next active day', async () => {
+    const { service } = buildService();
+    const now = new Date('2026-07-20T09:00:00.000Z');
+    const settings = buildSettings({
+      linkedinDailyActions: 3,
+      linkedinDelayPatternMinutes: [1],
+    });
+    const slots: Date[] = [];
+
+    for (let index = 0; index < 5; index += 1) {
+      slots.push(
+        await service.reserveSlot({ workspaceId, sequenceId, settings, now }),
+      );
+    }
+
+    expect(slots.slice(0, 3).map((slot) => slot.getUTCDate())).toEqual([
+      20, 20, 20,
+    ]);
+    expect(slots.slice(3).map((slot) => slot.getUTCDate())).toEqual([21, 21]);
+    expect(slots[3].toISOString()).toBe('2026-07-21T09:00:00.000Z');
+  });
+
+  it('always returns a slot inside the configured sending window', async () => {
+    const { service } = buildService();
+    const settings = buildSettings({
+      activeDays: [1, 3, 5],
+      windowStart: '10:30',
+      windowEnd: '11:00',
+      linkedinDelayPatternMinutes: [180],
+    });
+
+    const slot = await service.reserveSlot({
+      workspaceId,
+      sequenceId,
+      settings,
+      now: new Date('2026-07-20T17:00:00.000Z'),
+    });
+
+    expect(slot.toISOString()).toBe('2026-07-22T10:30:00.000Z');
+    expect(isWithinSendingWindow(slot, settings)).toBe(true);
+  });
+});

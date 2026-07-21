@@ -15,7 +15,8 @@ type RecordListStandardObjectName =
   | 'recordListMember'
   | 'sequence'
   | 'sequenceStep'
-  | 'sequenceEnrollment';
+  | 'sequenceEnrollment'
+  | 'linkedinAction';
 
 type RecordListBaseFieldName =
   | 'id'

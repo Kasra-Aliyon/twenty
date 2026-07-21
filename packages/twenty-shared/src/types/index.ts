@@ -134,6 +134,16 @@ export type { IsExactly } from './IsExactly';
 export type { IsGreaterOrEqual } from './IsGreaterOrEqual.type';
 export type { IsNever } from './IsNever.type';
 export type { IsSerializedRelation } from './IsSerializedRelation.type';
+export type {
+  LinkedInActionType,
+  LinkedInActionStatus,
+  LinkedInConnectionState,
+} from './LinkedInActionTypes';
+export {
+  LINKEDIN_ACTION_TYPES,
+  LINKEDIN_ACTION_STATUSES,
+  LINKEDIN_CONNECTION_STATES,
+} from './LinkedInActionTypes';
 export type { LogicFunctionEvent } from './LogicFunctionEvent';
 export type { LogicFunctionHttpResponse } from './LogicFunctionResponse';
 export {
@@ -287,6 +297,8 @@ export type {
   SequenceDelayStepSettings,
   SequenceTaskContinueMode,
   SequenceCreateTaskStepSettings,
+  SequenceConnectionRequestStepSettings,
+  SequenceWithdrawConnectionRequestStepSettings,
   SequenceStepSettings,
 } from './SequenceTypes';
 export {

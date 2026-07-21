@@ -7,6 +7,7 @@ import {
 } from 'twenty-shared/types';
 
 import { type GlobalWorkspaceOrmManager } from 'src/engine/twenty-orm/global-workspace-datasource/global-workspace-orm.manager';
+import { LinkedinActionWorkspaceEntity } from 'src/modules/linkedin/standard-objects/linkedin-action.workspace-entity';
 import { type SequenceMailboxThrottleService } from 'src/modules/sequence/services/sequence-mailbox-throttle.service';
 import { type SequenceQueueService } from 'src/modules/sequence/services/sequence-queue.service';
 import { SequenceSchedulerService } from 'src/modules/sequence/services/sequence-scheduler.service';
@@ -97,10 +98,15 @@ describe('SequenceSchedulerService', () => {
     const stepRepository = {
       find: jest.fn().mockResolvedValue([step]),
     };
+    const linkedinActionRepository = {
+      find: jest.fn().mockResolvedValue([]),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
+    };
     const repositories = new Map<object, object>([
       [SequenceWorkspaceEntity, sequenceRepository],
       [SequenceEnrollmentWorkspaceEntity, enrollmentRepository],
       [SequenceStepWorkspaceEntity, stepRepository],
+      [LinkedinActionWorkspaceEntity, linkedinActionRepository],
     ]);
     const globalWorkspaceOrmManager = {
       executeInWorkspaceContext: jest.fn(

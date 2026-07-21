@@ -10,10 +10,13 @@ import {
 import { type GlobalWorkspaceOrmManager } from 'src/engine/twenty-orm/global-workspace-datasource/global-workspace-orm.manager';
 import { type WorkspaceEntityManager } from 'src/engine/twenty-orm/entity-manager/workspace-entity-manager';
 import { PersonWorkspaceEntity } from 'src/modules/person/standard-objects/person.workspace-entity';
+import { LinkedinActionWorkspaceEntity } from 'src/modules/linkedin/standard-objects/linkedin-action.workspace-entity';
 import { type SequenceEmailSenderService } from 'src/modules/sequence/services/sequence-email-sender.service';
 import { SequenceExecutorService } from 'src/modules/sequence/services/sequence-executor.service';
+import { type SequenceLinkedinThrottleService } from 'src/modules/sequence/services/sequence-linkedin-throttle.service';
 import { type SequenceMailboxThrottleService } from 'src/modules/sequence/services/sequence-mailbox-throttle.service';
 import { type SequenceTaskCreatorService } from 'src/modules/sequence/services/sequence-task-creator.service';
+import { type SequenceVariableService } from 'src/modules/sequence/services/sequence-variable.service';
 import {
   DEFAULT_SEQUENCE_SETTINGS,
   SEQUENCE_EXECUTION_ERROR,
@@ -103,11 +106,15 @@ describe('SequenceExecutorService', () => {
     const personRepository = {
       findOne: jest.fn().mockResolvedValue(person),
     };
+    const linkedinActionRepository = {
+      insert: jest.fn(),
+    };
     const repositories = new Map<object, object>([
       [SequenceEnrollmentWorkspaceEntity, enrollmentRepository],
       [SequenceWorkspaceEntity, sequenceRepository],
       [SequenceStepWorkspaceEntity, stepRepository],
       [PersonWorkspaceEntity, personRepository],
+      [LinkedinActionWorkspaceEntity, linkedinActionRepository],
     ]);
     const transactionManager = {} as WorkspaceEntityManager;
     const transaction = jest.fn(
@@ -147,11 +154,24 @@ describe('SequenceExecutorService', () => {
       getLastSendAt,
       setLastSendAt,
     } as unknown as SequenceMailboxThrottleService;
+    const reserveSlot = jest.fn().mockResolvedValue(new Date());
+    const sequenceLinkedinThrottleService = {
+      reserveSlot,
+    } as unknown as SequenceLinkedinThrottleService;
+    const buildVariables = jest.fn().mockResolvedValue({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+    });
+    const sequenceVariableService = {
+      buildVariables,
+    } as unknown as SequenceVariableService;
     const service = new SequenceExecutorService(
       globalWorkspaceOrmManager,
       sequenceEmailSenderService,
       sequenceTaskCreatorService,
       sequenceMailboxThrottleService,
+      sequenceLinkedinThrottleService,
+      sequenceVariableService,
     );
 
     return {
@@ -165,6 +185,9 @@ describe('SequenceExecutorService', () => {
       releaseSendLock,
       getLastSendAt,
       setLastSendAt,
+      linkedinActionRepository,
+      reserveSlot,
+      buildVariables,
     };
   };
 
@@ -466,5 +489,92 @@ describe('SequenceExecutorService', () => {
         errorMessage: 'task insert failed',
       }),
     );
+  });
+
+  it('fails a connection request when the person has no LinkedIn URL', async () => {
+    const connectionStep = {
+      id: 'connection-step-id',
+      sequenceId: sequence.id,
+      position: 0,
+      type: SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST,
+      settings: {
+        type: SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST,
+        noteTemplate: 'Hi {{ firstName }}',
+        skipIfAlreadyConnected: true,
+      },
+    } as SequenceStepWorkspaceEntity;
+    const { service, enrollmentRepository, linkedinActionRepository } = setup({
+      currentEnrollment: {
+        ...enrollment,
+        waitingOn: SEQUENCE_WAITING_ON.DELAY,
+      },
+      steps: [connectionStep],
+    });
+
+    await service.process({ workspaceId, enrollmentId });
+
+    expect(linkedinActionRepository.insert).not.toHaveBeenCalled();
+    expect(enrollmentRepository.update).toHaveBeenCalledWith(
+      expect.objectContaining({ id: enrollmentId }),
+      expect.objectContaining({
+        status: SEQUENCE_ENROLLMENT_STATUSES.FAILED,
+        errorMessage: SEQUENCE_EXECUTION_ERROR.MISSING_LINKEDIN_URL,
+      }),
+    );
+  });
+
+  it('floors a withdrawal slot at the configured custom delay', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-07-20T09:00:00.000Z'));
+    const withdrawStep = {
+      id: 'withdraw-step-id',
+      sequenceId: sequence.id,
+      position: 0,
+      type: SEQUENCE_STEP_TYPES.WITHDRAW_CONNECTION_REQUEST,
+      settings: {
+        type: SEQUENCE_STEP_TYPES.WITHDRAW_CONNECTION_REQUEST,
+        withdrawAfterDays: 1,
+        withdrawAfterHours: 2,
+      },
+    } as SequenceStepWorkspaceEntity;
+    const person = {
+      ...buildPerson(),
+      linkedinLink: {
+        primaryLinkUrl: 'https://www.linkedin.com/in/ada-lovelace/',
+        primaryLinkLabel: 'LinkedIn',
+        secondaryLinks: null,
+      },
+    } as PersonWorkspaceEntity;
+    const {
+      service,
+      reserveSlot,
+      linkedinActionRepository,
+      transactionManager,
+    } = setup({
+      currentEnrollment: {
+        ...enrollment,
+        waitingOn: SEQUENCE_WAITING_ON.DELAY,
+      },
+      person,
+      steps: [withdrawStep],
+    });
+
+    reserveSlot.mockImplementation(async ({ now }: { now: Date }) => now);
+
+    await service.process({ workspaceId, enrollmentId });
+
+    expect(reserveSlot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        now: new Date('2026-07-21T11:00:00.000Z'),
+      }),
+    );
+    expect(linkedinActionRepository.insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: SEQUENCE_STEP_TYPES.WITHDRAW_CONNECTION_REQUEST,
+        scheduledAt: new Date('2026-07-21T11:00:00.000Z'),
+      }),
+      transactionManager,
+    );
+
+    jest.useRealTimers();
   });
 });

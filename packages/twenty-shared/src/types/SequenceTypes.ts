@@ -11,6 +11,8 @@ export const SEQUENCE_STEP_TYPES = {
   SEND_EMAIL: 'SEND_EMAIL',
   DELAY: 'DELAY',
   CREATE_TASK: 'CREATE_TASK',
+  SEND_CONNECTION_REQUEST: 'SEND_CONNECTION_REQUEST',
+  WITHDRAW_CONNECTION_REQUEST: 'WITHDRAW_CONNECTION_REQUEST',
 } as const;
 
 export type SequenceStepType =
@@ -33,6 +35,7 @@ export const SEQUENCE_WAITING_ON = {
   EMAIL_SCHEDULED: 'EMAIL_SCHEDULED',
   TASK_DONE: 'TASK_DONE',
   TASK_DEADLINE: 'TASK_DEADLINE',
+  LINKEDIN_ACTION: 'LINKEDIN_ACTION',
 } as const;
 
 export type SequenceWaitingOn =
@@ -67,6 +70,8 @@ export type SequenceSettings = {
   timezone: string;
   dailyStarts: number;
   staggerMinutes: number;
+  linkedinDailyActions: number;
+  linkedinDelayPatternMinutes: number[];
   stopOnReply: boolean;
 };
 
@@ -98,7 +103,21 @@ export type SequenceCreateTaskStepSettings = {
   deadlineDays: number | null;
 };
 
+export type SequenceConnectionRequestStepSettings = {
+  type: typeof SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST;
+  noteTemplate: string;
+  skipIfAlreadyConnected: boolean;
+};
+
+export type SequenceWithdrawConnectionRequestStepSettings = {
+  type: typeof SEQUENCE_STEP_TYPES.WITHDRAW_CONNECTION_REQUEST;
+  withdrawAfterDays: number;
+  withdrawAfterHours: number;
+};
+
 export type SequenceStepSettings =
   | SequenceEmailStepSettings
   | SequenceDelayStepSettings
-  | SequenceCreateTaskStepSettings;
+  | SequenceCreateTaskStepSettings
+  | SequenceConnectionRequestStepSettings
+  | SequenceWithdrawConnectionRequestStepSettings;

@@ -7,6 +7,7 @@ import type {
   CreateCompanyResult,
   LinkedInProfileData,
   LinkedInCompanyData,
+  TwentyRecordList,
 } from '../types';
 
 // GraphQL Queries - Using correct Links composite field structure
@@ -188,6 +189,46 @@ const CREATE_COMPANY = `
   }
 `;
 
+const FIND_RECORD_LISTS = `
+  query FindRecordLists($filter: RecordListFilterInput) {
+    recordLists(filter: $filter, orderBy: [{ name: AscNullsLast }]) {
+      edges {
+        node {
+          id
+          name
+          type
+          folder {
+            id
+            name
+          }
+        }
+      }
+    }
+  }
+`;
+
+const CREATE_RECORD_LIST = `
+  mutation CreateRecordList($input: RecordListCreateInput!) {
+    createRecordList(data: $input) {
+      id
+      name
+      type
+      folder {
+        id
+        name
+      }
+    }
+  }
+`;
+
+const CREATE_RECORD_LIST_MEMBERS = `
+  mutation CreateRecordListMembers($data: [RecordListMemberCreateInput!]!) {
+    createRecordListMembers(data: $data, upsert: true) {
+      id
+    }
+  }
+`;
+
 export class TwentyApiClient {
   private baseUrl: string;
   private token: string | null = null;
@@ -201,7 +242,10 @@ export class TwentyApiClient {
   }
 
   // Upload an image via GraphQL multipart upload
-  async uploadImageViaGraphQL(imageUrl: string, filename?: string): Promise<string | null> {
+  async uploadImageViaGraphQL(
+    imageUrl: string,
+    filename?: string,
+  ): Promise<string | null> {
     if (!this.token) {
       console.error('[Twenty] No authentication token set for image upload');
       return null;
@@ -214,13 +258,22 @@ export class TwentyApiClient {
       console.log('[Twenty] Fetching image...');
       const response = await fetch(imageUrl);
       if (!response.ok) {
-        console.error('[Twenty] Failed to fetch image:', response.status, response.statusText);
+        console.error(
+          '[Twenty] Failed to fetch image:',
+          response.status,
+          response.statusText,
+        );
         return null;
       }
 
       const blob = await response.blob();
-      console.log('[Twenty] Image fetched, size:', blob.size, 'type:', blob.type);
-      
+      console.log(
+        '[Twenty] Image fetched, size:',
+        blob.size,
+        'type:',
+        blob.type,
+      );
+
       const finalFilename = filename || `profile-${Date.now()}.jpg`;
 
       // GraphQL multipart upload format (Apollo Upload spec)
@@ -251,7 +304,7 @@ export class TwentyApiClient {
 
       const uploadUrl = `${this.baseUrl}/graphql`;
       console.log('[Twenty] Uploading via GraphQL to:', uploadUrl);
-      
+
       const uploadResponse = await fetch(uploadUrl, {
         method: 'POST',
         headers: {
@@ -264,13 +317,17 @@ export class TwentyApiClient {
 
       if (!uploadResponse.ok) {
         const errorText = await uploadResponse.text();
-        console.error('[Twenty] Failed to upload image:', uploadResponse.status, errorText);
+        console.error(
+          '[Twenty] Failed to upload image:',
+          uploadResponse.status,
+          errorText,
+        );
         return null;
       }
 
       const result = await uploadResponse.json();
       console.log('[Twenty] Upload result:', result);
-      
+
       if (result.errors?.length) {
         console.error('[Twenty] GraphQL errors:', result.errors);
         return null;
@@ -286,7 +343,10 @@ export class TwentyApiClient {
         return avatarPath;
       }
 
-      console.warn('[Twenty] Upload succeeded but no path/token in response:', result);
+      console.warn(
+        '[Twenty] Upload succeeded but no path/token in response:',
+        result,
+      );
       return null;
     } catch (error) {
       console.error('[Twenty] Error uploading image:', error);
@@ -294,9 +354,9 @@ export class TwentyApiClient {
     }
   }
 
-  private async graphqlRequest<T>(
+  async graphqlRequest<T>(
     query: string,
-    variables?: Record<string, unknown>
+    variables?: Record<string, unknown>,
   ): Promise<GraphQLResponse<T>> {
     if (!this.token) {
       throw new Error('No authentication token set');
@@ -320,17 +380,21 @@ export class TwentyApiClient {
     const result = await response.json();
 
     if (result.errors?.length) {
-      throw new Error(result.errors.map((error: { message: string }) => error.message).join('; '));
+      throw new Error(
+        result.errors
+          .map((error: { message: string }) => error.message)
+          .join('; '),
+      );
     }
 
     return result;
   }
 
   async findPersonByLinkedInUrl(
-    linkedinUrl: string
+    linkedinUrl: string,
   ): Promise<PeopleQueryResult['people']['edges'][0]['node'] | null> {
     const normalizedUrl = this.normalizeLinkedInUrl(linkedinUrl);
-    
+
     const result = await this.graphqlRequest<PeopleQueryResult>(
       FIND_PERSON_BY_LINKEDIN,
       {
@@ -341,7 +405,7 @@ export class TwentyApiClient {
             },
           },
         },
-      }
+      },
     );
 
     if (result.errors?.length) {
@@ -352,10 +416,10 @@ export class TwentyApiClient {
   }
 
   async findCompanyByLinkedInUrl(
-    linkedinUrl: string
+    linkedinUrl: string,
   ): Promise<CompaniesQueryResult['companies']['edges'][0]['node'] | null> {
     const normalizedUrl = this.normalizeLinkedInUrl(linkedinUrl);
-    
+
     const result = await this.graphqlRequest<CompaniesQueryResult>(
       FIND_COMPANY_BY_LINKEDIN,
       {
@@ -366,7 +430,7 @@ export class TwentyApiClient {
             },
           },
         },
-      }
+      },
     );
 
     if (result.errors?.length) {
@@ -377,7 +441,7 @@ export class TwentyApiClient {
   }
 
   async findCompanyByName(
-    companyName: string
+    companyName: string,
   ): Promise<CompaniesQueryResult['companies']['edges'][0]['node'] | null> {
     // Search for company by name (case-insensitive)
     const result = await this.graphqlRequest<CompaniesQueryResult>(
@@ -388,7 +452,7 @@ export class TwentyApiClient {
             ilike: `%${companyName}%`,
           },
         },
-      }
+      },
     );
 
     if (result.errors?.length) {
@@ -398,16 +462,19 @@ export class TwentyApiClient {
     // Try to find exact match first (case-insensitive)
     const companies = result.data?.companies.edges || [];
     const exactMatch = companies.find(
-      (c) => c.node.name.toLowerCase() === companyName.toLowerCase()
+      (c) => c.node.name.toLowerCase() === companyName.toLowerCase(),
     );
-    
+
     if (exactMatch) {
       return exactMatch.node;
     }
 
-    const normalizedCompanyName = this.normalizeCompanyNameForMatch(companyName);
+    const normalizedCompanyName =
+      this.normalizeCompanyNameForMatch(companyName);
     const normalizedMatch = companies.find(
-      (c) => this.normalizeCompanyNameForMatch(c.node.name) === normalizedCompanyName
+      (c) =>
+        this.normalizeCompanyNameForMatch(c.node.name) ===
+        normalizedCompanyName,
     );
 
     return normalizedMatch?.node || null;
@@ -415,7 +482,7 @@ export class TwentyApiClient {
 
   async findPersonByName(
     firstName: string,
-    lastName: string
+    lastName: string,
   ): Promise<PeopleQueryResult['people']['edges'][0]['node'] | null> {
     // Search for person by first and last name
     const result = await this.graphqlRequest<PeopleQueryResult>(
@@ -439,7 +506,7 @@ export class TwentyApiClient {
             },
           ],
         },
-      }
+      },
     );
 
     if (result.errors?.length) {
@@ -451,7 +518,7 @@ export class TwentyApiClient {
     const exactMatch = people.find(
       (p) =>
         p.node.name.firstName.toLowerCase() === firstName.toLowerCase() &&
-        p.node.name.lastName.toLowerCase() === lastName.toLowerCase()
+        p.node.name.lastName.toLowerCase() === lastName.toLowerCase(),
     );
 
     if (exactMatch) {
@@ -464,7 +531,7 @@ export class TwentyApiClient {
 
   async findOrCreateCompany(
     companyName: string,
-    linkedinUrl?: string
+    linkedinUrl?: string,
   ): Promise<{ id: string; name: string; created: boolean }> {
     if (linkedinUrl) {
       try {
@@ -474,7 +541,7 @@ export class TwentyApiClient {
         if (existingCompanyByLinkedIn) {
           console.log(
             'Found existing company by LinkedIn URL:',
-            existingCompanyByLinkedIn.name
+            existingCompanyByLinkedIn.name,
           );
 
           return {
@@ -490,10 +557,14 @@ export class TwentyApiClient {
 
     // First, try to find existing company by name
     const existingCompany = await this.findCompanyByName(companyName);
-    
+
     if (existingCompany) {
       console.log('Found existing company:', existingCompany.name);
-      return { id: existingCompany.id, name: existingCompany.name, created: false };
+      return {
+        id: existingCompany.id,
+        name: existingCompany.name,
+        created: false,
+      };
     }
 
     // Create new company if not found
@@ -505,7 +576,7 @@ export class TwentyApiClient {
   // Simple company creation for companies discovered from a person profile.
   private async createCompanySimple(
     name: string,
-    linkedinUrl?: string
+    linkedinUrl?: string,
   ): Promise<CreateCompanyResult['createCompany']> {
     const result = await this.graphqlRequest<CreateCompanyResult>(
       CREATE_COMPANY,
@@ -519,7 +590,7 @@ export class TwentyApiClient {
               }
             : undefined,
         },
-      }
+      },
     );
 
     if (result.errors?.length) {
@@ -534,29 +605,41 @@ export class TwentyApiClient {
   }
 
   async createPerson(
-    data: LinkedInProfileData
-  ): Promise<CreatePersonResult['createPerson'] & { companyCreated?: boolean }> {
+    data: LinkedInProfileData,
+  ): Promise<
+    CreatePersonResult['createPerson'] & { companyCreated?: boolean }
+  > {
     let companyId: string | undefined;
     let companyCreated = false;
 
     // If person has a company, find or create it first
     console.log('[Twenty] createPerson - currentCompany:', data.currentCompany);
     if (data.currentCompany) {
-      console.log('[Twenty] Attempting to find or create company:', data.currentCompany);
+      console.log(
+        '[Twenty] Attempting to find or create company:',
+        data.currentCompany,
+      );
       try {
         const companyResult = await this.findOrCreateCompany(
           data.currentCompany,
-          data.currentCompanyLinkedInUrl
+          data.currentCompanyLinkedInUrl,
         );
         companyId = companyResult.id;
         companyCreated = companyResult.created;
-        console.log(`[Twenty] Company ${companyResult.created ? 'created' : 'found'}:`, companyResult.name, 'id:', companyId);
+        console.log(
+          `[Twenty] Company ${companyResult.created ? 'created' : 'found'}:`,
+          companyResult.name,
+          'id:',
+          companyId,
+        );
       } catch (error) {
         console.error('[Twenty] Error finding/creating company:', error);
         // Continue without company link if this fails
       }
     } else {
-      console.log('[Twenty] No currentCompany in data, skipping company creation');
+      console.log(
+        '[Twenty] No currentCompany in data, skipping company creation',
+      );
     }
 
     // Try to upload profile image to Twenty storage
@@ -566,7 +649,7 @@ export class TwentyApiClient {
       try {
         const uploadedUrl = await this.uploadImageViaGraphQL(
           data.profileImageUrl,
-          `${data.firstName}-${data.lastName}-profile.jpg`
+          `${data.firstName}-${data.lastName}-profile.jpg`,
         );
         if (uploadedUrl) {
           avatarUrl = uploadedUrl;
@@ -579,22 +662,25 @@ export class TwentyApiClient {
       }
     }
 
-    const result = await this.graphqlRequest<CreatePersonResult>(CREATE_PERSON, {
-      input: {
-        name: {
-          firstName: data.firstName,
-          lastName: data.lastName,
+    const result = await this.graphqlRequest<CreatePersonResult>(
+      CREATE_PERSON,
+      {
+        input: {
+          name: {
+            firstName: data.firstName,
+            lastName: data.lastName,
+          },
+          linkedinLink: {
+            primaryLinkUrl: data.linkedinUrl,
+            primaryLinkLabel: 'LinkedIn',
+          },
+          jobTitle: data.jobTitle || data.headline || '',
+          avatarUrl: avatarUrl,
+          // Link to company if we found/created one
+          companyId: companyId,
         },
-        linkedinLink: {
-          primaryLinkUrl: data.linkedinUrl,
-          primaryLinkLabel: 'LinkedIn',
-        },
-        jobTitle: data.jobTitle || data.headline || '',
-        avatarUrl: avatarUrl,
-        // Link to company if we found/created one
-        companyId: companyId,
       },
-    });
+    );
 
     if (result.errors?.length) {
       throw new Error(result.errors[0].message);
@@ -608,7 +694,7 @@ export class TwentyApiClient {
   }
 
   async createCompany(
-    data: LinkedInCompanyData
+    data: LinkedInCompanyData,
   ): Promise<CreateCompanyResult['createCompany']> {
     const result = await this.graphqlRequest<CreateCompanyResult>(
       CREATE_COMPANY,
@@ -629,7 +715,7 @@ export class TwentyApiClient {
             ? this.parseEmployeeCount(data.employeeCount)
             : undefined,
         },
-      }
+      },
     );
 
     if (result.errors?.length) {
@@ -647,7 +733,7 @@ export class TwentyApiClient {
     try {
       // /graphql exposes the workspace schema, so use a standard object query.
       const result = await this.graphqlRequest<PeopleQueryResult>(
-        `query TestConnection { people(first: 1) { edges { node { id } } } }`
+        `query TestConnection { people(first: 1) { edges { node { id } } } }`,
       );
       return !result.errors?.length && !!result.data?.people;
     } catch (error) {
@@ -656,20 +742,81 @@ export class TwentyApiClient {
     }
   }
 
+  async findRecordLists(
+    type: 'person' | 'company',
+  ): Promise<TwentyRecordList[]> {
+    const result = await this.graphqlRequest<{
+      recordLists: { edges: Array<{ node: TwentyRecordList }> };
+    }>(FIND_RECORD_LISTS, {
+      filter: { type: { eq: type.toUpperCase() } },
+    });
+
+    return result.data?.recordLists.edges.map(({ node }) => node) ?? [];
+  }
+
+  async createRecordList(
+    name: string,
+    type: 'person' | 'company',
+  ): Promise<TwentyRecordList> {
+    const result = await this.graphqlRequest<{
+      createRecordList: TwentyRecordList;
+    }>(CREATE_RECORD_LIST, {
+      input: { name, type: type.toUpperCase() },
+    });
+
+    if (!result.data?.createRecordList) {
+      throw new Error('Failed to create record list');
+    }
+
+    return result.data.createRecordList;
+  }
+
+  async createRecordListMembers({
+    recordId,
+    recordType,
+    recordListIds,
+  }: {
+    recordId: string;
+    recordType: 'person' | 'company';
+    recordListIds: string[];
+  }): Promise<void> {
+    const targetFieldName =
+      recordType === 'person' ? 'targetPersonId' : 'targetCompanyId';
+
+    await this.graphqlRequest<{
+      createRecordListMembers: Array<{ id: string }>;
+    }>(CREATE_RECORD_LIST_MEMBERS, {
+      data: recordListIds.map((recordListId) => ({
+        recordListId,
+        [targetFieldName]: recordId,
+      })),
+    });
+  }
+
   // Search for records by name
   async searchRecords(
     query: string,
-    type: 'person' | 'company'
-  ): Promise<Array<{ id: string; name: string; subtitle?: string; type: 'person' | 'company' }>> {
+    type: 'person' | 'company',
+  ): Promise<
+    Array<{
+      id: string;
+      name: string;
+      subtitle?: string;
+      type: 'person' | 'company';
+    }>
+  > {
     if (type === 'person') {
-      const result = await this.graphqlRequest<PeopleQueryResult>(SEARCH_PEOPLE, {
-        filter: {
-          or: [
-            { name: { firstName: { ilike: `%${query}%` } } },
-            { name: { lastName: { ilike: `%${query}%` } } },
-          ],
+      const result = await this.graphqlRequest<PeopleQueryResult>(
+        SEARCH_PEOPLE,
+        {
+          filter: {
+            or: [
+              { name: { firstName: { ilike: `%${query}%` } } },
+              { name: { lastName: { ilike: `%${query}%` } } },
+            ],
+          },
         },
-      });
+      );
 
       if (result.errors?.length) {
         throw new Error(result.errors[0].message);
@@ -682,11 +829,14 @@ export class TwentyApiClient {
         type: 'person' as const,
       }));
     } else {
-      const result = await this.graphqlRequest<CompaniesQueryResult>(SEARCH_COMPANIES, {
-        filter: {
-          name: { ilike: `%${query}%` },
+      const result = await this.graphqlRequest<CompaniesQueryResult>(
+        SEARCH_COMPANIES,
+        {
+          filter: {
+            name: { ilike: `%${query}%` },
+          },
         },
-      });
+      );
 
       if (result.errors?.length) {
         throw new Error(result.errors[0].message);
@@ -705,18 +855,18 @@ export class TwentyApiClient {
   async updateRecordWithLinkedInData(
     id: string,
     type: 'person' | 'company',
-    data: LinkedInProfileData | LinkedInCompanyData
+    data: LinkedInProfileData | LinkedInCompanyData,
   ): Promise<void> {
     if (type === 'person' && data.type === 'person') {
       const personData = data as LinkedInProfileData;
-      
+
       // Find or create company if present
       let companyId: string | undefined;
       if (personData.currentCompany) {
         try {
           const companyResult = await this.findOrCreateCompany(
             personData.currentCompany,
-            personData.currentCompanyLinkedInUrl
+            personData.currentCompanyLinkedInUrl,
           );
           companyId = companyResult.id;
         } catch (error) {
@@ -730,36 +880,38 @@ export class TwentyApiClient {
         try {
           const uploadedUrl = await this.uploadImageViaGraphQL(
             personData.profileImageUrl,
-            `${personData.firstName}-${personData.lastName}-profile.jpg`
+            `${personData.firstName}-${personData.lastName}-profile.jpg`,
           );
           if (uploadedUrl) {
             avatarUrl = uploadedUrl;
-            console.log('[Twenty] Profile image uploaded for update:', avatarUrl);
+            console.log(
+              '[Twenty] Profile image uploaded for update:',
+              avatarUrl,
+            );
           }
         } catch (error) {
           console.error('[Twenty] Error uploading profile image:', error);
         }
       }
 
-      const result = await this.graphqlRequest<{ updatePerson: { id: string } }>(
-        UPDATE_PERSON,
-        {
-          id,
-          input: {
-            name: {
-              firstName: personData.firstName,
-              lastName: personData.lastName,
-            },
-            linkedinLink: {
-              primaryLinkUrl: personData.linkedinUrl,
-              primaryLinkLabel: 'LinkedIn',
-            },
-            jobTitle: personData.jobTitle || personData.headline || undefined,
-            avatarUrl: avatarUrl,
-            companyId: companyId,
+      const result = await this.graphqlRequest<{
+        updatePerson: { id: string };
+      }>(UPDATE_PERSON, {
+        id,
+        input: {
+          name: {
+            firstName: personData.firstName,
+            lastName: personData.lastName,
           },
-        }
-      );
+          linkedinLink: {
+            primaryLinkUrl: personData.linkedinUrl,
+            primaryLinkLabel: 'LinkedIn',
+          },
+          jobTitle: personData.jobTitle || personData.headline || undefined,
+          avatarUrl: avatarUrl,
+          companyId: companyId,
+        },
+      });
 
       if (result.errors?.length) {
         throw new Error(result.errors[0].message);
@@ -767,28 +919,27 @@ export class TwentyApiClient {
     } else if (type === 'company' && data.type === 'company') {
       const companyData = data as LinkedInCompanyData;
 
-      const result = await this.graphqlRequest<{ updateCompany: { id: string } }>(
-        UPDATE_COMPANY,
-        {
-          id,
-          input: {
-            name: companyData.name,
-            linkedinLink: {
-              primaryLinkUrl: companyData.linkedinUrl,
-              primaryLinkLabel: 'LinkedIn',
-            },
-            domainName: companyData.website
-              ? {
-                  primaryLinkUrl: companyData.website,
-                  primaryLinkLabel: 'Website',
-                }
-              : undefined,
-            employees: companyData.employeeCount
-              ? this.parseEmployeeCount(companyData.employeeCount)
-              : undefined,
+      const result = await this.graphqlRequest<{
+        updateCompany: { id: string };
+      }>(UPDATE_COMPANY, {
+        id,
+        input: {
+          name: companyData.name,
+          linkedinLink: {
+            primaryLinkUrl: companyData.linkedinUrl,
+            primaryLinkLabel: 'LinkedIn',
           },
-        }
-      );
+          domainName: companyData.website
+            ? {
+                primaryLinkUrl: companyData.website,
+                primaryLinkLabel: 'Website',
+              }
+            : undefined,
+          employees: companyData.employeeCount
+            ? this.parseEmployeeCount(companyData.employeeCount)
+            : undefined,
+        },
+      });
 
       if (result.errors?.length) {
         throw new Error(result.errors[0].message);
@@ -807,7 +958,10 @@ export class TwentyApiClient {
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
       .toLowerCase()
-      .replace(/\b(inc|incorporated|llc|ltd|limited|corp|corporation|co|company|gmbh|ag|sas|sarl|plc|bv|nv|oy|ab)\b\.?/g, '')
+      .replace(
+        /\b(inc|incorporated|llc|ltd|limited|corp|corporation|co|company|gmbh|ag|sas|sarl|plc|bv|nv|oy|ab)\b\.?/g,
+        '',
+      )
       .replace(/[^a-z0-9]+/g, ' ')
       .trim();
   }
@@ -823,9 +977,7 @@ export class TwentyApiClient {
 }
 
 // Helper to extract token from Twenty's tokenPair cookie
-export function extractTokenFromCookie(
-  cookieValue: string
-): string | null {
+export function extractTokenFromCookie(cookieValue: string): string | null {
   try {
     const tokenPair: TwentyTokenPair = JSON.parse(cookieValue);
     return tokenPair.accessOrWorkspaceAgnosticToken?.token || null;

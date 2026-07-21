@@ -2,14 +2,19 @@ import { Injectable, Logger } from '@nestjs/common';
 
 import { isNonEmptyString } from '@sniptt/guards';
 import {
+  LINKEDIN_ACTION_STATUSES,
+  LINKEDIN_ACTION_TYPES,
+  LINKEDIN_CONNECTION_STATES,
   SEQUENCE_ENROLLMENT_STATUSES,
   SEQUENCE_STATUSES,
   SEQUENCE_STEP_TYPES,
   SEQUENCE_WAITING_ON,
   type SequenceCreateTaskStepSettings,
+  type SequenceConnectionRequestStepSettings,
   type SequenceDelayStepSettings,
   type SequenceEmailStepSettings,
   type SequenceSettings,
+  type SequenceWithdrawConnectionRequestStepSettings,
 } from 'twenty-shared/types';
 import { isDefined } from 'twenty-shared/utils';
 import { IsNull, LessThanOrEqual } from 'typeorm';
@@ -19,10 +24,14 @@ import { GlobalWorkspaceOrmManager } from 'src/engine/twenty-orm/global-workspac
 import { type WorkspaceRepository } from 'src/engine/twenty-orm/repository/workspace.repository';
 import { buildSystemAuthContext } from 'src/engine/twenty-orm/utils/build-system-auth-context.util';
 import { PersonWorkspaceEntity } from 'src/modules/person/standard-objects/person.workspace-entity';
+import { LinkedinActionWorkspaceEntity } from 'src/modules/linkedin/standard-objects/linkedin-action.workspace-entity';
 import { SequenceEmailSenderService } from 'src/modules/sequence/services/sequence-email-sender.service';
+import { SequenceLinkedinThrottleService } from 'src/modules/sequence/services/sequence-linkedin-throttle.service';
 import { SequenceMailboxThrottleService } from 'src/modules/sequence/services/sequence-mailbox-throttle.service';
 import { SequenceTaskCreatorService } from 'src/modules/sequence/services/sequence-task-creator.service';
+import { SequenceVariableService } from 'src/modules/sequence/services/sequence-variable.service';
 import {
+  LINKEDIN_CONNECTION_NOTE_MAX_LENGTH,
   SEQUENCE_ERROR_MESSAGE_MAX_LENGTH,
   SEQUENCE_EXECUTION_ERROR,
   SEQUENCE_SEND_ATTEMPT_LEASE_MILLISECONDS,
@@ -34,6 +43,7 @@ import {
 import { SequenceStepWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence-step.workspace-entity';
 import { SequenceWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence.workspace-entity';
 import { parseSequenceSettings } from 'src/modules/sequence/utils/parse-sequence-settings.util';
+import { renderSequenceTemplate } from 'src/modules/sequence/utils/render-sequence-template.util';
 import {
   isWithinSendingWindow,
   nextWindowOpen,
@@ -48,6 +58,8 @@ export class SequenceExecutorService {
     private readonly sequenceEmailSenderService: SequenceEmailSenderService,
     private readonly sequenceTaskCreatorService: SequenceTaskCreatorService,
     private readonly sequenceMailboxThrottleService: SequenceMailboxThrottleService,
+    private readonly sequenceLinkedinThrottleService: SequenceLinkedinThrottleService,
+    private readonly sequenceVariableService: SequenceVariableService,
   ) {}
 
   async process({
@@ -220,6 +232,57 @@ export class SequenceExecutorService {
           });
 
           return;
+        case SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST:
+          if (
+            nextStep.settings.type !==
+            SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST
+          ) {
+            await this.failInvalidStepSettings({
+              enrollmentRepository,
+              enrollment,
+              step: nextStep,
+            });
+
+            return;
+          }
+
+          await this.processConnectionRequestStep({
+            workspaceId,
+            enrollmentRepository,
+            enrollment,
+            person,
+            sequenceSettings: parseSequenceSettings(sequence.settings),
+            sequenceSenderConnectedAccountId: sequence.senderConnectedAccountId,
+            step: nextStep,
+            settings: nextStep.settings,
+          });
+
+          return;
+        case SEQUENCE_STEP_TYPES.WITHDRAW_CONNECTION_REQUEST:
+          if (
+            nextStep.settings.type !==
+            SEQUENCE_STEP_TYPES.WITHDRAW_CONNECTION_REQUEST
+          ) {
+            await this.failInvalidStepSettings({
+              enrollmentRepository,
+              enrollment,
+              step: nextStep,
+            });
+
+            return;
+          }
+
+          await this.processWithdrawConnectionRequestStep({
+            workspaceId,
+            enrollmentRepository,
+            enrollment,
+            person,
+            sequenceSettings: parseSequenceSettings(sequence.settings),
+            step: nextStep,
+            settings: nextStep.settings,
+          });
+
+          return;
         case SEQUENCE_STEP_TYPES.SEND_EMAIL:
           if (enrollment.waitingOn !== SEQUENCE_WAITING_ON.EMAIL_SCHEDULED) {
             return;
@@ -358,6 +421,210 @@ export class SequenceExecutorService {
 
       this.logger.error(
         `Failed to create task for sequence enrollment ${enrollment.id}: ${errorMessage}`,
+      );
+      await this.failEnrollment({
+        enrollmentRepository,
+        enrollment,
+        errorMessage,
+        stepId: step.id,
+        stepPosition: step.position,
+      });
+    }
+  }
+
+  private async processConnectionRequestStep({
+    workspaceId,
+    enrollmentRepository,
+    enrollment,
+    person,
+    sequenceSettings,
+    sequenceSenderConnectedAccountId,
+    step,
+    settings,
+  }: {
+    workspaceId: string;
+    enrollmentRepository: WorkspaceRepository<SequenceEnrollmentWorkspaceEntity>;
+    enrollment: SequenceEnrollmentWorkspaceEntity;
+    person: PersonWorkspaceEntity;
+    sequenceSettings: SequenceSettings;
+    sequenceSenderConnectedAccountId: string | null;
+    step: SequenceStepWorkspaceEntity;
+    settings: SequenceConnectionRequestStepSettings;
+  }): Promise<void> {
+    if (!isNonEmptyString(person.linkedinLink?.primaryLinkUrl)) {
+      await this.failEnrollment({
+        enrollmentRepository,
+        enrollment,
+        errorMessage: SEQUENCE_EXECUTION_ERROR.MISSING_LINKEDIN_URL,
+        stepId: step.id,
+        stepPosition: step.position,
+      });
+
+      return;
+    }
+
+    const variables = await this.sequenceVariableService.buildVariables({
+      workspaceId,
+      person,
+      connectedAccountId:
+        enrollment.senderConnectedAccountId ?? sequenceSenderConnectedAccountId,
+    });
+    const renderedNote = renderSequenceTemplate(
+      typeof settings.noteTemplate === 'string' ? settings.noteTemplate : '',
+      variables,
+      { escapeValues: false },
+    );
+    const noteText = renderedNote.slice(0, LINKEDIN_CONNECTION_NOTE_MAX_LENGTH);
+
+    if (noteText.length < renderedNote.length) {
+      this.logger.warn(
+        `Truncated LinkedIn connection note for sequence enrollment ${enrollment.id} to ${LINKEDIN_CONNECTION_NOTE_MAX_LENGTH} characters`,
+      );
+    }
+
+    await this.createLinkedinAction({
+      workspaceId,
+      enrollmentRepository,
+      enrollment,
+      person,
+      sequenceSettings,
+      step,
+      type: LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST,
+      noteText,
+      reserveFrom: new Date(),
+    });
+  }
+
+  private async processWithdrawConnectionRequestStep({
+    workspaceId,
+    enrollmentRepository,
+    enrollment,
+    person,
+    sequenceSettings,
+    step,
+    settings,
+  }: {
+    workspaceId: string;
+    enrollmentRepository: WorkspaceRepository<SequenceEnrollmentWorkspaceEntity>;
+    enrollment: SequenceEnrollmentWorkspaceEntity;
+    person: PersonWorkspaceEntity;
+    sequenceSettings: SequenceSettings;
+    step: SequenceStepWorkspaceEntity;
+    settings: SequenceWithdrawConnectionRequestStepSettings;
+  }): Promise<void> {
+    if (!isNonEmptyString(person.linkedinLink?.primaryLinkUrl)) {
+      await this.failEnrollment({
+        enrollmentRepository,
+        enrollment,
+        errorMessage: SEQUENCE_EXECUTION_ERROR.MISSING_LINKEDIN_URL,
+        stepId: step.id,
+        stepPosition: step.position,
+      });
+
+      return;
+    }
+
+    const delayMilliseconds =
+      (this.toNonNegativeNumber(settings.withdrawAfterDays) * 24 * 60 * 60 +
+        this.toNonNegativeNumber(settings.withdrawAfterHours) * 60 * 60) *
+      1000;
+
+    await this.createLinkedinAction({
+      workspaceId,
+      enrollmentRepository,
+      enrollment,
+      person,
+      sequenceSettings,
+      step,
+      type: LINKEDIN_ACTION_TYPES.WITHDRAW_CONNECTION_REQUEST,
+      noteText: '',
+      reserveFrom: new Date(Date.now() + delayMilliseconds),
+    });
+  }
+
+  private async createLinkedinAction({
+    workspaceId,
+    enrollmentRepository,
+    enrollment,
+    person,
+    sequenceSettings,
+    step,
+    type,
+    noteText,
+    reserveFrom,
+  }: {
+    workspaceId: string;
+    enrollmentRepository: WorkspaceRepository<SequenceEnrollmentWorkspaceEntity>;
+    enrollment: SequenceEnrollmentWorkspaceEntity;
+    person: PersonWorkspaceEntity;
+    sequenceSettings: SequenceSettings;
+    step: SequenceStepWorkspaceEntity;
+    type:
+      | typeof LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST
+      | typeof LINKEDIN_ACTION_TYPES.WITHDRAW_CONNECTION_REQUEST;
+    noteText: string;
+    reserveFrom: Date;
+  }): Promise<void> {
+    try {
+      const workspaceDataSource =
+        await this.globalWorkspaceOrmManager.getGlobalWorkspaceDataSource();
+      const linkedinActionRepository =
+        await this.globalWorkspaceOrmManager.getRepository(
+          workspaceId,
+          LinkedinActionWorkspaceEntity,
+          { shouldBypassPermissionChecks: true },
+        );
+
+      await workspaceDataSource.transaction(async (transactionManager) => {
+        const workspaceTransactionManager =
+          transactionManager as WorkspaceEntityManager;
+        const claimResult = await enrollmentRepository.update(
+          {
+            id: enrollment.id,
+            status: SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
+            currentStepPosition: enrollment.currentStepPosition,
+          },
+          {
+            currentStepId: step.id,
+            currentStepPosition: step.position,
+            waitingOn: SEQUENCE_WAITING_ON.LINKEDIN_ACTION,
+            nextActionAt: null,
+          },
+          workspaceTransactionManager,
+        );
+
+        if (claimResult.affected !== 1) {
+          return;
+        }
+
+        const scheduledAt =
+          await this.sequenceLinkedinThrottleService.reserveSlot({
+            workspaceId,
+            sequenceId: enrollment.sequenceId,
+            settings: sequenceSettings,
+            now: reserveFrom,
+          });
+
+        await linkedinActionRepository.insert(
+          {
+            type,
+            status: LINKEDIN_ACTION_STATUSES.SCHEDULED,
+            scheduledAt,
+            linkedinUrl: person.linkedinLink?.primaryLinkUrl ?? '',
+            noteText,
+            connectionState: LINKEDIN_CONNECTION_STATES.UNKNOWN,
+            personId: person.id,
+            sequenceEnrollmentId: enrollment.id,
+            sequenceStepId: step.id,
+          },
+          workspaceTransactionManager,
+        );
+      });
+    } catch (error) {
+      const errorMessage = this.toErrorMessage(error);
+
+      this.logger.error(
+        `Failed to schedule LinkedIn action for sequence enrollment ${enrollment.id}: ${errorMessage}`,
       );
       await this.failEnrollment({
         enrollmentRepository,

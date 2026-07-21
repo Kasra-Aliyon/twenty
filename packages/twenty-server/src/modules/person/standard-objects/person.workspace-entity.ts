@@ -3,6 +3,7 @@ import {
   type EmailsMetadata,
   FieldMetadataType,
   type FullNameMetadata,
+  type LinkedInConnectionState,
   type LinksMetadata,
   type PhonesMetadata,
 } from 'twenty-shared/types';
@@ -16,6 +17,7 @@ import { type CalendarEventParticipantWorkspaceEntity } from 'src/modules/calend
 import { type CompanyWorkspaceEntity } from 'src/modules/company/standard-objects/company.workspace-entity';
 import { type MessageListMemberWorkspaceEntity } from 'src/modules/emailing/standard-objects/message-list-member.workspace-entity';
 import { type MessageParticipantWorkspaceEntity } from 'src/modules/messaging/common/standard-objects/message-participant.workspace-entity';
+import { type LinkedinActionWorkspaceEntity } from 'src/modules/linkedin/standard-objects/linkedin-action.workspace-entity';
 import { type NoteTargetWorkspaceEntity } from 'src/modules/note/standard-objects/note-target.workspace-entity';
 import { type OpportunityWorkspaceEntity } from 'src/modules/opportunity/standard-objects/opportunity.workspace-entity';
 import { type RecordListMemberWorkspaceEntity } from 'src/modules/record-list/standard-objects/record-list-member.workspace-entity';
@@ -39,6 +41,7 @@ export class PersonWorkspaceEntity extends BaseWorkspaceEntity {
   name: FullNameMetadata | null;
   emails: EmailsMetadata;
   linkedinLink: LinksMetadata | null;
+  linkedinConnectionState: LinkedInConnectionState;
   jobTitle: string | null;
   /** @deprecated Use `phones` field instead */
   phone: string | null;
@@ -64,5 +67,6 @@ export class PersonWorkspaceEntity extends BaseWorkspaceEntity {
   recordListMemberships: EntityRelation<RecordListMemberWorkspaceEntity[]>;
   emailOptOut: boolean;
   sequenceEnrollments: EntityRelation<SequenceEnrollmentWorkspaceEntity[]>;
+  linkedinActions: EntityRelation<LinkedinActionWorkspaceEntity[]>;
   searchVector: string;
 }

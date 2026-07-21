@@ -1,6 +1,9 @@
 import { STANDARD_OBJECTS } from 'twenty-shared/metadata';
 import {
   FieldMetadataType,
+  LINKEDIN_ACTION_STATUSES,
+  LINKEDIN_ACTION_TYPES,
+  LINKEDIN_CONNECTION_STATES,
   RelationType,
   SEQUENCE_ENROLLMENT_STATUSES,
   SEQUENCE_STATUSES,
@@ -28,6 +31,7 @@ describe('Sequence standard metadata build', () => {
       STANDARD_OBJECTS.sequence,
       STANDARD_OBJECTS.sequenceStep,
       STANDARD_OBJECTS.sequenceEnrollment,
+      STANDARD_OBJECTS.linkedinAction,
     ]) {
       expect(
         allFlatEntityMaps.flatObjectMetadataMaps.byUniversalIdentifier[
@@ -162,5 +166,66 @@ describe('Sequence standard metadata build', () => {
         ),
       ),
     );
+  });
+
+  it('builds the LinkedIn queue, person state, relation, and indexes', () => {
+    const actionTypeField =
+      allFlatEntityMaps.flatFieldMetadataMaps.byUniversalIdentifier[
+        STANDARD_OBJECTS.linkedinAction.fields.type.universalIdentifier
+      ];
+    const actionStatusField =
+      allFlatEntityMaps.flatFieldMetadataMaps.byUniversalIdentifier[
+        STANDARD_OBJECTS.linkedinAction.fields.status.universalIdentifier
+      ];
+    const connectionStateField =
+      allFlatEntityMaps.flatFieldMetadataMaps.byUniversalIdentifier[
+        STANDARD_OBJECTS.linkedinAction.fields.connectionState
+          .universalIdentifier
+      ];
+    const personConnectionStateField =
+      allFlatEntityMaps.flatFieldMetadataMaps.byUniversalIdentifier[
+        STANDARD_OBJECTS.person.fields.linkedinConnectionState
+          .universalIdentifier
+      ];
+    const personRelation =
+      allFlatEntityMaps.flatFieldMetadataMaps.byUniversalIdentifier[
+        STANDARD_OBJECTS.linkedinAction.fields.person.universalIdentifier
+      ];
+    const statusScheduledAtIndex =
+      allFlatEntityMaps.flatIndexMaps.byUniversalIdentifier[
+        STANDARD_OBJECTS.linkedinAction.indexes.statusScheduledAtIndex
+          .universalIdentifier
+      ];
+
+    expect(actionTypeField?.options).toEqual(
+      expect.arrayContaining(
+        Object.values(LINKEDIN_ACTION_TYPES).map((value) =>
+          expect.objectContaining({ value }),
+        ),
+      ),
+    );
+    expect(actionStatusField?.options).toEqual(
+      expect.arrayContaining(
+        Object.values(LINKEDIN_ACTION_STATUSES).map((value) =>
+          expect.objectContaining({ value }),
+        ),
+      ),
+    );
+    for (const field of [connectionStateField, personConnectionStateField]) {
+      expect(field?.options).toEqual(
+        expect.arrayContaining(
+          Object.values(LINKEDIN_CONNECTION_STATES).map((value) =>
+            expect.objectContaining({ value }),
+          ),
+        ),
+      );
+    }
+    expect(personRelation).toMatchObject({
+      type: FieldMetadataType.RELATION,
+      settings: expect.objectContaining({
+        relationType: RelationType.MANY_TO_ONE,
+      }),
+    });
+    expect(statusScheduledAtIndex?.flatIndexFieldMetadatas).toHaveLength(2);
   });
 });

@@ -7,5 +7,7 @@ export const getDefaultSequenceSettings = (): SequenceSettings => ({
   timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
   dailyStarts: 25,
   staggerMinutes: 5,
+  linkedinDailyActions: 20,
+  linkedinDelayPatternMinutes: [1, 3, 5, 2, 8, 4, 6],
   stopOnReply: true,
 });

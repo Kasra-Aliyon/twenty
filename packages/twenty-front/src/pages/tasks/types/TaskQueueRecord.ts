@@ -14,4 +14,13 @@ export type TaskQueueRecord = ObjectRecord & {
   priority: TaskPriority | null;
   sequenceEnrollmentId: string | null;
   sequenceStepId: string | null;
+  taskTargets: Array<{
+    id: string;
+    targetPerson: {
+      id: string;
+      linkedinLink: {
+        primaryLinkUrl: string | null;
+      } | null;
+    } | null;
+  }>;
 };

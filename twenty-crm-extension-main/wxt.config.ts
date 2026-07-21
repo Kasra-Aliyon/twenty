@@ -7,7 +7,14 @@ export default defineConfig({
     name: 'Twenty CRM - LinkedIn Capture',
     description: 'Capture LinkedIn profiles and companies to your Twenty CRM',
     version: '1.0.0',
-    permissions: ['storage', 'cookies', 'activeTab', 'scripting', 'tabs'],
+    permissions: [
+      'storage',
+      'cookies',
+      'activeTab',
+      'scripting',
+      'tabs',
+      'alarms',
+    ],
     host_permissions: [
       '*://*.linkedin.com/*',
       'http://localhost:3000/*',

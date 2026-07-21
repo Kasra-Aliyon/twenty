@@ -7,10 +7,12 @@ import { SEQUENCE_STEP_TYPES } from 'twenty-shared/types';
 import {
   IconArrowDown,
   IconArrowUp,
+  IconBrandLinkedin,
   IconClock,
   IconListCheck,
   IconMail,
   IconTrash,
+  IconUserMinus,
 } from 'twenty-ui/icon';
 import { LightIconButton } from 'twenty-ui/input';
 import { themeCssVariables } from 'twenty-ui/theme-constants';
@@ -18,7 +20,9 @@ import { themeCssVariables } from 'twenty-ui/theme-constants';
 import { type SequenceStepRecord } from '../types/SequenceRecords';
 import { SequenceDelayStepEditor } from './SequenceDelayStepEditor';
 import { SequenceEmailStepEditor } from './SequenceEmailStepEditor';
+import { SequenceConnectionRequestStepEditor } from './SequenceConnectionRequestStepEditor';
 import { SequenceTaskStepEditor } from './SequenceTaskStepEditor';
+import { SequenceWithdrawConnectionRequestStepEditor } from './SequenceWithdrawConnectionRequestStepEditor';
 
 const StyledCard = styled.article`
   background: ${themeCssVariables.background.secondary};
@@ -77,6 +81,14 @@ const STEP_PRESENTATION = {
   [SEQUENCE_STEP_TYPES.CREATE_TASK]: {
     label: t`Create task`,
     Icon: IconListCheck,
+  },
+  [SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST]: {
+    label: t`Send LinkedIn connection request`,
+    Icon: IconBrandLinkedin,
+  },
+  [SEQUENCE_STEP_TYPES.WITHDRAW_CONNECTION_REQUEST]: {
+    label: t`Withdraw LinkedIn connection request`,
+    Icon: IconUserMinus,
   },
 };
 
@@ -175,6 +187,21 @@ export const SequenceStepCard = ({
         )}
         {step.settings.type === SEQUENCE_STEP_TYPES.CREATE_TASK && (
           <SequenceTaskStepEditor
+            step={step}
+            settings={step.settings}
+            disabled={!isEditable}
+          />
+        )}
+        {step.settings.type === SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST && (
+          <SequenceConnectionRequestStepEditor
+            step={step}
+            settings={step.settings}
+            disabled={!isEditable}
+          />
+        )}
+        {step.settings.type ===
+          SEQUENCE_STEP_TYPES.WITHDRAW_CONNECTION_REQUEST && (
+          <SequenceWithdrawConnectionRequestStepEditor
             step={step}
             settings={step.settings}
             disabled={!isEditable}

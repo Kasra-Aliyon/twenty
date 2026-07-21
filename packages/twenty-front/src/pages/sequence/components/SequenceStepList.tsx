@@ -17,7 +17,14 @@ import {
   type SequenceStepSettings,
   type SequenceStepType,
 } from 'twenty-shared/types';
-import { IconClock, IconListCheck, IconMail, IconPlus } from 'twenty-ui/icon';
+import {
+  IconBrandLinkedin,
+  IconClock,
+  IconListCheck,
+  IconMail,
+  IconPlus,
+  IconUserMinus,
+} from 'twenty-ui/icon';
 import { Button } from 'twenty-ui/input';
 import { MenuItem } from 'twenty-ui/navigation';
 import { themeCssVariables } from 'twenty-ui/theme-constants';
@@ -69,6 +76,18 @@ const getDefaultStepSettings = (
         assigneeWorkspaceMemberId: null,
         continueMode: 'ON_DONE',
         deadlineDays: null,
+      };
+    case SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST:
+      return {
+        type,
+        noteTemplate: '',
+        skipIfAlreadyConnected: true,
+      };
+    case SEQUENCE_STEP_TYPES.WITHDRAW_CONNECTION_REQUEST:
+      return {
+        type,
+        withdrawAfterDays: 7,
+        withdrawAfterHours: 0,
       };
   }
 };
@@ -204,6 +223,22 @@ export const SequenceStepList = ({
                   text={t`Create task`}
                   onClick={() => void addStep(SEQUENCE_STEP_TYPES.CREATE_TASK)}
                 />
+                <MenuItem
+                  LeftIcon={IconBrandLinkedin}
+                  text={t`Send LinkedIn connection request`}
+                  onClick={() =>
+                    void addStep(SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST)
+                  }
+                />
+                <MenuItem
+                  LeftIcon={IconUserMinus}
+                  text={t`Withdraw LinkedIn connection request`}
+                  onClick={() =>
+                    void addStep(
+                      SEQUENCE_STEP_TYPES.WITHDRAW_CONNECTION_REQUEST,
+                    )
+                  }
+                />
               </DropdownMenuItemsContainer>
             </DropdownContent>
           }
@@ -218,7 +253,7 @@ export const SequenceStepList = ({
 
       {sortedSteps.length === 0 ? (
         <StyledEmptyState>
-          {t`Add an email, wait, or task step to build this sequence.`}
+          {t`Add an email, wait, task, or LinkedIn step to build this sequence.`}
         </StyledEmptyState>
       ) : (
         sortedSteps.map((step, index) => (

@@ -188,6 +188,13 @@ export const buildSequenceEnrollmentStandardFlatFieldMetadatas = (
           position: 3,
           color: 'red',
         },
+        {
+          id: '7f735895-e1f7-423e-9813-b7d5b39d2bd9',
+          value: SEQUENCE_WAITING_ON.LINKEDIN_ACTION,
+          label: i18nLabel(msg`LinkedIn action`),
+          position: 4,
+          color: 'blue',
+        },
       ],
     },
   }),

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import {
+  LINKEDIN_ACTION_STATUSES,
   SEQUENCE_ENROLLMENT_STATUSES,
   SEQUENCE_STATUSES,
   SEQUENCE_STEP_TYPES,
@@ -11,6 +12,7 @@ import { isDefined } from 'twenty-shared/utils';
 import {
   In,
   IsNull,
+  LessThan,
   LessThanOrEqual,
   MoreThan,
   MoreThanOrEqual,
@@ -19,10 +21,14 @@ import {
 import { GlobalWorkspaceOrmManager } from 'src/engine/twenty-orm/global-workspace-datasource/global-workspace-orm.manager';
 import { type WorkspaceRepository } from 'src/engine/twenty-orm/repository/workspace.repository';
 import { buildSystemAuthContext } from 'src/engine/twenty-orm/utils/build-system-auth-context.util';
+import { LinkedinActionWorkspaceEntity } from 'src/modules/linkedin/standard-objects/linkedin-action.workspace-entity';
 import { SequenceMailboxThrottleService } from 'src/modules/sequence/services/sequence-mailbox-throttle.service';
 import { SequenceQueueService } from 'src/modules/sequence/services/sequence-queue.service';
 import {
+  LINKEDIN_ACTION_CLAIM_LEASE_MS,
+  LINKEDIN_ACTION_MAX_AGE_MS,
   SEQUENCE_SCHEDULER_BATCH_SIZE,
+  SEQUENCE_EXECUTION_ERROR,
   SEQUENCE_SEND_SLOT_LOOKAHEAD_MILLISECONDS,
 } from 'src/modules/sequence/sequence.constants';
 import { SequenceEnrollmentWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence-enrollment.workspace-entity';
@@ -50,6 +56,15 @@ export class SequenceSchedulerService {
 
   async tick(workspaceId: string, now = new Date()): Promise<void> {
     await this.globalWorkspaceOrmManager.executeInWorkspaceContext(async () => {
+      const linkedinActionRepository =
+        await this.globalWorkspaceOrmManager.getRepository(
+          workspaceId,
+          LinkedinActionWorkspaceEntity,
+          { shouldBypassPermissionChecks: true },
+        );
+
+      await this.sweepLinkedinActions({ linkedinActionRepository, now });
+
       const sequenceRepository =
         await this.globalWorkspaceOrmManager.getRepository(
           workspaceId,
@@ -175,6 +190,70 @@ export class SequenceSchedulerService {
         });
       }
     }, buildSystemAuthContext(workspaceId));
+  }
+
+  private async sweepLinkedinActions({
+    linkedinActionRepository,
+    now,
+  }: {
+    linkedinActionRepository: WorkspaceRepository<LinkedinActionWorkspaceEntity>;
+    now: Date;
+  }): Promise<void> {
+    const claimExpiredBefore = new Date(
+      now.getTime() - LINKEDIN_ACTION_CLAIM_LEASE_MS,
+    );
+    const actionExpiredBefore = new Date(
+      now.getTime() - LINKEDIN_ACTION_MAX_AGE_MS,
+    );
+    const [expiredClaims, expiredScheduledActions] = await Promise.all([
+      linkedinActionRepository.find({
+        where: {
+          status: LINKEDIN_ACTION_STATUSES.CLAIMED,
+          claimedAt: LessThan(claimExpiredBefore),
+        },
+        order: { claimedAt: 'ASC' },
+        take: SEQUENCE_SCHEDULER_BATCH_SIZE,
+      }),
+      linkedinActionRepository.find({
+        where: {
+          status: LINKEDIN_ACTION_STATUSES.SCHEDULED,
+          scheduledAt: LessThan(actionExpiredBefore),
+        },
+        order: { scheduledAt: 'ASC' },
+        take: SEQUENCE_SCHEDULER_BATCH_SIZE,
+      }),
+    ]);
+
+    for (const action of expiredClaims) {
+      await linkedinActionRepository.update(
+        {
+          id: action.id,
+          status: LINKEDIN_ACTION_STATUSES.CLAIMED,
+          claimedAt: LessThanOrEqual(claimExpiredBefore),
+        },
+        {
+          status: LINKEDIN_ACTION_STATUSES.SCHEDULED,
+          claimedAt: null,
+          claimedBy: null,
+          attemptCount: action.attemptCount + 1,
+        },
+      );
+    }
+
+    for (const action of expiredScheduledActions) {
+      await linkedinActionRepository.update(
+        {
+          id: action.id,
+          status: LINKEDIN_ACTION_STATUSES.SCHEDULED,
+          scheduledAt: LessThanOrEqual(actionExpiredBefore),
+        },
+        {
+          status: LINKEDIN_ACTION_STATUSES.FAILED,
+          executedAt: now,
+          errorMessage: SEQUENCE_EXECUTION_ERROR.LINKEDIN_ACTION_EXPIRED,
+        },
+      );
+    }
   }
 
   private async admitPendingEnrollments({

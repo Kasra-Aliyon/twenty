@@ -472,6 +472,7 @@ export {
   IconUser,
   IconUserCircle,
   IconUserCog,
+  IconUserMinus,
   IconUserPin,
   IconUserPlus,
   IconUsers,

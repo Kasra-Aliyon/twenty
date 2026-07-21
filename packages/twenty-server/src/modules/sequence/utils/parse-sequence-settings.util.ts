@@ -22,6 +22,11 @@ const toNonNegativeNumber = (value: unknown, fallback: number): number =>
     ? value
     : fallback;
 
+const toPositiveNumber = (value: unknown, fallback: number): number =>
+  typeof value === 'number' && Number.isFinite(value) && value > 0
+    ? value
+    : fallback;
+
 export const parseSequenceSettings = (value: unknown): SequenceSettings => {
   if (!isRecord(value)) {
     return { ...DEFAULT_SEQUENCE_SETTINGS };
@@ -69,6 +74,24 @@ export const parseSequenceSettings = (value: unknown): SequenceSettings => {
       value.staggerMinutes,
       DEFAULT_SEQUENCE_SETTINGS.staggerMinutes,
     ),
+    linkedinDailyActions: Math.max(
+      1,
+      Math.floor(
+        toPositiveNumber(
+          value.linkedinDailyActions,
+          DEFAULT_SEQUENCE_SETTINGS.linkedinDailyActions,
+        ),
+      ),
+    ),
+    linkedinDelayPatternMinutes:
+      Array.isArray(value.linkedinDelayPatternMinutes) &&
+      value.linkedinDelayPatternMinutes.length > 0 &&
+      value.linkedinDelayPatternMinutes.every(
+        (delay) =>
+          typeof delay === 'number' && Number.isFinite(delay) && delay > 0,
+      )
+        ? value.linkedinDelayPatternMinutes
+        : DEFAULT_SEQUENCE_SETTINGS.linkedinDelayPatternMinutes,
     stopOnReply:
       typeof value.stopOnReply === 'boolean'
         ? value.stopOnReply

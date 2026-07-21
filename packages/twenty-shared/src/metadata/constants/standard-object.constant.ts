@@ -2112,6 +2112,9 @@ export const STANDARD_OBJECTS = {
       linkedinLink: {
         universalIdentifier: '20202020-f1af-48f7-893b-2007a73dd508',
       },
+      linkedinConnectionState: {
+        universalIdentifier: '6321ab3f-7514-456d-8b10-bd6389818a3f',
+      },
       jobTitle: { universalIdentifier: '20202020-b0d0-415a-bef9-640a26dacd9b' },
       phones: { universalIdentifier: '20202020-0638-448e-8825-439134618022' },
       avatarUrl: {
@@ -2160,6 +2163,9 @@ export const STANDARD_OBJECTS = {
       },
       sequenceEnrollments: {
         universalIdentifier: 'ed4d3a7f-4ca7-4a35-88cd-f8e88871c159',
+      },
+      linkedinActions: {
+        universalIdentifier: 'bb68d29e-e503-4bfa-919d-3d2cf806fc8b',
       },
       searchVector: {
         universalIdentifier: '57d1d7ad-fa10-44fc-82f3-ad0959ec2534',
@@ -2460,6 +2466,81 @@ export const STANDARD_OBJECTS = {
       },
       statusNextActionAtIndex: {
         universalIdentifier: 'a47b18be-9ebc-4f37-9508-973dc5c41f2c',
+      },
+    },
+  },
+  linkedinAction: {
+    universalIdentifier: '4e193a84-4020-4ca8-8845-5f06023877b0',
+    fields: {
+      id: { universalIdentifier: '03df0f99-ee55-441e-87bb-b177c404f814' },
+      createdAt: {
+        universalIdentifier: '384419c1-c7ed-4b5e-af05-ebbb22da4b4e',
+      },
+      updatedAt: {
+        universalIdentifier: '21dcfac7-1a0a-4607-b7a6-6362d450ff93',
+      },
+      deletedAt: {
+        universalIdentifier: '25c69f52-784a-4653-9c11-ad51896933ec',
+      },
+      createdBy: {
+        universalIdentifier: '30ecf3c2-d130-456f-91b9-659fb002b580',
+      },
+      updatedBy: {
+        universalIdentifier: '21522e47-a28d-4cce-90f8-27f7db6c8e6e',
+      },
+      position: {
+        universalIdentifier: '70fad86e-f404-4088-87d5-3dd3bf180159',
+      },
+      searchVector: {
+        universalIdentifier: 'a7dd2d53-a7d1-4d11-b3d3-a2d3dbb7a8b4',
+      },
+      type: { universalIdentifier: 'cd3b5a31-6cdc-43ac-8460-91820cace4ee' },
+      status: {
+        universalIdentifier: '86225f9d-93bb-4059-aa22-9e247ea4f573',
+      },
+      scheduledAt: {
+        universalIdentifier: 'f823049b-954f-417c-995e-c4161d0c09c9',
+      },
+      claimedAt: {
+        universalIdentifier: '6f49c1f8-d8c9-4c85-a6e6-f34e65b6a441',
+      },
+      claimedBy: {
+        universalIdentifier: '55cce3e3-fa9e-4066-8a77-4e53f8b128b5',
+      },
+      executedAt: {
+        universalIdentifier: '99276651-102a-4a65-8d05-16c1587e76ac',
+      },
+      attemptCount: {
+        universalIdentifier: 'b9c6e323-62bb-4fc6-9df1-ba29773e6d1a',
+      },
+      errorMessage: {
+        universalIdentifier: '7d01fe03-2573-4618-a0cd-28cbaace5693',
+      },
+      linkedinUrl: {
+        universalIdentifier: 'c7a04de7-59a3-457a-ae74-576d96c1d6a1',
+      },
+      noteText: {
+        universalIdentifier: '10b7839e-ae35-4c6b-9a7a-73bca07c5738',
+      },
+      connectionState: {
+        universalIdentifier: 'be636021-b55a-477c-856b-05c3ea147255',
+      },
+      person: {
+        universalIdentifier: 'b55736cf-4598-46a3-b1e3-f955cce2447c',
+      },
+      sequenceEnrollmentId: {
+        universalIdentifier: 'cee9ade1-27ce-41df-8dc7-98691ce4309e',
+      },
+      sequenceStepId: {
+        universalIdentifier: '31484e73-a4f1-433b-bc63-f8a6a1f65ea3',
+      },
+    },
+    indexes: {
+      statusScheduledAtIndex: {
+        universalIdentifier: '1236f2ce-5961-4b2d-aa98-6d131b4f2dbe',
+      },
+      sequenceEnrollmentIdIndex: {
+        universalIdentifier: '2b30f6fa-5e51-4382-8d2f-8371e0fbb752',
       },
     },
   },
