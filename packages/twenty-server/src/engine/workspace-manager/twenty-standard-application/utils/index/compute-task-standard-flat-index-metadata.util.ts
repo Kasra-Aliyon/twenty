@@ -29,6 +29,18 @@ export const buildTaskStandardFlatIndexMetadatas = ({
     twentyStandardApplicationId,
     now,
   }),
+  sequenceEnrollmentIdIndex: createStandardIndexFlatMetadata({
+    objectName,
+    workspaceId,
+    context: {
+      indexName: 'sequenceEnrollmentIdIndex',
+      relatedFieldNames: ['sequenceEnrollmentId'],
+    },
+    standardObjectMetadataRelatedEntityIds,
+    dependencyFlatEntityMaps,
+    twentyStandardApplicationId,
+    now,
+  }),
   searchVectorGinIndex: createStandardIndexFlatMetadata({
     objectName,
     workspaceId,

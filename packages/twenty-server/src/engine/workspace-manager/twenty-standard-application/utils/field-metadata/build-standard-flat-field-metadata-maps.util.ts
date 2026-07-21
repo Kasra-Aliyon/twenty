@@ -28,6 +28,9 @@ import { buildPersonStandardFlatFieldMetadatas } from 'src/engine/workspace-mana
 import { buildRecordListFolderStandardFlatFieldMetadatas } from 'src/engine/workspace-manager/twenty-standard-application/utils/field-metadata/compute-record-list-folder-standard-flat-field-metadata.util';
 import { buildRecordListMemberStandardFlatFieldMetadatas } from 'src/engine/workspace-manager/twenty-standard-application/utils/field-metadata/compute-record-list-member-standard-flat-field-metadata.util';
 import { buildRecordListStandardFlatFieldMetadatas } from 'src/engine/workspace-manager/twenty-standard-application/utils/field-metadata/compute-record-list-standard-flat-field-metadata.util';
+import { buildSequenceEnrollmentStandardFlatFieldMetadatas } from 'src/engine/workspace-manager/twenty-standard-application/utils/field-metadata/compute-sequence-enrollment-standard-flat-field-metadata.util';
+import { buildSequenceStepStandardFlatFieldMetadatas } from 'src/engine/workspace-manager/twenty-standard-application/utils/field-metadata/compute-sequence-step-standard-flat-field-metadata.util';
+import { buildSequenceStandardFlatFieldMetadatas } from 'src/engine/workspace-manager/twenty-standard-application/utils/field-metadata/compute-sequence-standard-flat-field-metadata.util';
 import { buildTaskStandardFlatFieldMetadatas } from 'src/engine/workspace-manager/twenty-standard-application/utils/field-metadata/compute-task-standard-flat-field-metadata.util';
 import { buildTaskTargetStandardFlatFieldMetadatas } from 'src/engine/workspace-manager/twenty-standard-application/utils/field-metadata/compute-task-target-standard-flat-field-metadata.util';
 import { buildTimelineActivityStandardFlatFieldMetadatas } from 'src/engine/workspace-manager/twenty-standard-application/utils/field-metadata/compute-timeline-activity-standard-flat-field-metadata.util';
@@ -70,6 +73,9 @@ const STANDARD_FLAT_FIELD_METADATA_BUILDERS_BY_OBJECT_NAME = {
   recordListFolder: buildRecordListFolderStandardFlatFieldMetadatas,
   recordList: buildRecordListStandardFlatFieldMetadatas,
   recordListMember: buildRecordListMemberStandardFlatFieldMetadatas,
+  sequence: buildSequenceStandardFlatFieldMetadatas,
+  sequenceStep: buildSequenceStepStandardFlatFieldMetadatas,
+  sequenceEnrollment: buildSequenceEnrollmentStandardFlatFieldMetadatas,
   task: buildTaskStandardFlatFieldMetadatas,
   taskTarget: buildTaskTargetStandardFlatFieldMetadatas,
   timelineActivity: buildTimelineActivityStandardFlatFieldMetadatas,

@@ -7,6 +7,7 @@ import { useNumberFormat } from '@/localization/hooks/useNumberFormat';
 import { useFilteredObjectMetadataItems } from '@/object-metadata/hooks/useFilteredObjectMetadataItems';
 import { RecordIndexPageHeaderIcon } from '@/object-record/record-index/components/RecordIndexPageHeaderIcon';
 import { AddToRecordListAction } from '@/record-list/components/AddToRecordListAction';
+import { AddToSequenceAction } from '@/sequence/components/AddToSequenceAction';
 import { useRecordIndexContextOrThrow } from '@/object-record/record-index/contexts/RecordIndexContext';
 import { SidePanelToggleButton } from '@/side-panel/components/SidePanelToggleButton';
 import { PageCardHeader } from '@/ui/layout/page/components/PageCardHeader';
@@ -93,6 +94,7 @@ export const RecordIndexPageHeader = () => {
             {!isDefined(requiredFilter) && (
               <AddToRecordListAction objectNameSingular={objectNameSingular} />
             )}
+            <AddToSequenceAction objectNameSingular={objectNameSingular} />
             <RecordIndexCommandMenu />
             {!isLayoutCustomizationModeEnabled && <SidePanelToggleButton />}
           </>

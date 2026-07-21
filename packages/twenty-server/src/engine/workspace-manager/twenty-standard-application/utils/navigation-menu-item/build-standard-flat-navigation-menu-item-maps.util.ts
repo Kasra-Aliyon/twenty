@@ -32,6 +32,12 @@ const WORKFLOWS_FOLDER_ITEM_NAMES = [
   'workflowsFolderAllWorkflowVersions',
 ] as const;
 
+const LINK_NAVIGATION_MENU_ITEM_NAMES = [
+  'lists',
+  'sequences',
+  'taskQueue',
+] as const;
+
 export const buildStandardFlatNavigationMenuItemMaps = ({
   now,
   workspaceId,
@@ -76,37 +82,43 @@ export const buildStandardFlatNavigationMenuItemMaps = ({
     });
   }
 
-  const listsDefinition = STANDARD_NAVIGATION_MENU_ITEMS.lists;
+  for (const navigationMenuItemName of LINK_NAVIGATION_MENU_ITEM_NAMES) {
+    const navigationMenuItemDefinition =
+      STANDARD_NAVIGATION_MENU_ITEMS[navigationMenuItemName];
 
-  addFlatNavigationMenuItemToMapsAndUpdateIndex({
-    flatNavigationMenuItem: {
-      id: v4(),
-      type: NavigationMenuItemType.LINK,
-      universalIdentifier: listsDefinition.universalIdentifier,
-      applicationId: twentyStandardApplicationId,
-      applicationUniversalIdentifier:
-        TWENTY_STANDARD_APPLICATION.universalIdentifier,
-      workspaceId,
-      userWorkspaceId: null,
-      targetRecordId: null,
-      targetObjectMetadataId: null,
-      targetObjectMetadataUniversalIdentifier: null,
-      viewId: null,
-      viewUniversalIdentifier: null,
-      folderId: null,
-      folderUniversalIdentifier: null,
-      pageLayoutId: null,
-      pageLayoutUniversalIdentifier: null,
-      name: listsDefinition.name,
-      link: listsDefinition.link,
-      icon: listsDefinition.icon,
-      color: STANDARD_NAVIGATION_MENU_ITEM_DEFAULT_COLORS.lists ?? null,
-      position: listsDefinition.position,
-      createdAt: now,
-      updatedAt: now,
-    },
-    flatNavigationMenuItemMaps,
-  });
+    addFlatNavigationMenuItemToMapsAndUpdateIndex({
+      flatNavigationMenuItem: {
+        id: v4(),
+        type: NavigationMenuItemType.LINK,
+        universalIdentifier: navigationMenuItemDefinition.universalIdentifier,
+        applicationId: twentyStandardApplicationId,
+        applicationUniversalIdentifier:
+          TWENTY_STANDARD_APPLICATION.universalIdentifier,
+        workspaceId,
+        userWorkspaceId: null,
+        targetRecordId: null,
+        targetObjectMetadataId: null,
+        targetObjectMetadataUniversalIdentifier: null,
+        viewId: null,
+        viewUniversalIdentifier: null,
+        folderId: null,
+        folderUniversalIdentifier: null,
+        pageLayoutId: null,
+        pageLayoutUniversalIdentifier: null,
+        name: navigationMenuItemDefinition.name,
+        link: navigationMenuItemDefinition.link,
+        icon: navigationMenuItemDefinition.icon,
+        color:
+          STANDARD_NAVIGATION_MENU_ITEM_DEFAULT_COLORS[
+            navigationMenuItemName
+          ] ?? null,
+        position: navigationMenuItemDefinition.position,
+        createdAt: now,
+        updatedAt: now,
+      },
+      flatNavigationMenuItemMaps,
+    });
+  }
 
   const workflowsFolderDefinition =
     STANDARD_NAVIGATION_MENU_ITEMS.workflowsFolder;

@@ -48,6 +48,30 @@ const RecordListPage = lazy(() =>
   })),
 );
 
+const SequencesPage = lazy(() =>
+  import('~/pages/sequence/SequencesPage').then((module) => ({
+    default: module.SequencesPage,
+  })),
+);
+
+const SequenceCreatePage = lazy(() =>
+  import('~/pages/sequence/SequenceCreatePage').then((module) => ({
+    default: module.SequenceCreatePage,
+  })),
+);
+
+const SequencePage = lazy(() =>
+  import('~/pages/sequence/SequencePage').then((module) => ({
+    default: module.SequencePage,
+  })),
+);
+
+const TaskQueuePage = lazy(() =>
+  import('~/pages/tasks/TaskQueuePage').then((module) => ({
+    default: module.TaskQueuePage,
+  })),
+);
+
 const SignInUp = lazy(() =>
   import('~/pages/auth/SignInUp').then((module) => ({
     default: module.SignInUp,
@@ -268,6 +292,38 @@ export const useCreateAppRouter = (
               element={
                 <LazyRoute fallback={<RecordIndexSkeletonLoader />}>
                   <RecordListPage />
+                </LazyRoute>
+              }
+            />
+            <Route
+              path={AppPath.SequencesPage}
+              element={
+                <LazyRoute>
+                  <SequencesPage />
+                </LazyRoute>
+              }
+            />
+            <Route
+              path={AppPath.SequenceCreatePage}
+              element={
+                <LazyRoute>
+                  <SequenceCreatePage />
+                </LazyRoute>
+              }
+            />
+            <Route
+              path={AppPath.SequencePage}
+              element={
+                <LazyRoute>
+                  <SequencePage />
+                </LazyRoute>
+              }
+            />
+            <Route
+              path={AppPath.TaskQueuePage}
+              element={
+                <LazyRoute>
+                  <TaskQueuePage />
                 </LazyRoute>
               }
             />

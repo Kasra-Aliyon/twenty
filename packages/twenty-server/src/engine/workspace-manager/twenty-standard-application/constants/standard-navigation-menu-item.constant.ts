@@ -1,4 +1,5 @@
 import { STANDARD_OBJECTS } from 'twenty-shared/metadata';
+import { AppPath } from 'twenty-shared/types';
 
 import { NavigationMenuItemType } from 'src/engine/metadata-modules/navigation-menu-item/enums/navigation-menu-item-type.enum';
 
@@ -53,6 +54,22 @@ export const STANDARD_NAVIGATION_MENU_ITEMS = {
     icon: 'IconListDetails',
     position: 6,
   },
+  sequences: {
+    universalIdentifier: 'ff73f9e6-ea1d-48d2-9199-0033b493535d',
+    type: NavigationMenuItemType.LINK,
+    name: 'Sequences',
+    link: AppPath.SequencesPage,
+    icon: 'IconSend',
+    position: 8,
+  },
+  taskQueue: {
+    universalIdentifier: '6034d18c-307b-4384-968d-e480809df1fa',
+    type: NavigationMenuItemType.LINK,
+    name: 'Tasks',
+    link: AppPath.TaskQueuePage,
+    icon: 'IconCheckbox',
+    position: 9,
+  },
   workflowsFolder: {
     universalIdentifier: '20202020-b007-4b07-8b07-c0aba11c0007',
     type: NavigationMenuItemType.FOLDER,
@@ -98,6 +115,8 @@ export const STANDARD_NAVIGATION_MENU_ITEM_DEFAULT_COLORS: Partial<
   workflowsFolder: 'orange',
   allDashboards: 'gray',
   lists: 'blue',
+  sequences: 'blue',
+  taskQueue: 'turquoise',
   workflowsFolderAllWorkflows: 'gray',
   workflowsFolderAllWorkflowRuns: 'gray',
   workflowsFolderAllWorkflowVersions: 'gray',

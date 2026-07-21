@@ -12,7 +12,10 @@ import { getTsVectorColumnExpressionFromFields } from 'src/engine/workspace-mana
 type RecordListStandardObjectName =
   | 'recordListFolder'
   | 'recordList'
-  | 'recordListMember';
+  | 'recordListMember'
+  | 'sequence'
+  | 'sequenceStep'
+  | 'sequenceEnrollment';
 
 type RecordListBaseFieldName =
   | 'id'

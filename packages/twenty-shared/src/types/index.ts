@@ -275,6 +275,28 @@ export type {
   RelationPredicateValue,
   RowLevelPermissionPredicateValue,
 } from './RowLevelPermissionPredicateValue';
+export type {
+  SequenceStatus,
+  SequenceStepType,
+  SequenceEnrollmentStatus,
+  SequenceWaitingOn,
+  SequenceTaskType,
+  TaskPriority,
+  SequenceSettings,
+  SequenceEmailStepSettings,
+  SequenceDelayStepSettings,
+  SequenceTaskContinueMode,
+  SequenceCreateTaskStepSettings,
+  SequenceStepSettings,
+} from './SequenceTypes';
+export {
+  SEQUENCE_STATUSES,
+  SEQUENCE_STEP_TYPES,
+  SEQUENCE_ENROLLMENT_STATUSES,
+  SEQUENCE_WAITING_ON,
+  SEQUENCE_TASK_TYPES,
+  TASK_PRIORITIES,
+} from './SequenceTypes';
 export type { SerializedRelation } from './SerializedRelation.type';
 export { SERIALIZED_RELATION_BRAND } from './SerializedRelation.type';
 export { SettingsPath } from './SettingsPath';

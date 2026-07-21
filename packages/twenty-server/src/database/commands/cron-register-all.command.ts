@@ -25,6 +25,7 @@ import { MessagingMessageListFetchCronCommand } from 'src/modules/messaging/mess
 import { MessagingMessagesImportCronCommand } from 'src/modules/messaging/message-import-manager/crons/commands/messaging-messages-import.cron.command';
 import { MessagingOngoingStaleCronCommand } from 'src/modules/messaging/message-import-manager/crons/commands/messaging-ongoing-stale.cron.command';
 import { MessagingRelaunchFailedMessageChannelsCronCommand } from 'src/modules/messaging/message-import-manager/crons/commands/messaging-relaunch-failed-message-channels.cron.command';
+import { SequenceTickCronCommand } from 'src/modules/sequence/crons/commands/sequence-tick.cron.command';
 import { WorkflowCleanWorkflowRunsCronCommand } from 'src/modules/workflow/workflow-runner/workflow-run-queue/cron/command/workflow-clean-workflow-runs.cron.command';
 import { WorkflowHandleStaledRunsCronCommand } from 'src/modules/workflow/workflow-runner/workflow-run-queue/cron/command/workflow-handle-staled-runs.cron.command';
 import { WorkflowRunEnqueueCronCommand } from 'src/modules/workflow/workflow-runner/workflow-run-queue/cron/command/workflow-run-enqueue.cron.command';
@@ -66,6 +67,7 @@ export class CronRegisterAllCommand extends CommandRunner {
     private readonly applicationVersionCheckCronCommand: ApplicationVersionCheckCronCommand,
     private readonly staleRegistrationCleanupCronCommand: StaleRegistrationCleanupCronCommand,
     private readonly apolloEnrichmentBackfillCronCommand: ApolloEnrichmentBackfillCronCommand,
+    private readonly sequenceTickCronCommand: SequenceTickCronCommand,
     private readonly twentyConfigService: TwentyConfigService,
   ) {
     super();
@@ -182,6 +184,10 @@ export class CronRegisterAllCommand extends CommandRunner {
         isEnabled: this.twentyConfigService.get(
           'APOLLO_ENRICHMENT_BACKFILL_ENABLED',
         ),
+      },
+      {
+        name: 'SequenceTick',
+        command: this.sequenceTickCronCommand,
       },
     ];
 

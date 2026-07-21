@@ -2,6 +2,8 @@ import {
   type ActorMetadata,
   FieldMetadataType,
   type RichTextMetadata,
+  type SequenceTaskType,
+  type TaskPriority,
 } from 'twenty-shared/types';
 
 import { BaseWorkspaceEntity } from 'src/engine/twenty-orm/base.workspace-entity';
@@ -26,6 +28,10 @@ export class TaskWorkspaceEntity extends BaseWorkspaceEntity {
   bodyV2: RichTextMetadata | null;
   dueAt: Date | null;
   status: string | null;
+  type: SequenceTaskType;
+  priority: TaskPriority | null;
+  sequenceEnrollmentId: string | null;
+  sequenceStepId: string | null;
   createdBy: ActorMetadata;
   updatedBy: ActorMetadata;
   taskTargets: EntityRelation<TaskTargetWorkspaceEntity[]>;

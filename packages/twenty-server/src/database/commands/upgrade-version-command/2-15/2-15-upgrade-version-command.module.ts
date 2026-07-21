@@ -8,6 +8,7 @@ import { RenameConflictingCompanyFieldsCommand } from 'src/database/commands/upg
 import { AddCompanyFieldsCommand } from 'src/database/commands/upgrade-version-command/2-15/2-15-workspace-command-1800000004000-add-company-fields.command';
 import { AddRecordListsCommand } from 'src/database/commands/upgrade-version-command/2-15/2-15-workspace-command-1800000005000-add-record-lists.command';
 import { MakeRecordListFolderOptionalCommand } from 'src/database/commands/upgrade-version-command/2-15/2-15-workspace-command-1800000006000-make-record-list-folder-optional.command';
+import { AddOutreachSequencesCommand } from 'src/database/commands/upgrade-version-command/2-15/2-15-workspace-command-1800000007000-add-outreach-sequences.command';
 import { ApplicationModule } from 'src/engine/core-modules/application/application.module';
 import { FeatureFlagModule } from 'src/engine/core-modules/feature-flag/feature-flag.module';
 import { FieldMetadataModule } from 'src/engine/metadata-modules/field-metadata/field-metadata.module';
@@ -34,6 +35,7 @@ import { WorkspaceMigrationModule } from 'src/engine/workspace-manager/workspace
     AddCompanyFieldsCommand,
     AddRecordListsCommand,
     MakeRecordListFolderOptionalCommand,
+    AddOutreachSequencesCommand,
   ],
 })
 export class V2_15_UpgradeVersionCommandModule {}

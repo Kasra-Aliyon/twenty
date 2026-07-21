@@ -698,6 +698,93 @@ export const STANDARD_FLAT_OBJECT_METADATA_BUILDERS_BY_OBJECT_NAME = {
       twentyStandardApplicationId,
       now,
     }),
+  sequence: ({
+    now,
+    workspaceId,
+    standardObjectMetadataRelatedEntityIds,
+    twentyStandardApplicationId,
+    dependencyFlatEntityMaps,
+  }: Omit<CreateStandardObjectArgs<'sequence'>, 'context' | 'objectName'>) =>
+    createStandardObjectFlatMetadata({
+      objectName: 'sequence',
+      dependencyFlatEntityMaps,
+      context: {
+        universalIdentifier: STANDARD_OBJECTS.sequence.universalIdentifier,
+        nameSingular: 'sequence',
+        namePlural: 'sequences',
+        labelSingular: i18nLabel(msg`Sequence`),
+        labelPlural: i18nLabel(msg`Sequences`),
+        description: i18nLabel(msg`An outreach sequence`),
+        icon: 'IconSend',
+        isSystem: true,
+        labelIdentifierFieldMetadataName: 'name',
+      },
+      workspaceId,
+      standardObjectMetadataRelatedEntityIds,
+      twentyStandardApplicationId,
+      now,
+    }),
+  sequenceStep: ({
+    now,
+    workspaceId,
+    standardObjectMetadataRelatedEntityIds,
+    twentyStandardApplicationId,
+    dependencyFlatEntityMaps,
+  }: Omit<
+    CreateStandardObjectArgs<'sequenceStep'>,
+    'context' | 'objectName'
+  >) =>
+    createStandardObjectFlatMetadata({
+      objectName: 'sequenceStep',
+      dependencyFlatEntityMaps,
+      context: {
+        universalIdentifier: STANDARD_OBJECTS.sequenceStep.universalIdentifier,
+        nameSingular: 'sequenceStep',
+        namePlural: 'sequenceSteps',
+        labelSingular: i18nLabel(msg`Sequence Step`),
+        labelPlural: i18nLabel(msg`Sequence Steps`),
+        description: i18nLabel(msg`An ordered outreach sequence step`),
+        icon: 'IconListNumbers',
+        isSystem: true,
+        isUICreatable: false,
+        labelIdentifierFieldMetadataName: 'name',
+      },
+      workspaceId,
+      standardObjectMetadataRelatedEntityIds,
+      twentyStandardApplicationId,
+      now,
+    }),
+  sequenceEnrollment: ({
+    now,
+    workspaceId,
+    standardObjectMetadataRelatedEntityIds,
+    twentyStandardApplicationId,
+    dependencyFlatEntityMaps,
+  }: Omit<
+    CreateStandardObjectArgs<'sequenceEnrollment'>,
+    'context' | 'objectName'
+  >) =>
+    createStandardObjectFlatMetadata({
+      objectName: 'sequenceEnrollment',
+      dependencyFlatEntityMaps,
+      context: {
+        universalIdentifier:
+          STANDARD_OBJECTS.sequenceEnrollment.universalIdentifier,
+        nameSingular: 'sequenceEnrollment',
+        namePlural: 'sequenceEnrollments',
+        labelSingular: i18nLabel(msg`Sequence Enrollment`),
+        labelPlural: i18nLabel(msg`Sequence Enrollments`),
+        description: i18nLabel(msg`A person's enrollment in a sequence`),
+        icon: 'IconUserCheck',
+        isSystem: true,
+        isUICreatable: false,
+        labelIdentifierFieldMetadataName: 'id',
+      },
+      workspaceId,
+      standardObjectMetadataRelatedEntityIds,
+      twentyStandardApplicationId,
+      now,
+    }),
   task: ({
     now,
     workspaceId,

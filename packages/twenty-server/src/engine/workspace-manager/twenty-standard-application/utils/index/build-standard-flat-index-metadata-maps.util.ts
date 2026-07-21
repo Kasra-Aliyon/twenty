@@ -24,6 +24,8 @@ import { buildPersonStandardFlatIndexMetadatas } from 'src/engine/workspace-mana
 import { buildRecordListFolderStandardFlatIndexMetadatas } from 'src/engine/workspace-manager/twenty-standard-application/utils/index/compute-record-list-folder-standard-flat-index-metadata.util';
 import { buildRecordListMemberStandardFlatIndexMetadatas } from 'src/engine/workspace-manager/twenty-standard-application/utils/index/compute-record-list-member-standard-flat-index-metadata.util';
 import { buildRecordListStandardFlatIndexMetadatas } from 'src/engine/workspace-manager/twenty-standard-application/utils/index/compute-record-list-standard-flat-index-metadata.util';
+import { buildSequenceEnrollmentStandardFlatIndexMetadatas } from 'src/engine/workspace-manager/twenty-standard-application/utils/index/compute-sequence-enrollment-standard-flat-index-metadata.util';
+import { buildSequenceStepStandardFlatIndexMetadatas } from 'src/engine/workspace-manager/twenty-standard-application/utils/index/compute-sequence-step-standard-flat-index-metadata.util';
 import { buildTaskStandardFlatIndexMetadatas } from 'src/engine/workspace-manager/twenty-standard-application/utils/index/compute-task-standard-flat-index-metadata.util';
 import { buildTaskTargetStandardFlatIndexMetadatas } from 'src/engine/workspace-manager/twenty-standard-application/utils/index/compute-task-target-standard-flat-index-metadata.util';
 import { buildTimelineActivityStandardFlatIndexMetadatas } from 'src/engine/workspace-manager/twenty-standard-application/utils/index/compute-timeline-activity-standard-flat-index-metadata.util';
@@ -64,6 +66,8 @@ const STANDARD_FLAT_INDEX_METADATA_BUILDERS_BY_OBJECT_NAME = {
   recordListFolder: buildRecordListFolderStandardFlatIndexMetadatas,
   recordList: buildRecordListStandardFlatIndexMetadatas,
   recordListMember: buildRecordListMemberStandardFlatIndexMetadatas,
+  sequenceStep: buildSequenceStepStandardFlatIndexMetadatas,
+  sequenceEnrollment: buildSequenceEnrollmentStandardFlatIndexMetadatas,
   task: buildTaskStandardFlatIndexMetadatas,
   taskTarget: buildTaskTargetStandardFlatIndexMetadatas,
   timelineActivity: buildTimelineActivityStandardFlatIndexMetadatas,

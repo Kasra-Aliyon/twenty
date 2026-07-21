@@ -2155,6 +2155,12 @@ export const STANDARD_OBJECTS = {
       recordListMemberships: {
         universalIdentifier: 'f0c50e75-c18a-43d4-8897-5f5ac66ef9fa',
       },
+      emailOptOut: {
+        universalIdentifier: 'ab382526-20b3-4756-bb30-465e6a2c6301',
+      },
+      sequenceEnrollments: {
+        universalIdentifier: 'ed4d3a7f-4ca7-4a35-88cd-f8e88871c159',
+      },
       searchVector: {
         universalIdentifier: '57d1d7ad-fa10-44fc-82f3-ad0959ec2534',
       },
@@ -2275,6 +2281,188 @@ export const STANDARD_OBJECTS = {
       },
     },
   },
+  sequence: {
+    universalIdentifier: '6df5ed28-0545-4652-95f9-11b1692bf5ce',
+    fields: {
+      id: { universalIdentifier: 'ac898e25-baa2-481b-8d4e-e234d891eace' },
+      createdAt: {
+        universalIdentifier: 'd6f11a43-ad0d-4920-9c92-f9ea9cc53b7f',
+      },
+      updatedAt: {
+        universalIdentifier: 'e25b356f-a8e3-45b0-924a-3519c15391a3',
+      },
+      deletedAt: {
+        universalIdentifier: 'abab3287-f179-465d-a181-73ca2f23bd0c',
+      },
+      createdBy: {
+        universalIdentifier: '7c8e72d3-1669-4bba-98cd-a857be5f8b70',
+      },
+      updatedBy: {
+        universalIdentifier: '7931c0bb-79d8-4e51-ac0f-cb8b7cdd23ba',
+      },
+      position: {
+        universalIdentifier: 'e199d055-270e-4f8c-a098-50f6c897b127',
+      },
+      searchVector: {
+        universalIdentifier: '85392759-1a3b-427a-bed3-d9f8257846e0',
+      },
+      name: { universalIdentifier: '5b913e1f-2507-4e61-bd21-3692cf79d8c9' },
+      status: {
+        universalIdentifier: '3a120e67-a3a6-4ca4-8631-2318c08cf625',
+      },
+      senderConnectedAccountId: {
+        universalIdentifier: '94a09f59-3a81-417c-a91c-42cf08765fb8',
+      },
+      settings: {
+        universalIdentifier: '902d7c7d-65c1-4170-854c-e5e7b4334823',
+      },
+      enrolledCount: {
+        universalIdentifier: '8528b682-7f12-4008-b5dc-c424abd86129',
+      },
+      activeCount: {
+        universalIdentifier: '658bff5c-6046-4e0f-a546-1249041eff8c',
+      },
+      completedCount: {
+        universalIdentifier: 'ee3128ac-c48f-4eed-807f-8cd2d8118e24',
+      },
+      repliedCount: {
+        universalIdentifier: '92fd5fc1-bc39-4ff0-9fee-12d42039a1ab',
+      },
+      failedCount: {
+        universalIdentifier: 'ed36fce9-90e7-47f9-8794-cbde6c202263',
+      },
+      steps: {
+        universalIdentifier: '5d770cba-a644-4ae5-acd2-2babdfaa11d6',
+      },
+      enrollments: {
+        universalIdentifier: 'a2042f1a-8f8d-428e-8f24-7cb7642430c3',
+      },
+    },
+    indexes: {},
+  },
+  sequenceStep: {
+    universalIdentifier: '031348f6-f0f8-4e99-984d-f811c6765f70',
+    fields: {
+      id: { universalIdentifier: '382975a3-b384-41c9-a5a7-5aac54fc9617' },
+      createdAt: {
+        universalIdentifier: 'abb3cec0-8e84-4175-b04d-313f306acc9a',
+      },
+      updatedAt: {
+        universalIdentifier: 'd9a3bfda-8dca-4a9b-be20-c65222457c87',
+      },
+      deletedAt: {
+        universalIdentifier: '69fc043f-3ade-4be6-b9f5-22429296af5c',
+      },
+      createdBy: {
+        universalIdentifier: '2548b262-b8cc-458d-a8d2-dab2851e93b3',
+      },
+      updatedBy: {
+        universalIdentifier: '04f2ef89-6e02-4975-8ed7-de3a294b7f23',
+      },
+      position: {
+        universalIdentifier: '291f2abc-a2df-411b-b7b7-a17eb7da2ce5',
+      },
+      searchVector: {
+        universalIdentifier: 'e5c4f87d-b898-4e04-a24f-84896453f133',
+      },
+      sequence: {
+        universalIdentifier: '5fac6b29-01d1-45f5-afb7-7ebe42f92ba8',
+      },
+      name: { universalIdentifier: 'b007dac6-0972-4f59-b94d-8760a4526f23' },
+      type: { universalIdentifier: '70e549b3-c123-4e28-a263-744d63c4b5f5' },
+      settings: {
+        universalIdentifier: 'f9236dd1-1cf3-4748-8909-2a00c872f2a6',
+      },
+    },
+    indexes: {
+      sequenceIdIndex: {
+        universalIdentifier: '86bef202-2762-46d8-aabd-7964b2167feb',
+      },
+    },
+  },
+  sequenceEnrollment: {
+    universalIdentifier: '807f6559-1850-49f2-a1fa-afed177c7bb5',
+    fields: {
+      id: { universalIdentifier: '551d822d-f7ec-48bb-a563-e72773c6bb9f' },
+      createdAt: {
+        universalIdentifier: 'c6aa348f-4d9e-4726-8ec3-3e2516a01023',
+      },
+      updatedAt: {
+        universalIdentifier: 'd0a357b7-f3c9-4e33-aee6-55c513e33704',
+      },
+      deletedAt: {
+        universalIdentifier: '236bec04-afb6-46ec-b305-e5b9b681c89c',
+      },
+      createdBy: {
+        universalIdentifier: '3678a390-bc7b-4757-9ffd-d771716c7c5f',
+      },
+      updatedBy: {
+        universalIdentifier: '9b5777dc-effe-459f-849a-8d9bc7bdfac1',
+      },
+      position: {
+        universalIdentifier: '57993523-98ad-4143-99c9-69b870fd4066',
+      },
+      searchVector: {
+        universalIdentifier: 'e3eeeccd-74ee-4bd1-9469-152ee33daa1d',
+      },
+      sequence: {
+        universalIdentifier: '4f9c2610-b48f-4931-bf35-6b6320811172',
+      },
+      person: {
+        universalIdentifier: '9f950875-e3f1-46ba-9f1f-52c7aab4c2cc',
+      },
+      status: {
+        universalIdentifier: '7f9c8578-0a5c-49f9-93a8-46d0e23ab252',
+      },
+      currentStepId: {
+        universalIdentifier: '1fa81f83-c9f9-422d-a729-7c43d2a9a4f6',
+      },
+      currentStepPosition: {
+        universalIdentifier: '27f7f75b-4dd5-4bbf-bcea-b733a649840b',
+      },
+      waitingOn: {
+        universalIdentifier: 'ebf4f4bd-c1a3-433b-8ab5-a7c3d0ac3d59',
+      },
+      nextActionAt: {
+        universalIdentifier: '597afc27-67b2-45ea-af93-3dddc742f959',
+      },
+      senderConnectedAccountId: {
+        universalIdentifier: '62134b24-3991-4b68-938f-dec8ea92b228',
+      },
+      stopOnReply: {
+        universalIdentifier: '8aa09c9e-572e-4a50-b57c-f9bd71932727',
+      },
+      startedAt: {
+        universalIdentifier: '4b4d094c-57ac-4be6-b3d9-96b128f67ad0',
+      },
+      endedAt: {
+        universalIdentifier: '19e8a1dc-2221-40ca-be1e-f03622daceab',
+      },
+      errorMessage: {
+        universalIdentifier: 'a975a2f2-dff4-4c93-b805-dba35c5bef8c',
+      },
+      sentEmailsByStepId: {
+        universalIdentifier: 'd7df9b8b-5e67-4bc5-a753-11d620872bac',
+      },
+      lastSendAttempt: {
+        universalIdentifier: 'f58d54e6-a6f5-43ff-9b9d-16fa07b1cd88',
+      },
+    },
+    indexes: {
+      sequenceIdIndex: {
+        universalIdentifier: 'aa99e8b4-d65a-455d-8171-c71357ab030b',
+      },
+      personIdIndex: {
+        universalIdentifier: '5e4626a2-bef5-40cc-9fda-a48b87455599',
+      },
+      personSequenceUniqueIndex: {
+        universalIdentifier: 'd93a35d0-013d-4502-94d0-118cfb3f19fa',
+      },
+      statusNextActionAtIndex: {
+        universalIdentifier: 'a47b18be-9ebc-4f37-9508-973dc5c41f2c',
+      },
+    },
+  },
   task: {
     universalIdentifier: '20202020-1ba1-48ba-bc83-ef7e5990ed10',
     fields: {
@@ -2293,6 +2481,16 @@ export const STANDARD_OBJECTS = {
       bodyV2: { universalIdentifier: '20202020-4aa0-4ae8-898d-7df0afd47ab1' },
       dueAt: { universalIdentifier: '20202020-fd99-40da-951b-4cb9a352fce3' },
       status: { universalIdentifier: '20202020-70bc-48f9-89c5-6aa730b151e0' },
+      type: { universalIdentifier: '4d7a7f75-076c-4ddf-bb03-d28d6f4efece' },
+      priority: {
+        universalIdentifier: '93d003d1-e34e-4949-832c-7e8d0f9c2908',
+      },
+      sequenceEnrollmentId: {
+        universalIdentifier: '5a0273ce-7aab-4876-af29-ffe0dd1d7276',
+      },
+      sequenceStepId: {
+        universalIdentifier: '29e6fc08-79e7-4892-9bd2-7c8c439c97b5',
+      },
       createdBy: {
         universalIdentifier: '20202020-1a04-48ab-a567-576965ae5387',
       },
@@ -2316,6 +2514,9 @@ export const STANDARD_OBJECTS = {
     indexes: {
       assigneeIdIndex: {
         universalIdentifier: 'f48fa3b1-0cec-44da-a9e5-f8a5e766637e',
+      },
+      sequenceEnrollmentIdIndex: {
+        universalIdentifier: '62991b17-3e11-4738-af31-715fbfa15306',
       },
       searchVectorGinIndex: {
         universalIdentifier: 'a86b32b3-01d3-4302-a152-8b7f247db7b4',

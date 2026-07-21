@@ -23,6 +23,10 @@ export enum AppPath {
   RecordListsPage = '/lists',
   RecordListCreatePage = '/lists/new',
   RecordListPage = '/lists/:recordListId',
+  SequencesPage = '/sequences',
+  SequenceCreatePage = '/sequences/new',
+  SequencePage = '/sequences/:sequenceId',
+  TaskQueuePage = '/tasks',
 
   RecordIndexPage = '/objects/:objectNamePlural',
   RecordShowPage = '/object/:objectNameSingular/:objectRecordId',
