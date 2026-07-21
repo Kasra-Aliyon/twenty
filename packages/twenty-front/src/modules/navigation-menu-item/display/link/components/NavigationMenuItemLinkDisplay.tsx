@@ -131,7 +131,7 @@ export const NavigationMenuItemLinkDisplay = ({
         isLayoutCustomizationModeEnabled
           ? editModeProps?.onEditModeClick
           : shouldOpenListsPanel
-            ? () => setIsRecordListsPanelOpen(true)
+            ? () => setIsRecordListsPanelOpen((prev) => !prev)
             : undefined
       }
       Icon={() => <NavigationMenuItemIcon navigationMenuItem={item} />}

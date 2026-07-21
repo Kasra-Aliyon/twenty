@@ -3,7 +3,10 @@ import { isNonEmptyString } from '@sniptt/guards';
 import { Fragment, type ReactNode, useContext } from 'react';
 
 import { isLayoutCustomizationModeEnabledState } from '@/layout-customization/states/isLayoutCustomizationModeEnabledState';
+import { currentNavigationMenuItemFolderIdState } from '@/navigation-menu-item/common/states/currentNavigationMenuItemFolderIdState';
 import { lastClickedNavigationMenuItemIdState } from '@/navigation-menu-item/common/states/lastClickedNavigationMenuItemIdState';
+import { openNavigationMenuItemFolderIdsState } from '@/navigation-menu-item/common/states/openNavigationMenuItemFolderIdsState';
+import { isRecordListsPanelOpenState } from '@/record-list/states/isRecordListsPanelOpenState';
 import { recordIdentifierToObjectRecordIdentifier } from '@/navigation-menu-item/common/utils/recordIdentifierToObjectRecordIdentifier';
 import { useIdentifyActiveNavigationMenuItems } from '@/navigation-menu-item/display/hooks/useIdentifyActiveNavigationMenuItems';
 import { getNavigationMenuItemComputedLink } from '@/navigation-menu-item/display/utils/getNavigationMenuItemComputedLink';
@@ -101,12 +104,29 @@ export const NavigationDrawerItemForObjectMetadataItem = ({
     ? activeNavigationMenuItemIds.includes(navigationMenuItem!.id)
     : objectMetadataIdForOpenedSection === objectMetadataItem.id;
 
+  const setIsRecordListsPanelOpen = useSetAtomState(
+    isRecordListsPanelOpenState,
+  );
+  const setCurrentNavigationMenuItemFolderId = useSetAtomState(
+    currentNavigationMenuItemFolderIdState,
+  );
+  const setOpenNavigationMenuItemFolderIds = useSetAtomState(
+    openNavigationMenuItemFolderIdsState,
+  );
+
   const handleClick = isLayoutCustomizationModeEnabled
     ? onEditModeClick
-    : hasNavigationMenuItem && !isDragging
+    : !isDragging
       ? () => {
-          setLastClickedNavigationMenuItemId(navigationMenuItem!.id);
-          navigate(navigationPath);
+          setIsRecordListsPanelOpen(false);
+          setCurrentNavigationMenuItemFolderId(null);
+          setOpenNavigationMenuItemFolderIds([]);
+          setLastClickedNavigationMenuItemId(
+            hasNavigationMenuItem ? navigationMenuItem!.id : objectMetadataItem.id,
+          );
+          if (shouldNavigate) {
+            navigate(navigationPath);
+          }
         }
       : undefined;
 

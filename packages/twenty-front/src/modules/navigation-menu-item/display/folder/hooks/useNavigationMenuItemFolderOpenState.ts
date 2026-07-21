@@ -1,5 +1,5 @@
 import { isNonEmptyString } from '@sniptt/guards';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { NavigationMenuItemType } from 'twenty-shared/types';
 import { isDefined } from 'twenty-shared/utils';
@@ -43,9 +43,8 @@ export const useNavigationMenuItemFolderOpenState = ({
 
   const { activeNavigationMenuItemIds } =
     useIdentifyActiveNavigationMenuItems();
-  const setLastClickedNavigationMenuItemId = useSetAtomState(
-    lastClickedNavigationMenuItemIdState,
-  );
+  const [lastClickedNavigationMenuItemId, setLastClickedNavigationMenuItemId] =
+    useAtomState(lastClickedNavigationMenuItemIdState);
 
   const [isManuallyClosed, setIsManuallyClosed] = useState(false);
 
@@ -56,6 +55,26 @@ export const useNavigationMenuItemFolderOpenState = ({
   const hasActiveChild = activeChildIndex !== -1;
   const isOpen = isExplicitlyOpen || (hasActiveChild && !isManuallyClosed);
 
+  useEffect(() => {
+    if (
+      isDefined(lastClickedNavigationMenuItemId) &&
+      lastClickedNavigationMenuItemId !== folderId &&
+      !folderChildrenNavigationMenuItems.some(
+        (child) => child.id === lastClickedNavigationMenuItemId,
+      )
+    ) {
+      setOpenNavigationMenuItemFolderIds((current) =>
+        current.filter((id) => id !== folderId),
+      );
+      setIsManuallyClosed(true);
+    }
+  }, [
+    lastClickedNavigationMenuItemId,
+    folderId,
+    folderChildrenNavigationMenuItems,
+    setOpenNavigationMenuItemFolderIds,
+  ]);
+
   const handleToggle = () => {
     if (isMobile) {
       setCurrentNavigationMenuItemFolderId((prev) =>
@@ -65,9 +84,7 @@ export const useNavigationMenuItemFolderOpenState = ({
       setOpenNavigationMenuItemFolderIds((current) =>
         isOpen
           ? current.filter((id) => id !== folderId)
-          : current.includes(folderId)
-            ? current
-            : [...current, folderId],
+          : [folderId],
       );
       setIsManuallyClosed(isOpen);
     }

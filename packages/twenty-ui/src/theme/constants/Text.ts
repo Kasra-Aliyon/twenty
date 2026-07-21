@@ -7,7 +7,7 @@ export const TEXT = {
   iconSizeMedium: 16,
   iconSizeSmall: 14,
 
-  iconStrikeLight: 1.6,
-  iconStrikeMedium: 2,
-  iconStrikeBold: 2.5,
+  iconStrikeLight: 1.5,
+  iconStrikeMedium: 1.75,
+  iconStrikeBold: 2,
 };

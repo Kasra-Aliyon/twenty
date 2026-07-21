@@ -1,9 +1,9 @@
 body {
   margin: 0;
-  font-family: 'Inter', sans-serif;
+  font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background: var(--t-background-tertiary);
+  background: var(--t-background-primary);
   color: var(--t-font-color-primary);
 }
 

@@ -5,11 +5,11 @@ import { GRAY_SCALE_LIGHT } from './GrayScaleLight';
 import { TRANSPARENT_COLORS_LIGHT } from './TransparentColorsLight';
 
 export const BACKGROUND_LIGHT = {
-  noisy: 'var(--t-background-noisy)',
+  noisy: 'none',
   primary: GRAY_SCALE_LIGHT.gray1,
-  secondary: GRAY_SCALE_LIGHT.gray2,
-  tertiary: GRAY_SCALE_LIGHT.gray4,
-  quaternary: GRAY_SCALE_LIGHT.gray5,
+  secondary: GRAY_SCALE_LIGHT.gray1,
+  tertiary: GRAY_SCALE_LIGHT.gray1,
+  quaternary: GRAY_SCALE_LIGHT.gray2,
   invertedPrimary: GRAY_SCALE_LIGHT.gray12,
   invertedSecondary: GRAY_SCALE_LIGHT.gray11,
   danger: COLOR_LIGHT.red3,

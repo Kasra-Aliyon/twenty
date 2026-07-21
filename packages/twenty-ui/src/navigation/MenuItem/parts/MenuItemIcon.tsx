@@ -17,7 +17,7 @@ export const MenuItemIcon = ({
   Icon,
   iconThemeColor,
   withContainer = false,
-  withContainerBackground = true,
+  withContainerBackground = false,
 }: MenuItemIconProps) => {
   const { theme } = useContext(ThemeContext);
 

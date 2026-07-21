@@ -1,11 +1,11 @@
 export const BORDER_COMMON = {
   radius: {
-    xs: '2px',
-    sm: '4px',
-    md: '8px',
-    xl: '20px',
-    xxl: '40px',
-    pill: '999px',
+    xs: '4px',
+    sm: '6px',
+    md: '10px',
+    xl: '24px',
+    xxl: '48px',
+    pill: '9999px',
     rounded: '100%',
   },
 };

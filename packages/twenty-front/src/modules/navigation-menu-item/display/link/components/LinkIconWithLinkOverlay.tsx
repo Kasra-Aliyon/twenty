@@ -22,18 +22,10 @@ const StyledCompositeContainer = styled.div`
   width: 16px;
 `;
 
-const StyledMainIconWrapper = styled.div<{
-  $backgroundColor: string;
-  $borderColor?: string;
-  $noBackgroundOrBorder?: boolean;
-}>`
+const StyledMainIconWrapper = styled.div`
   align-items: center;
-  background-color: ${({ $backgroundColor, $noBackgroundOrBorder }) =>
-    $noBackgroundOrBorder ? 'transparent' : $backgroundColor};
-  border: ${({ $borderColor, $noBackgroundOrBorder }) =>
-    $noBackgroundOrBorder || !$borderColor
-      ? 'none'
-      : `1px solid ${$borderColor}`};
+  background-color: transparent;
+  border: none;
   border-radius: 4px;
   box-sizing: border-box;
   display: flex;
@@ -49,9 +41,9 @@ const StyledFaviconImage = styled.img`
   width: 100%;
 `;
 
-const StyledLinkOverlay = styled.div<{ $backgroundColor: string }>`
+const StyledLinkOverlay = styled.div`
   align-items: center;
-  background-color: ${({ $backgroundColor }) => $backgroundColor};
+  background-color: transparent;
   border-radius: ${themeCssVariables.border.radius.xs};
   bottom: -5px;
   display: flex;
@@ -66,6 +58,7 @@ export type LinkIconWithLinkOverlayProps = {
   link: string | null | undefined;
   LinkIcon: IconComponent;
   DefaultIcon: IconComponent;
+  showLinkOverlay?: boolean;
   color?: string | null;
 };
 
@@ -73,6 +66,7 @@ export const LinkIconWithLinkOverlay = ({
   link,
   LinkIcon,
   DefaultIcon,
+  showLinkOverlay = true,
   color: navItemColor,
 }: LinkIconWithLinkOverlayProps) => {
   const { theme } = useContext(ThemeContext);
@@ -89,11 +83,7 @@ export const LinkIconWithLinkOverlay = ({
 
   return (
     <StyledCompositeContainer>
-      <StyledMainIconWrapper
-        $backgroundColor={linkStyle.backgroundColor}
-        $borderColor={linkStyle.borderColor}
-        $noBackgroundOrBorder={showFavicon}
-      >
+      <StyledMainIconWrapper>
         {showFavicon ? (
           <StyledFaviconImage
             src={faviconUrl}
@@ -111,13 +101,15 @@ export const LinkIconWithLinkOverlay = ({
           />
         )}
       </StyledMainIconWrapper>
-      <StyledLinkOverlay $backgroundColor={themeCssVariables.grayScale.gray4}>
-        <LinkIcon
-          size="14px"
-          stroke={theme.icon.stroke.md}
-          color={themeCssVariables.grayScale.gray10}
-        />
-      </StyledLinkOverlay>
+      {showLinkOverlay && (
+        <StyledLinkOverlay>
+          <LinkIcon
+            size="14px"
+            stroke={theme.icon.stroke.md}
+            color={themeCssVariables.grayScale.gray10}
+          />
+        </StyledLinkOverlay>
+      )}
     </StyledCompositeContainer>
   );
 };

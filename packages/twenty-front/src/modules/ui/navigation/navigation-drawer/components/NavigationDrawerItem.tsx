@@ -203,8 +203,8 @@ const StyledIcon = styled.div`
 
 const StyledIconBackgroundTile = styled.div`
   align-items: center;
-  background-color: ${themeCssVariables.grayScale.gray3};
-  border-radius: ${themeCssVariables.border.radius.md};
+  background-color: transparent;
+  border-radius: ${themeCssVariables.border.radius.sm};
   display: flex;
   flex-shrink: 0;
   height: ${themeCssVariables.spacing[6]};

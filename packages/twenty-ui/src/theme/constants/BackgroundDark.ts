@@ -5,11 +5,11 @@ import { GRAY_SCALE_DARK } from './GrayScaleDark';
 import { TRANSPARENT_COLORS_DARK } from './TransparentColorsDark';
 
 export const BACKGROUND_DARK = {
-  noisy: 'var(--t-background-noisy)',
+  noisy: 'none',
   primary: GRAY_SCALE_DARK.gray1,
-  secondary: GRAY_SCALE_DARK.gray2,
-  tertiary: GRAY_SCALE_DARK.gray4,
-  quaternary: GRAY_SCALE_DARK.gray5,
+  secondary: GRAY_SCALE_DARK.gray1,
+  tertiary: GRAY_SCALE_DARK.gray1,
+  quaternary: GRAY_SCALE_DARK.gray3,
   invertedPrimary: GRAY_SCALE_DARK.gray12,
   invertedSecondary: GRAY_SCALE_DARK.gray11,
   danger: COLOR_DARK.red3,

@@ -16,14 +16,10 @@ const StyledCompositeContainer = styled.div`
   width: 16px;
 `;
 
-const StyledObjectIconWrapper = styled.div<{
-  $backgroundColor: string;
-  $borderColor?: string;
-}>`
+const StyledObjectIconWrapper = styled.div`
   align-items: center;
-  background-color: ${({ $backgroundColor }) => $backgroundColor};
-  border: ${({ $borderColor }) =>
-    $borderColor ? `1px solid ${$borderColor}` : 'none'};
+  background-color: transparent;
+  border: none;
   border-radius: 4px;
   box-sizing: border-box;
   display: flex;
@@ -32,9 +28,9 @@ const StyledObjectIconWrapper = styled.div<{
   position: absolute;
 `;
 
-const StyledViewOverlay = styled.div<{ $backgroundColor: string }>`
+const StyledViewOverlay = styled.div`
   align-items: center;
-  background-color: ${({ $backgroundColor }) => $backgroundColor};
+  background-color: transparent;
   border-radius: 4px;
   bottom: -5px;
   display: flex;
@@ -61,17 +57,14 @@ export const ObjectIconWithViewOverlay = ({
 
   return (
     <StyledCompositeContainer>
-      <StyledObjectIconWrapper
-        $backgroundColor={objectStyle.backgroundColor}
-        $borderColor={objectStyle.borderColor}
-      >
+      <StyledObjectIconWrapper>
         <ObjectIcon
           size="14px"
           stroke={theme.icon.stroke.md}
           color={objectStyle.iconColor}
         />
       </StyledObjectIconWrapper>
-      <StyledViewOverlay $backgroundColor={themeCssVariables.grayScale.gray4}>
+      <StyledViewOverlay>
         <ViewIcon
           size="12px"
           stroke={theme.icon.stroke.md}

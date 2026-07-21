@@ -19,7 +19,8 @@ export const THEME_COMMON = {
     horizontalCellPadding: '8px',
   },
   sidePanelWidth: '500px',
-  clickableElementBackgroundTransition: 'background 0.1s ease',
+  clickableElementBackgroundTransition:
+    'all 0.15s cubic-bezier(0.4, 0, 0.2, 1)',
   lastLayerZIndex: 2147483647,
   buttons: {
     secondaryTextColor: ACCENT_DARK.accent11,

@@ -5,7 +5,14 @@ import {
   StyledTintedIconTileContainer,
   getIconTileColorShades,
 } from 'twenty-ui/data-display';
-import { IconLink, IconWorld, useIcons } from 'twenty-ui/icon';
+import {
+  IconCheckbox,
+  IconLink,
+  IconListDetails,
+  IconSend,
+  IconWorld,
+  useIcons,
+} from 'twenty-ui/icon';
 import { themeCssVariables } from 'twenty-ui/theme-constants';
 import { type NavigationMenuItem } from '~/generated-metadata/graphql';
 
@@ -101,11 +108,37 @@ export const NavigationMenuItemIcon = ({
       objectMetadataItems,
       views,
     });
+
+    const itemIcon = isDefined(navigationMenuItem.icon)
+      ? getIcon(navigationMenuItem.icon)
+      : undefined;
+
+    let routeDefaultIcon;
+    if (!itemIcon) {
+      if (computedLink === '/lists' || computedLink?.startsWith('/lists/')) {
+        routeDefaultIcon = IconListDetails;
+      } else if (
+        computedLink === '/sequences' ||
+        computedLink?.startsWith('/sequences/')
+      ) {
+        routeDefaultIcon = IconSend;
+      } else if (
+        computedLink === '/tasks' ||
+        computedLink?.startsWith('/tasks/')
+      ) {
+        routeDefaultIcon = IconCheckbox;
+      }
+    }
+
+    const iconToUse = itemIcon ?? routeDefaultIcon;
+    const hasCustomOrRouteIcon = isDefined(iconToUse);
+
     return (
       <LinkIconWithLinkOverlay
         link={computedLink}
         LinkIcon={IconLink}
-        DefaultIcon={IconWorld}
+        DefaultIcon={iconToUse ?? IconWorld}
+        showLinkOverlay={!hasCustomOrRouteIcon}
         color={getNavigationMenuItemColor(navigationMenuItem)}
       />
     );
