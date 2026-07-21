@@ -13,6 +13,17 @@ import {
 const mockSaveNewFolderName = jest.fn();
 const mockSelectList = jest.fn();
 
+jest.mock('@dnd-kit/react', () => ({
+  useDroppable: () => ({
+    isDropTarget: false,
+    ref: jest.fn(),
+  }),
+}));
+
+jest.mock('@dnd-kit/collision', () => ({
+  pointerIntersection: jest.fn(),
+}));
+
 jest.mock(
   '~/pages/record-list/components/RecordListItemActionsDropdown',
   () => ({ RecordListItemActionsDropdown: () => null }),
@@ -135,5 +146,35 @@ describe('RecordListFolderSection', () => {
     fireEvent.click(screen.getByRole('link', { name: 'Customers' }));
 
     expect(mockSelectList).toHaveBeenCalledTimes(1);
+  });
+
+  it('collapses and expands the lists when the folder is selected', () => {
+    render(
+      <MemoryRouter
+        future={{
+          v7_relativeSplatPath: true,
+          v7_startTransition: true,
+        }}
+      >
+        <TestRecordListFolderSection
+          newFolderDraft={null}
+          onChangeNewFolderDraft={jest.fn()}
+          onSaveNewFolderName={jest.fn()}
+        />
+      </MemoryRouter>,
+    );
+
+    const folderToggle = screen.getByRole('button', { expanded: true });
+
+    fireEvent.click(folderToggle);
+
+    expect(
+      screen.queryByRole('link', { name: 'Customers' }),
+    ).not.toBeInTheDocument();
+    expect(folderToggle).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.click(folderToggle);
+
+    expect(screen.getByRole('link', { name: 'Customers' })).toBeInTheDocument();
   });
 });

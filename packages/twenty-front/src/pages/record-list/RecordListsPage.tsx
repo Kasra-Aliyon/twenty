@@ -309,6 +309,39 @@ const RecordLists = ({ onClose }: { onClose?: () => void }) => {
     );
   };
 
+  const handleMoveListToFolder = (listId: string, folderId: string) => {
+    if (!canManageLists || isSearching || isSaving) {
+      return;
+    }
+
+    const movedList = recordLists.find(
+      (recordList) => recordList.id === listId,
+    );
+
+    if (!movedList) {
+      return;
+    }
+
+    const nextPosition = recordLists.reduce(
+      (position, recordList) =>
+        recordList.folderId === folderId && recordList.id !== listId
+          ? Math.max(position, recordList.position + 1)
+          : position,
+      0,
+    );
+
+    void runMutation(() =>
+      updateOneRecord({
+        objectNameSingular: 'recordList',
+        idToUpdate: movedList.id,
+        updateOneRecordInput: {
+          folderId,
+          position: nextPosition,
+        },
+      }),
+    );
+  };
+
   const content = (
     <StyledContent>
       <StyledPanel>
@@ -365,7 +398,10 @@ const RecordLists = ({ onClose }: { onClose?: () => void }) => {
             onSave={() => void saveRename()}
           />
         )}
-        <RecordListDragDropProvider onReorder={handleReorder}>
+        <RecordListDragDropProvider
+          onMoveListToFolder={handleMoveListToFolder}
+          onReorder={handleReorder}
+        >
           {topLevelLists.length > 0 && (
             <RecordListFolderSection
               folder={null}

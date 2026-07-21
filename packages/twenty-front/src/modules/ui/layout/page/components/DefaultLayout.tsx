@@ -56,6 +56,7 @@ const StyledNavigationDrawerWrapper = styled.div`
 const StyledMainContainer = styled.div`
   display: flex;
   flex: 0 1 100%;
+  isolation: isolate;
   min-width: 0;
   overflow: hidden;
 `;

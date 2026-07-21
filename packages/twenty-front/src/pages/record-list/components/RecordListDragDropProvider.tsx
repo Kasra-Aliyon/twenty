@@ -3,6 +3,8 @@ import { DragDropProvider, PointerSensor } from '@dnd-kit/react';
 import { isSortable } from '@dnd-kit/react/sortable';
 import { type ComponentProps, type ReactNode } from 'react';
 
+import { getRecordListFolderDrop } from '../utils/getRecordListFolderDrop';
+
 const RECORD_LIST_DRAG_SENSORS = [
   PointerSensor.configure({
     activationConstraints: [
@@ -13,11 +15,13 @@ const RECORD_LIST_DRAG_SENSORS = [
 
 type RecordListDragDropProviderProps = {
   children: ReactNode;
+  onMoveListToFolder: (listId: string, folderId: string) => void;
   onReorder: (group: string, fromIndex: number, toIndex: number) => void;
 };
 
 export const RecordListDragDropProvider = ({
   children,
+  onMoveListToFolder,
   onReorder,
 }: RecordListDragDropProviderProps) => {
   const handleDragEnd: ComponentProps<typeof DragDropProvider>['onDragEnd'] = (
@@ -27,7 +31,16 @@ export const RecordListDragDropProvider = ({
       return;
     }
 
-    const { source } = event.operation;
+    const { source, target } = event.operation;
+    const folderDrop = getRecordListFolderDrop({
+      sourceId: source?.id,
+      targetData: target?.data,
+    });
+
+    if (folderDrop) {
+      onMoveListToFolder(folderDrop.listId, folderDrop.folderId);
+      return;
+    }
 
     if (
       isSortable(source) &&

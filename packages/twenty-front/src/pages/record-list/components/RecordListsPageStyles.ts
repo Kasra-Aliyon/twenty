@@ -105,28 +105,55 @@ export const StyledFolder = styled.section`
   gap: 2px;
 `;
 
-export const StyledFolderHeader = styled.div`
+export const StyledFolderHeader = styled.div<{ $isDropTarget: boolean }>`
   align-items: center;
+  background: ${({ $isDropTarget }) =>
+    $isDropTarget
+      ? themeCssVariables.background.transparent.medium
+      : 'transparent'};
   border-radius: ${themeCssVariables.border.radius.sm};
   display: flex;
   justify-content: space-between;
   min-height: 32px;
   padding: 0 ${themeCssVariables.spacing[2]};
+  position: relative;
 
   &:hover {
-    background: ${themeCssVariables.background.transparent.light};
+    background: ${({ $isDropTarget }) =>
+      $isDropTarget
+        ? themeCssVariables.background.transparent.medium
+        : themeCssVariables.background.transparent.light};
+  }
+
+  &:hover > [data-record-list-actions],
+  & > [data-record-list-actions]:focus-within {
+    opacity: 1;
+    pointer-events: auto;
   }
 `;
 
 export const StyledFolderTitle = styled.div`
   align-items: center;
   color: ${themeCssVariables.font.color.primary};
+  cursor: pointer;
   display: flex;
   flex: 1;
   font-size: ${themeCssVariables.font.size.md};
   font-weight: ${themeCssVariables.font.weight.semiBold};
   gap: ${themeCssVariables.spacing[2]};
   min-width: 0;
+
+  &:focus-visible {
+    outline: 1px solid ${themeCssVariables.border.color.medium};
+    outline-offset: 2px;
+  }
+`;
+
+export const StyledFolderToggleIcon = styled.span`
+  align-items: center;
+  color: ${themeCssVariables.font.color.tertiary};
+  display: flex;
+  flex-shrink: 0;
 `;
 
 export const StyledFolderIcon = styled.span`
@@ -157,8 +184,16 @@ export const StyledFolderCount = styled.span`
 
 export const StyledActions = styled.div`
   align-items: center;
+  background: ${themeCssVariables.background.primary};
   display: flex;
   flex-shrink: 0;
+  opacity: 0;
+  padding-left: ${themeCssVariables.spacing[2]};
+  pointer-events: none;
+  position: absolute;
+  right: ${themeCssVariables.spacing[1]};
+  transition: opacity 100ms ease;
+  z-index: 1;
 `;
 
 export const StyledListRow = styled.div`
@@ -167,9 +202,16 @@ export const StyledListRow = styled.div`
   display: flex;
   min-height: 36px;
   padding-left: ${themeCssVariables.spacing[3]};
+  position: relative;
 
   &:hover {
     background: ${themeCssVariables.background.transparent.light};
+  }
+
+  &:hover > [data-record-list-actions],
+  & > [data-record-list-actions]:focus-within {
+    opacity: 1;
+    pointer-events: auto;
   }
 `;
 

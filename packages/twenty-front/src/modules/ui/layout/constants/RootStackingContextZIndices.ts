@@ -15,6 +15,7 @@
 export enum RootStackingContextZIndices {
   SidePanel = 21,
   SidePanelButton = 22,
+  RecordListsPanel = 37,
   DropdownPortalBelowModal = 38,
   RootModalBackDrop = 39,
   RootModal = 40,

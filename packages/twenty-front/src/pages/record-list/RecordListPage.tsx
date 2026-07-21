@@ -30,7 +30,6 @@ import {
 type RecordListRecord = ObjectRecord & {
   name: string;
   type: RecordListType;
-  folder?: { id: string; name: string };
 };
 
 const OBJECT_NAME_BY_LIST_TYPE = {
@@ -57,7 +56,6 @@ export const RecordListPage = () => {
       id: true,
       name: true,
       type: true,
-      folder: { id: true, name: true },
     },
     skip: !isRecordListsEnabled,
   });
@@ -139,8 +137,6 @@ export const RecordListPage = () => {
       recordListId: { eq: recordListId },
     },
   } satisfies RecordGqlOperationFilter;
-  const pageHeaderTag = recordList.folder?.name;
-
   return (
     <PageContainer>
       <ContextStoreComponentInstanceContext.Provider
@@ -151,7 +147,6 @@ export const RecordListPage = () => {
           onRecordCreated={handleRecordCreated}
           skipPostOptimisticEffectOnRecordCreate
           pageTitle={recordList.name}
-          pageHeaderTag={pageHeaderTag}
           pageActions={
             <RecordListMembershipActions
               recordListId={recordListId}

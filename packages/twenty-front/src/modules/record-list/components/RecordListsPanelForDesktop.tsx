@@ -1,5 +1,6 @@
 import { useNavigationDrawerExpanded } from '@/navigation/hooks/useNavigationDrawerExpanded';
 import { isRecordListsPanelOpenState } from '@/record-list/states/isRecordListsPanelOpenState';
+import { RootStackingContextZIndices } from '@/ui/layout/constants/RootStackingContextZIndices';
 import { NAVIGATION_DRAWER_COLLAPSED_WIDTH } from '@/ui/layout/resizable-panel/constants/NavigationDrawerCollapsedWidth';
 import { NAVIGATION_DRAWER_WIDTH_VAR } from '@/ui/navigation/states/navigationDrawerWidthState';
 import { useAtomStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomStateValue';
@@ -27,7 +28,7 @@ const StyledPanelWrapper = styled.div<{
   top: 0;
   transition: width calc(${themeCssVariables.animation.duration.normal} * 1s);
   width: ${({ isOpen }) => (isOpen ? RECORD_LISTS_PANEL_WIDTH : '0px')};
-  z-index: ${themeCssVariables.lastLayerZIndex};
+  z-index: ${RootStackingContextZIndices.RecordListsPanel};
 `;
 
 const StyledPanel = styled.aside`

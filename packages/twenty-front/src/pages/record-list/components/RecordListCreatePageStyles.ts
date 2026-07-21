@@ -2,14 +2,13 @@ import { styled } from '@linaria/react';
 import { themeCssVariables } from 'twenty-ui/theme-constants';
 
 export const StyledCreateListContent = styled.form`
-  box-sizing: border-box;
+  display: contents;
+`;
+
+export const StyledCreateListFields = styled.div`
   display: flex;
-  flex: 1;
   flex-direction: column;
   gap: ${themeCssVariables.spacing[5]};
-  max-width: 960px;
-  overflow: auto;
-  padding: ${themeCssVariables.spacing[6]};
   width: 100%;
 `;
 
@@ -86,8 +85,22 @@ export const StyledObjectTypeButton = styled.button<{ isSelected: boolean }>`
   justify-content: center;
 `;
 
+export const StyledCreateListFolderSelect = styled.select`
+  background: ${themeCssVariables.background.primary};
+  border: 1px solid ${themeCssVariables.border.color.medium};
+  border-radius: ${themeCssVariables.border.radius.md};
+  box-sizing: border-box;
+  color: ${themeCssVariables.font.color.primary};
+  font-family: inherit;
+  font-size: ${themeCssVariables.font.size.md};
+  height: 40px;
+  padding: 0 ${themeCssVariables.spacing[3]};
+  width: 100%;
+`;
+
 export const StyledCreateListActions = styled.div`
   display: flex;
+  flex: 1;
   gap: ${themeCssVariables.spacing[2]};
   justify-content: flex-end;
 `;
