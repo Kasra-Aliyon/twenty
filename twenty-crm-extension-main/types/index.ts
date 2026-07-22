@@ -109,6 +109,92 @@ export type LinkedInRunnerSessionState = {
   failedCount: number;
 };
 
+export type LinkedInInvitationDirection = 'SENT' | 'RECEIVED';
+
+export type LinkedInMessageDirection = 'INBOUND' | 'OUTBOUND';
+
+export type LinkedInIdentity = {
+  linkedinId: string;
+  linkedinUrn: string;
+  handle: string | null;
+  name: string;
+};
+
+export type LinkedInHarvestConnection = {
+  profileUrn: string;
+  linkedinId: string | null;
+  handle: string;
+  name: string;
+  headline: string | null;
+  profileUrl: string;
+  connectedAt: string | null;
+};
+
+export type LinkedInHarvestInvitation = {
+  profileUrn: string;
+  linkedinId: string | null;
+  direction: LinkedInInvitationDirection;
+  handle: string;
+  name: string;
+  headline: string | null;
+  message: string | null;
+  sentAt: string | null;
+};
+
+export type LinkedInHarvestParticipant = {
+  linkedinId: string | null;
+  linkedinUrn: string | null;
+  name: string;
+  headline: string | null;
+};
+
+export type LinkedInHarvestThread = {
+  threadId: string;
+  name: string;
+  firstMessageTime: string;
+  lastMessageTime: string;
+  participants: LinkedInHarvestParticipant[];
+  labels: string[];
+};
+
+export type LinkedInHarvestMessage = {
+  messageId: string;
+  threadExternalId: string;
+  body: string;
+  deliveredAt: string;
+  direction: LinkedInMessageDirection;
+  senderName: string;
+  senderHandle: string | null;
+};
+
+export type LinkedInSyncProgress = {
+  connections: number;
+  invitations: number;
+  threads: number;
+  messages: number;
+};
+
+export type LinkedInSyncTotals = LinkedInSyncProgress;
+
+export type LinkedInSyncState = {
+  safeSyncedThroughLastActivityAt: number | null;
+  historicalBackfillComplete: boolean;
+  invitationSyncRevision: number;
+  messageSyncRevision: number;
+  lastConnectionSyncAt: number | null;
+  lastMessageSyncAt: number | null;
+  lastRunAt: number | null;
+  syncStartedAt: number | null;
+  lastError: string | null;
+};
+
+export type LinkedInSyncLock = {
+  key: string;
+  ownerTabId: number;
+  expiresAt: number;
+  progress: LinkedInSyncProgress;
+};
+
 export type TwentyTokenPair = {
   accessOrWorkspaceAgnosticToken: {
     token: string;
@@ -161,6 +247,13 @@ export type MessageType =
   | 'GET_LINKEDIN_RUNNER_STATE'
   | 'SET_LINKEDIN_RUNNER_STATE'
   | 'RUN_LINKEDIN_POLL'
+  | 'GET_LINKEDIN_CSRF_TOKEN'
+  | 'GET_LINKEDIN_SYNC_TOTALS'
+  | 'LINKEDIN_HARVEST_STORE'
+  | 'SYNC_LOCK_ACQUIRE'
+  | 'SYNC_LOCK_HEARTBEAT'
+  | 'SYNC_LOCK_RELEASE'
+  | 'SYNC_LOCK_STATUS'
   | 'GET_SETTINGS'
   | 'SAVE_SETTINGS'
   | 'TEST_CONNECTION'

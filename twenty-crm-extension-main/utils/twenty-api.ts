@@ -390,6 +390,38 @@ export class TwentyApiClient {
     return result;
   }
 
+  async metadataRequest<T>(
+    query: string,
+    variables?: Record<string, unknown>,
+  ): Promise<GraphQLResponse<T>> {
+    if (!this.token) {
+      throw new Error('No authentication token set');
+    }
+
+    const response = await fetch(`${this.baseUrl}/metadata`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${this.token}`,
+      },
+      body: JSON.stringify({ query, variables }),
+    });
+
+    if (!response.ok) {
+      const responseText = await response.text();
+
+      throw new Error(`HTTP error: ${response.status} ${responseText}`);
+    }
+
+    const result = (await response.json()) as GraphQLResponse<T>;
+
+    if (result.errors?.length) {
+      throw new Error(result.errors.map((error) => error.message).join('; '));
+    }
+
+    return result;
+  }
+
   async findPersonByLinkedInUrl(
     linkedinUrl: string,
   ): Promise<PeopleQueryResult['people']['edges'][0]['node'] | null> {

@@ -13,6 +13,12 @@ import {
   getTwentyTokenPair,
   saveTwentyTokenPair,
 } from '../utils/storage';
+import {
+  getLinkedInSyncTotalsWithClient,
+  handleLinkedInHarvestStoreRequest,
+  type LinkedInHarvestStoreRequest,
+} from '../utils/linkedin-harvest-store';
+import { resetLinkedinSchemaSessionCache } from '../utils/twenty-linkedin-schema';
 import type {
   ExtensionMessage,
   ExtensionResponse,
@@ -23,10 +29,115 @@ import type {
   LinkedInActionStatus,
   LinkedInConnectionState,
   LinkedInRunnerSessionState,
+  LinkedInSyncLock,
+  LinkedInSyncProgress,
 } from '../types';
 
 const LINKEDIN_RUNNER_ALARM = 'twenty-linkedin-runner-poll';
 const LINKEDIN_RUNNER_STATE_KEY = 'twentyLinkedinRunnerState';
+const LINKEDIN_SYNC_LOCK_TTL_MILLISECONDS = 30_000;
+
+const linkedinSyncLocks = new Map<string, LinkedInSyncLock>();
+
+const getLiveLinkedinSyncLock = (key: string): LinkedInSyncLock | null => {
+  const lock = linkedinSyncLocks.get(key);
+
+  if (!lock) {
+    return null;
+  }
+
+  if (lock.expiresAt <= Date.now()) {
+    linkedinSyncLocks.delete(key);
+    return null;
+  }
+
+  return lock;
+};
+
+const isTabAlive = async (tabId: number): Promise<boolean> => {
+  try {
+    await browser.tabs.get(tabId);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const acquireLinkedinSyncLock = async (
+  key: string,
+  ownerTabId: number,
+  progress: LinkedInSyncProgress,
+): Promise<{ acquired: boolean; lock: LinkedInSyncLock }> => {
+  const existingLock = getLiveLinkedinSyncLock(key);
+
+  if (
+    existingLock &&
+    existingLock.ownerTabId !== ownerTabId &&
+    (await isTabAlive(existingLock.ownerTabId))
+  ) {
+    return { acquired: false, lock: existingLock };
+  }
+
+  const lock: LinkedInSyncLock = {
+    key,
+    ownerTabId,
+    expiresAt: Date.now() + LINKEDIN_SYNC_LOCK_TTL_MILLISECONDS,
+    progress,
+  };
+
+  linkedinSyncLocks.set(key, lock);
+
+  return { acquired: true, lock };
+};
+
+const heartbeatLinkedinSyncLock = (
+  key: string,
+  ownerTabId: number,
+  progress: LinkedInSyncProgress,
+): LinkedInSyncLock | null => {
+  const lock = getLiveLinkedinSyncLock(key);
+
+  if (!lock || lock.ownerTabId !== ownerTabId) {
+    return null;
+  }
+
+  const nextLock = {
+    ...lock,
+    expiresAt: Date.now() + LINKEDIN_SYNC_LOCK_TTL_MILLISECONDS,
+    progress,
+  };
+
+  linkedinSyncLocks.set(key, nextLock);
+
+  return nextLock;
+};
+
+const releaseLinkedinSyncLock = (key: string, ownerTabId: number): boolean => {
+  const lock = getLiveLinkedinSyncLock(key);
+
+  if (!lock || lock.ownerTabId !== ownerTabId) {
+    return false;
+  }
+
+  linkedinSyncLocks.delete(key);
+  return true;
+};
+
+const getLinkedinCsrfToken = async (): Promise<string> => {
+  const cookies = await browser.cookies.getAll({
+    domain: 'www.linkedin.com',
+    name: 'JSESSIONID',
+  });
+  const csrfToken = cookies[0]?.value.replace(/^"|"$/g, '');
+
+  if (!csrfToken) {
+    throw new Error(
+      'LinkedIn session cookie was not found. Sign in to LinkedIn first.',
+    );
+  }
+
+  return csrfToken;
+};
 
 const DEFAULT_LINKEDIN_RUNNER_STATE: LinkedInRunnerSessionState = {
   enabled: false,
@@ -586,6 +697,7 @@ async function handleMessage(
         if (newSettings.twentyApiUrl) {
           apiClient = null;
           cachedTwentyApiUrl = null;
+          resetLinkedinSchemaSessionCache();
         }
         console.log('Settings saved successfully');
         return { success: true };
@@ -757,6 +869,91 @@ async function handleMessage(
         return { success: true, data: nextState };
       }
 
+      case 'GET_LINKEDIN_CSRF_TOKEN': {
+        const csrfToken = await getLinkedinCsrfToken();
+
+        return { success: true, data: { csrfToken } };
+      }
+
+      case 'GET_LINKEDIN_SYNC_TOTALS': {
+        const client = await getApiClient();
+        const totals = await getLinkedInSyncTotalsWithClient(client);
+
+        return { success: true, data: totals };
+      }
+
+      case 'LINKEDIN_HARVEST_STORE': {
+        const client = await getApiClient();
+        const result = await handleLinkedInHarvestStoreRequest(
+          client,
+          message.payload as LinkedInHarvestStoreRequest,
+        );
+
+        return { success: true, data: result };
+      }
+
+      case 'SYNC_LOCK_ACQUIRE': {
+        const tabId = sender?.tab?.id;
+        const { key, progress } = message.payload as {
+          key: string;
+          progress: LinkedInSyncProgress;
+        };
+
+        if (typeof tabId !== 'number') {
+          return {
+            success: false,
+            error: 'The LinkedIn sync tab could not be identified',
+          };
+        }
+
+        return {
+          success: true,
+          data: await acquireLinkedinSyncLock(key, tabId, progress),
+        };
+      }
+
+      case 'SYNC_LOCK_HEARTBEAT': {
+        const tabId = sender?.tab?.id;
+        const { key, progress } = message.payload as {
+          key: string;
+          progress: LinkedInSyncProgress;
+        };
+
+        if (typeof tabId !== 'number') {
+          return {
+            success: false,
+            error: 'The LinkedIn sync tab could not be identified',
+          };
+        }
+
+        const lock = heartbeatLinkedinSyncLock(key, tabId, progress);
+
+        return {
+          success: lock !== null,
+          data: { lock },
+          error: lock ? undefined : 'This tab no longer owns the sync lock',
+        };
+      }
+
+      case 'SYNC_LOCK_RELEASE': {
+        const tabId = sender?.tab?.id;
+        const { key } = message.payload as { key: string };
+
+        return {
+          success:
+            typeof tabId === 'number' && releaseLinkedinSyncLock(key, tabId),
+        };
+      }
+
+      case 'SYNC_LOCK_STATUS': {
+        const { key } = message.payload as { key: string };
+
+        return {
+          success: true,
+          data: { lock: getLiveLinkedinSyncLock(key) },
+        };
+      }
+
       case 'GET_LINKEDIN_RUNNER_STATE': {
         const runnerState = await getLinkedinRunnerState();
         const tabId = sender?.tab?.id;
@@ -832,6 +1029,13 @@ export default defineBackground(() => {
   );
 
   browser.alarms.create(LINKEDIN_RUNNER_ALARM, { periodInMinutes: 1 });
+  browser.tabs.onRemoved.addListener((tabId) => {
+    for (const [key, lock] of linkedinSyncLocks) {
+      if (lock.ownerTabId === tabId) {
+        linkedinSyncLocks.delete(key);
+      }
+    }
+  });
   browser.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name !== LINKEDIN_RUNNER_ALARM) {
       return;

@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 import { ref, onMounted, computed } from 'vue';
-import type { ExtensionResponse } from '../../types';
+import type { ExtensionResponse, LinkedInSyncTotals } from '../../types';
 import {
   DEFAULT_TWENTY_API_URL,
   DEFAULT_TWENTY_APP_URL,
@@ -16,16 +16,26 @@ const isSaving = ref(false);
 const isTesting = ref(false);
 const error = ref<string | null>(null);
 const success = ref<string | null>(null);
-const recentCaptures = ref<Array<{
-  linkedinUrl: string;
-  name: string;
-  type: 'person' | 'company';
-  capturedAt: number;
-  twentyId: string;
-}>>([]);
+const linkedInSyncTotals = ref<LinkedInSyncTotals>({
+  connections: 0,
+  invitations: 0,
+  threads: 0,
+  messages: 0,
+});
+const recentCaptures = ref<
+  Array<{
+    linkedinUrl: string;
+    name: string;
+    type: 'person' | 'company';
+    capturedAt: number;
+    twentyId: string;
+  }>
+>([]);
 
 // Computed
-const isConfigured = computed(() => !!twentyAppUrl.value && !!twentyApiUrl.value);
+const isConfigured = computed(
+  () => !!twentyAppUrl.value && !!twentyApiUrl.value,
+);
 const connectionStatus = computed(() => {
   if (!isConfigured.value) return 'not-configured';
   if (!hasToken.value) return 'no-session';
@@ -35,19 +45,27 @@ const connectionStatus = computed(() => {
 
 const statusText = computed(() => {
   switch (connectionStatus.value) {
-    case 'not-configured': return 'Not configured';
-    case 'no-session': return 'Not logged in';
-    case 'connected': return 'Connected';
-    case 'disconnected': return 'Connection failed';
-    default: return 'Unknown';
+    case 'not-configured':
+      return 'Not configured';
+    case 'no-session':
+      return 'Not logged in';
+    case 'connected':
+      return 'Connected';
+    case 'disconnected':
+      return 'Connection failed';
+    default:
+      return 'Unknown';
   }
 });
 
 const statusClass = computed(() => {
   switch (connectionStatus.value) {
-    case 'connected': return 'status--connected';
-    case 'no-session': return 'status--warning';
-    default: return 'status--error';
+    case 'connected':
+      return 'status--connected';
+    case 'no-session':
+      return 'status--warning';
+    default:
+      return 'status--error';
   }
 });
 
@@ -55,24 +73,25 @@ const statusClass = computed(() => {
 onMounted(async () => {
   await loadSettings();
   await loadRecentCaptures();
+  await loadLinkedInSyncTotals();
 });
 
 async function loadSettings() {
   isLoading.value = true;
   try {
-    const response = await browser.runtime.sendMessage({
+    const response = (await browser.runtime.sendMessage({
       type: 'GET_SETTINGS',
-    }) as ExtensionResponse<{
+    })) as ExtensionResponse<{
       twentyAppUrl: string;
       twentyApiUrl: string;
       hasToken: boolean;
     }>;
-    
+
     if (response.success && response.data) {
       twentyAppUrl.value = response.data.twentyAppUrl || DEFAULT_TWENTY_APP_URL;
       twentyApiUrl.value = response.data.twentyApiUrl || DEFAULT_TWENTY_API_URL;
       hasToken.value = response.data.hasToken || false;
-      
+
       if (hasToken.value) {
         await testConnection();
       }
@@ -87,10 +106,10 @@ async function loadSettings() {
 
 async function loadRecentCaptures() {
   try {
-    const response = await browser.runtime.sendMessage({
+    const response = (await browser.runtime.sendMessage({
       type: 'GET_RECENT_CAPTURES',
-    }) as ExtensionResponse<typeof recentCaptures.value>;
-    
+    })) as ExtensionResponse<typeof recentCaptures.value>;
+
     if (response.success && response.data) {
       recentCaptures.value = response.data;
     }
@@ -99,10 +118,31 @@ async function loadRecentCaptures() {
   }
 }
 
+async function loadLinkedInSyncTotals() {
+  if (!hasToken.value) {
+    return;
+  }
+
+  try {
+    const response = (await browser.runtime.sendMessage({
+      type: 'GET_LINKEDIN_SYNC_TOTALS',
+    })) as ExtensionResponse<LinkedInSyncTotals>;
+
+    if (response.success && response.data) {
+      linkedInSyncTotals.value = response.data;
+    }
+  } catch (err) {
+    console.error('Error loading LinkedIn harvest totals:', err);
+  }
+}
+
 function normalizeUrl(url: string): string {
   let normalizedUrl = url.trim();
 
-  if (!normalizedUrl.startsWith('http://') && !normalizedUrl.startsWith('https://')) {
+  if (
+    !normalizedUrl.startsWith('http://') &&
+    !normalizedUrl.startsWith('https://')
+  ) {
     normalizedUrl = 'http://' + normalizedUrl;
   }
 
@@ -114,26 +154,26 @@ async function saveSettings() {
     error.value = 'Please enter your Twenty app and API URLs';
     return;
   }
-  
+
   const normalizedTwentyAppUrl = normalizeUrl(twentyAppUrl.value);
   const normalizedTwentyApiUrl = normalizeUrl(twentyApiUrl.value);
 
   twentyAppUrl.value = normalizedTwentyAppUrl;
   twentyApiUrl.value = normalizedTwentyApiUrl;
-  
+
   isSaving.value = true;
   error.value = null;
   success.value = null;
-  
+
   try {
-    const response = await browser.runtime.sendMessage({
+    const response = (await browser.runtime.sendMessage({
       type: 'SAVE_SETTINGS',
       payload: {
         twentyAppUrl: normalizedTwentyAppUrl,
         twentyApiUrl: normalizedTwentyApiUrl,
       },
-    }) as ExtensionResponse;
-    
+    })) as ExtensionResponse;
+
     if (response.success) {
       success.value = 'Settings saved!';
       // Reload to check token
@@ -146,41 +186,46 @@ async function saveSettings() {
     error.value = 'Failed to save settings';
   } finally {
     isSaving.value = false;
-    setTimeout(() => { success.value = null; }, 3000);
+    setTimeout(() => {
+      success.value = null;
+    }, 3000);
   }
 }
 
 async function testConnection() {
   isTesting.value = true;
   error.value = null;
-  
-  try {
-    const authResponse = await browser.runtime.sendMessage({
-      type: 'GET_AUTH_TOKEN',
-    }) as ExtensionResponse<{ hasToken: boolean }>;
 
-    hasToken.value = authResponse.success && authResponse.data?.hasToken === true;
+  try {
+    const authResponse = (await browser.runtime.sendMessage({
+      type: 'GET_AUTH_TOKEN',
+    })) as ExtensionResponse<{ hasToken: boolean }>;
+
+    hasToken.value =
+      authResponse.success && authResponse.data?.hasToken === true;
 
     if (!hasToken.value) {
-      const syncResponse = await browser.runtime.sendMessage({
+      const syncResponse = (await browser.runtime.sendMessage({
         type: 'SYNC_TWENTY_TOKEN_PAIR_FROM_ACTIVE_TAB',
-      }) as ExtensionResponse<{ hasToken: boolean }>;
+      })) as ExtensionResponse<{ hasToken: boolean }>;
 
-      hasToken.value = syncResponse.success && syncResponse.data?.hasToken === true;
+      hasToken.value =
+        syncResponse.success && syncResponse.data?.hasToken === true;
     }
 
     if (!hasToken.value) {
       isConnected.value = false;
-      error.value = 'No local Twenty login token synced yet. Open http://localhost:3001, log in, then click this extension while that Twenty tab is active.';
+      error.value =
+        'No local Twenty login token synced yet. Open http://localhost:3001, log in, then click this extension while that Twenty tab is active.';
       return;
     }
 
-    const response = await browser.runtime.sendMessage({
+    const response = (await browser.runtime.sendMessage({
       type: 'TEST_CONNECTION',
-    }) as ExtensionResponse<{ connected: boolean }>;
-    
+    })) as ExtensionResponse<{ connected: boolean }>;
+
     isConnected.value = response.success && response.data?.connected === true;
-    
+
     if (!isConnected.value) {
       error.value = 'Connection test failed. Check your URL and login.';
     }
@@ -202,8 +247,8 @@ function openTwenty() {
 function openRecord(record: { twentyId: string; type: string }) {
   if (twentyAppUrl.value) {
     // URL uses singular: /object/person/ and /object/company/
-    browser.tabs.create({ 
-      url: `${twentyAppUrl.value}/object/${record.type}/${record.twentyId}` 
+    browser.tabs.create({
+      url: `${twentyAppUrl.value}/object/${record.type}/${record.twentyId}`,
     });
   }
 }
@@ -212,7 +257,7 @@ function formatDate(timestamp: number): string {
   const date = new Date(timestamp);
   const now = new Date();
   const diff = now.getTime() - date.getTime();
-  
+
   if (diff < 60000) return 'Just now';
   if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
   if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
@@ -226,8 +271,8 @@ function formatDate(timestamp: number): string {
     <header class="header">
       <div class="header__logo">
         <svg width="24" height="24" viewBox="0 0 40 40" fill="none">
-          <rect width="40" height="40" rx="8" fill="#6366f1"/>
-          <path d="M12 14h16v3H12zM12 20h12v3H12zM12 26h8v3H12z" fill="white"/>
+          <rect width="40" height="40" rx="8" fill="#6366f1" />
+          <path d="M12 14h16v3H12zM12 20h12v3H12zM12 26h8v3H12z" fill="white" />
         </svg>
         <span class="header__title">Twenty CRM</span>
       </div>
@@ -248,7 +293,7 @@ function formatDate(timestamp: number): string {
       <!-- Settings Section -->
       <section class="section">
         <h2 class="section__title">Settings</h2>
-        
+
         <div class="form-group">
           <label class="label" for="twentyAppUrl">Twenty App URL</label>
           <input
@@ -276,15 +321,15 @@ function formatDate(timestamp: number): string {
         </div>
 
         <div class="button-group">
-          <button 
-            class="btn btn--primary" 
+          <button
+            class="btn btn--primary"
             :disabled="isSaving"
             @click="saveSettings"
           >
             {{ isSaving ? 'Saving...' : 'Save' }}
           </button>
-          <button 
-            class="btn btn--secondary" 
+          <button
+            class="btn btn--secondary"
             :disabled="isTesting || !isConfigured"
             @click="testConnection"
           >
@@ -302,7 +347,10 @@ function formatDate(timestamp: number): string {
       </section>
 
       <!-- Login Prompt -->
-      <section v-if="isConfigured && !hasToken" class="section section--warning">
+      <section
+        v-if="isConfigured && !hasToken"
+        class="section section--warning"
+      >
         <p class="warning-text">
           Please log in to local Twenty to sync your browser session.
         </p>
@@ -311,31 +359,84 @@ function formatDate(timestamp: number): string {
         </button>
       </section>
 
+      <section v-if="hasToken" class="section">
+        <h2 class="section__title">LinkedIn Harvest</h2>
+        <div class="harvest-stats">
+          <div class="harvest-stat">
+            <strong>{{ linkedInSyncTotals.connections }}</strong>
+            <span>Connections</span>
+          </div>
+          <div class="harvest-stat">
+            <strong>{{ linkedInSyncTotals.invitations }}</strong>
+            <span>Invites</span>
+          </div>
+          <div class="harvest-stat">
+            <strong>{{ linkedInSyncTotals.threads }}</strong>
+            <span>Threads</span>
+          </div>
+          <div class="harvest-stat">
+            <strong>{{ linkedInSyncTotals.messages }}</strong>
+            <span>Messages</span>
+          </div>
+        </div>
+        <p class="hint">
+          Start or pause harvesting from the floating panel on LinkedIn.
+        </p>
+      </section>
+
       <!-- Recent Captures -->
       <section v-if="recentCaptures.length > 0" class="section">
         <h2 class="section__title">Recent Captures</h2>
         <ul class="captures-list">
-          <li 
-            v-for="capture in recentCaptures" 
+          <li
+            v-for="capture in recentCaptures"
             :key="capture.twentyId"
             class="capture-item"
             @click="openRecord(capture)"
           >
             <div class="capture-item__icon">
-              <svg v-if="capture.type === 'person'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-                <circle cx="12" cy="7" r="4"/>
+              <svg
+                v-if="capture.type === 'person'"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                <circle cx="12" cy="7" r="4" />
               </svg>
-              <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M3 21h18M9 8h1M9 12h1M9 16h1M14 8h1M14 12h1M14 16h1M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16"/>
+              <svg
+                v-else
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path
+                  d="M3 21h18M9 8h1M9 12h1M9 16h1M14 8h1M14 12h1M14 16h1M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16"
+                />
               </svg>
             </div>
             <div class="capture-item__info">
               <span class="capture-item__name">{{ capture.name }}</span>
-              <span class="capture-item__time">{{ formatDate(capture.capturedAt) }}</span>
+              <span class="capture-item__time">{{
+                formatDate(capture.capturedAt)
+              }}</span>
             </div>
-            <svg class="capture-item__arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M9 18l6-6-6-6"/>
+            <svg
+              class="capture-item__arrow"
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path d="M9 18l6-6-6-6" />
             </svg>
           </li>
         </ul>
@@ -359,7 +460,8 @@ function formatDate(timestamp: number): string {
 .popup {
   width: 360px;
   min-height: 400px;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background: #fafafa;
   color: #1f2937;
 }
@@ -434,7 +536,9 @@ function formatDate(timestamp: number): string {
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .content {
@@ -485,7 +589,9 @@ function formatDate(timestamp: number): string {
   border: 1px solid #d1d5db;
   border-radius: 8px;
   font-size: 14px;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
   box-sizing: border-box;
 }
 
@@ -562,6 +668,35 @@ function formatDate(timestamp: number): string {
   font-size: 14px;
   color: #92400e;
   margin-bottom: 12px;
+}
+
+.harvest-stats {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.harvest-stat {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.harvest-stat strong,
+.harvest-stat span {
+  display: block;
+}
+
+.harvest-stat strong {
+  color: #111827;
+  font-size: 18px;
+  margin-bottom: 2px;
+}
+
+.harvest-stat span {
+  color: #6b7280;
+  font-size: 12px;
 }
 
 .captures-list {
