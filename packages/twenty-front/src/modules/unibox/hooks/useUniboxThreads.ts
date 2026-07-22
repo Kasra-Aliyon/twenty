@@ -1,6 +1,6 @@
 import { NetworkStatus } from '@apollo/client';
 import { useQuery } from '@apollo/client/react';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { useApolloCoreClient } from '@/object-metadata/hooks/useApolloCoreClient';
 import { UNIBOX_THREADS } from '@/unibox/graphql/queries/uniboxThreads';
@@ -49,6 +49,8 @@ type UniboxThreadsVariables = {
     unreadOnly: boolean;
     dateFrom?: string;
     search?: string;
+    afterLastMessageAt?: string;
+    afterThreadId?: string;
     page: number;
     pageSize: number;
   };
@@ -85,6 +87,12 @@ export const useUniboxThreads = ({
       pageSize: UNIBOX_PAGE_SIZE,
     },
   };
+  const queryKey = JSON.stringify(variables.input);
+  const [isEndReached, setIsEndReached] = useState(false);
+
+  useEffect(() => {
+    setIsEndReached(false);
+  }, [queryKey]);
 
   const { data, loading, networkStatus, fetchMore, refetch, error } = useQuery<
     UniboxThreadsData,
@@ -101,20 +109,31 @@ export const useUniboxThreads = ({
     ({ channel }) => channel === expectedChannel,
   );
   const totalCount = data?.uniboxThreads.totalCount ?? 0;
-  const hasNextPage = threads.length < totalCount;
+  const hasNextPage = !isEndReached && threads.length < totalCount;
 
   const fetchMoreThreads = async () => {
     if (!hasNextPage || networkStatus === NetworkStatus.fetchMore) {
       return;
     }
 
-    const nextPage = Math.floor(threads.length / UNIBOX_PAGE_SIZE) + 1;
+    const lastThread = threads.at(-1);
 
-    await fetchMore({
-      variables: { input: { ...variables.input, page: nextPage } },
+    if (!lastThread) {
+      return;
+    }
+
+    const result = await fetchMore({
+      variables: {
+        input: {
+          ...variables.input,
+          afterLastMessageAt: lastThread.lastMessageAt,
+          afterThreadId: lastThread.id,
+        },
+      },
       updateQuery: (previousData, { fetchMoreResult }) => ({
         uniboxThreads: {
           ...fetchMoreResult.uniboxThreads,
+          totalCount: previousData.uniboxThreads.totalCount,
           threads: [
             ...previousData.uniboxThreads.threads,
             ...fetchMoreResult.uniboxThreads.threads.filter(
@@ -127,6 +146,10 @@ export const useUniboxThreads = ({
         },
       }),
     });
+
+    setIsEndReached(
+      (result.data?.uniboxThreads.threads.length ?? 0) < UNIBOX_PAGE_SIZE,
+    );
   };
 
   return {

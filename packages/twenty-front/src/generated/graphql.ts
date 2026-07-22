@@ -19,7 +19,9 @@ export type Scalars = {
 };
 
 export type AddUniboxContactsToCrmInput = {
-  handles: Array<Scalars['String']['input']>;
+  excludedHandles?: InputMaybe<Array<Scalars['String']['input']>>;
+  filter?: InputMaybe<UniboxContactsInput>;
+  handles?: InputMaybe<Array<Scalars['String']['input']>>;
   recordListId?: InputMaybe<Scalars['UUID']['input']>;
 };
 
@@ -567,6 +569,8 @@ export enum UniboxContactSince {
 }
 
 export type UniboxContactsInput = {
+  afterHandle?: InputMaybe<Scalars['String']['input']>;
+  afterLastContactedAt?: InputMaybe<Scalars['DateTime']['input']>;
   inCrmFilter?: InputMaybe<UniboxContactCrmFilter>;
   page?: InputMaybe<Scalars['Int']['input']>;
   pageSize?: InputMaybe<Scalars['Int']['input']>;
@@ -609,6 +613,8 @@ export type UniboxThreadParticipant = {
 };
 
 export type UniboxThreadsInput = {
+  afterLastMessageAt?: InputMaybe<Scalars['DateTime']['input']>;
+  afterThreadId?: InputMaybe<Scalars['UUID']['input']>;
   channel?: InputMaybe<UniboxChannel>;
   connectedAccountIds?: InputMaybe<Array<Scalars['UUID']['input']>>;
   dateFrom?: InputMaybe<Scalars['DateTime']['input']>;

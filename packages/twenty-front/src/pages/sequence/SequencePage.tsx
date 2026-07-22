@@ -212,13 +212,19 @@ const SequencePageContent = () => {
           {activeTab === 'steps' && (
             <SequenceStepList
               sequenceId={sequence.id}
-              isStructureLocked={hasActiveEnrollments}
+              isStructureLocked={isActive || hasActiveEnrollments}
               canAddOrReorder={
+                !isActive &&
                 !hasActiveEnrollments &&
                 sequenceStepPermissions.canUpdateObjectRecords
               }
-              canUpdateSteps={sequenceStepPermissions.canUpdateObjectRecords}
+              canUpdateSteps={
+                !isActive &&
+                !hasActiveEnrollments &&
+                sequenceStepPermissions.canUpdateObjectRecords
+              }
               canDeleteSteps={
+                !isActive &&
                 !hasActiveEnrollments &&
                 sequenceStepPermissions.canSoftDeleteObjectRecords
               }
@@ -236,7 +242,11 @@ const SequencePageContent = () => {
           {activeTab === 'settings' && (
             <SequenceSettingsSection
               sequence={sequence}
-              canUpdate={sequencePermissions.canUpdateObjectRecords}
+              canUpdate={
+                !isActive &&
+                !hasActiveEnrollments &&
+                sequencePermissions.canUpdateObjectRecords
+              }
             />
           )}
         </StyledPageContent>

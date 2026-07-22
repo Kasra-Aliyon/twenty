@@ -11,6 +11,7 @@ import { DashboardQueryHookModule } from 'src/modules/dashboard/query-hooks/dash
 import { MessagingQueryHookModule } from 'src/modules/messaging/common/query-hooks/messaging-query-hook.module';
 import { NoteQueryHookModule } from 'src/modules/note/query-hooks/note-query-hook.module';
 import { RecordListQueryHookModule } from 'src/modules/record-list/query-hooks/record-list-query-hook.module';
+import { SequenceQueryHookModule } from 'src/modules/sequence/query-hooks/sequence-query-hook.module';
 import { TaskQueryHookModule } from 'src/modules/task/query-hooks/task-query-hook.module';
 import { WorkspaceMemberQueryHookModule } from 'src/modules/workspace-member/query-hooks/workspace-member-query-hook.module';
 
@@ -24,6 +25,7 @@ import { WorkspaceMemberQueryHookModule } from 'src/modules/workspace-member/que
     NoteQueryHookModule,
     TaskQueryHookModule,
     RecordListQueryHookModule,
+    SequenceQueryHookModule,
     DiscoveryModule,
   ],
   providers: [

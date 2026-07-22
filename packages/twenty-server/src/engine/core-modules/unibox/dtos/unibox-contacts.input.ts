@@ -1,7 +1,10 @@
-import { Field, InputType, Int } from '@nestjs/graphql';
+import { Field, GraphQLISODateTime, InputType, Int } from '@nestjs/graphql';
+
+import { Type } from 'class-transformer';
 
 import {
   IsEnum,
+  IsDate,
   IsInt,
   IsOptional,
   IsString,
@@ -40,6 +43,18 @@ export class UniboxContactsInput {
   @IsOptional()
   @IsEnum(UniboxContactCrmFilter)
   inCrmFilter?: UniboxContactCrmFilter;
+
+  @Field(() => GraphQLISODateTime, { nullable: true })
+  @IsOptional()
+  @Type(() => Date)
+  @IsDate()
+  afterLastContactedAt?: Date;
+
+  @Field(() => String, { nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(320)
+  afterHandle?: string;
 
   @Field(() => Int, { nullable: true, defaultValue: 1 })
   @IsOptional()

@@ -174,7 +174,6 @@ export const UniboxDraftTab = ({
             <UniboxDraftComposer
               key={selectedDraft.id}
               draft={selectedDraft}
-              authorId={currentWorkspaceMember.id}
               connectedAccountId={
                 selectedDraft.connectedAccountId || accounts[0]?.id || ''
               }

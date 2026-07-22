@@ -4,6 +4,7 @@ import {
   type MessageParticipantRole,
   RECORD_LIST_TYPES,
 } from 'twenty-shared/types';
+import { isDefined } from 'twenty-shared/utils';
 
 import { UNIBOX_MESSAGE_PREVIEW_LENGTH } from 'src/engine/core-modules/unibox/constants/unibox.constants';
 import { type UniboxThreadParticipantDTO } from 'src/engine/core-modules/unibox/dtos/unibox-thread-participant.dto';
@@ -38,6 +39,8 @@ type UniboxThreadRawRow = {
   lastMessageAt: Date | string;
   messageCount: string | number;
   lastMessageChannelId: string;
+  isUnread: boolean | null;
+  totalCount: string | number;
 };
 
 type UniboxThreadParticipantRawRow = {
@@ -69,11 +72,7 @@ export class UniboxEmailThreadsService {
     const channel = input.channel ?? UniboxChannel.EMAIL;
     const folder = input.folder ?? UniboxFolder.INBOX;
 
-    if (
-      channel !== UniboxChannel.EMAIL ||
-      folder === UniboxFolder.DRAFT ||
-      input.unreadOnly === true
-    ) {
+    if (channel !== UniboxChannel.EMAIL || folder === UniboxFolder.DRAFT) {
       return EMPTY_UNIBOX_THREADS;
     }
 
@@ -85,6 +84,17 @@ export class UniboxEmailThreadsService {
       });
 
     if (ownedChannelContext.channelIds.length === 0) {
+      return EMPTY_UNIBOX_THREADS;
+    }
+
+    const unreadFolderIds =
+      await this.uniboxEmailChannelService.getUnreadFolderIds(
+        ownedChannelContext.channelIds,
+      );
+
+    // Providers that do not sync an unread folder leave every thread read, so
+    // filtering on unread can only ever come back empty for them.
+    if (input.unreadOnly === true && unreadFolderIds.length === 0) {
       return EMPTY_UNIBOX_THREADS;
     }
 
@@ -159,7 +169,12 @@ export class UniboxEmailThreadsService {
           getUniboxEmailFolderQueryConfig(folder);
         const messageDateExpression =
           'COALESCE(message.receivedAt, message.createdAt)';
-        const latestAssociationExpression = `(ARRAY_AGG(association.direction ORDER BY ${messageDateExpression} DESC, message.id DESC, association.id DESC))[1]`;
+        // A thread is unread when any of its messages still sits in an unread
+        // folder. Falls back to read when the provider syncs no unread folder.
+        const isUnreadExpression =
+          unreadFolderIds.length > 0
+            ? 'COALESCE(BOOL_OR(associationFolder.messageFolderId IN (:...unreadFolderIds)), false)'
+            : 'false';
 
         let counterpartJoinCondition =
           'counterpartParticipant.role IN (:...counterpartRoles) AND counterpartParticipant.workspaceMemberId IS NULL';
@@ -194,9 +209,22 @@ export class UniboxEmailThreadsService {
           })
           .groupBy('messageThread.id')
           .addGroupBy('messageThread.subject')
-          .having(`${latestAssociationExpression} = :folderDirection`, {
+          // A thread belongs to a folder when it holds at least one message in
+          // that direction. Classifying by the latest message instead would drop
+          // a thread out of Inbox as soon as the user replies to it.
+          .having('BOOL_OR(association.direction = :folderDirection)', {
             folderDirection,
           });
+
+        if (unreadFolderIds.length > 0) {
+          baseQuery
+            .leftJoin('association.messageFolders', 'associationFolder')
+            .setParameter('unreadFolderIds', unreadFolderIds);
+        }
+
+        if (input.unreadOnly === true) {
+          baseQuery.andHaving(isUnreadExpression);
+        }
 
         if (input.onlyCrmContacts) {
           baseQuery.andWhere('counterpartParticipant.personId IS NOT NULL');
@@ -233,14 +261,29 @@ export class UniboxEmailThreadsService {
           });
         }
 
-        const totalRows = await baseQuery
-          .clone()
-          .select('messageThread.id', 'id')
-          .getRawMany<{ id: string }>();
+        const hasCursor =
+          isDefined(input.afterLastMessageAt) && isDefined(input.afterThreadId);
+
+        if (hasCursor) {
+          baseQuery.andHaving(
+            `(
+              MAX(${messageDateExpression}) < :afterLastMessageAt
+              OR (
+                MAX(${messageDateExpression}) = :afterLastMessageAt
+                AND messageThread.id > :afterThreadId
+              )
+            )`,
+            {
+              afterLastMessageAt: input.afterLastMessageAt,
+              afterThreadId: input.afterThreadId,
+            },
+          );
+        }
+
         const page = input.page ?? 1;
         const pageSize = input.pageSize ?? 30;
 
-        const rows = await baseQuery
+        const pageQuery = baseQuery
           .clone()
           .select('messageThread.id', 'id')
           .addSelect('messageThread.subject', 'subject')
@@ -254,12 +297,18 @@ export class UniboxEmailThreadsService {
             `(ARRAY_AGG(association.messageChannelId ORDER BY ${messageDateExpression} DESC, message.id DESC, association.id DESC))[1]`,
             'lastMessageChannelId',
           )
+          .addSelect(isUnreadExpression, 'isUnread')
+          .addSelect('COUNT(*) OVER()', 'totalCount')
           .setParameter('previewLength', UNIBOX_MESSAGE_PREVIEW_LENGTH)
           .orderBy(`MAX(${messageDateExpression})`, 'DESC')
           .addOrderBy('messageThread.id', 'ASC')
-          .offset(getUniboxPageOffset(page, pageSize))
-          .limit(pageSize)
-          .getRawMany<UniboxThreadRawRow>();
+          .limit(pageSize);
+
+        if (!hasCursor) {
+          pageQuery.offset(getUniboxPageOffset(page, pageSize));
+        }
+
+        const rows = await pageQuery.getRawMany<UniboxThreadRawRow>();
 
         const participantsByThreadId = await this.getParticipantsByThreadId({
           messageParticipantRepository,
@@ -270,7 +319,7 @@ export class UniboxEmailThreadsService {
         });
 
         return {
-          totalCount: totalRows.length,
+          totalCount: Number(rows[0]?.totalCount ?? 0),
           threads: rows.map((row) => {
             const participants = participantsByThreadId.get(row.id) ?? [];
 
@@ -281,7 +330,7 @@ export class UniboxEmailThreadsService {
               lastMessagePreview: row.lastMessagePreview?.trim() ?? '',
               lastMessageAt: new Date(row.lastMessageAt),
               messageCount: Number(row.messageCount),
-              isRead: true,
+              isRead: row.isUnread !== true,
               participants,
               hasCrmContact: participants.some(
                 (participant) => participant.personId !== null,

@@ -9,6 +9,7 @@ import { UniboxResolver } from 'src/engine/core-modules/unibox/unibox.resolver';
 import { RelatedPersonIdsModule } from 'src/engine/core-modules/related-person-ids/related-person-ids.module';
 import { ConnectedAccountEntity } from 'src/engine/metadata-modules/connected-account/entities/connected-account.entity';
 import { MessageChannelEntity } from 'src/engine/metadata-modules/message-channel/entities/message-channel.entity';
+import { MessageFolderEntity } from 'src/engine/metadata-modules/message-folder/entities/message-folder.entity';
 import { WorkspaceDataSourceModule } from 'src/engine/workspace-datasource/workspace-datasource.module';
 import { ContactCreationManagerModule } from 'src/modules/contact-creation-manager/contact-creation-manager.module';
 import { MatchParticipantModule } from 'src/modules/match-participant/match-participant.module';
@@ -19,7 +20,11 @@ import { MatchParticipantModule } from 'src/modules/match-participant/match-part
     ContactCreationManagerModule,
     MatchParticipantModule,
     RelatedPersonIdsModule,
-    TypeOrmModule.forFeature([ConnectedAccountEntity, MessageChannelEntity]),
+    TypeOrmModule.forFeature([
+      ConnectedAccountEntity,
+      MessageChannelEntity,
+      MessageFolderEntity,
+    ]),
   ],
   providers: [
     UniboxResolver,

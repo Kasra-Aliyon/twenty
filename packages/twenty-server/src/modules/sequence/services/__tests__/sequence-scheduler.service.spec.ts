@@ -79,6 +79,7 @@ describe('SequenceSchedulerService', () => {
   }) => {
     const sequenceRepository = {
       find: jest.fn().mockResolvedValue([sequence]),
+      findOne: jest.fn().mockResolvedValue(sequence),
     };
     const enrollmentRepository = {
       count: jest.fn().mockResolvedValue(startedToday),
@@ -116,6 +117,9 @@ describe('SequenceSchedulerService', () => {
         async (_workspaceId: string, entity: object) =>
           repositories.get(entity) ?? {},
       ),
+      getGlobalWorkspaceDataSource: jest.fn().mockResolvedValue({
+        transaction: jest.fn(async (callback) => callback({})),
+      }),
     } as unknown as GlobalWorkspaceOrmManager;
     const enqueueProcess = jest.fn();
     const sequenceQueueService = {
@@ -138,6 +142,7 @@ describe('SequenceSchedulerService', () => {
 
     return {
       service,
+      sequenceRepository,
       enrollmentRepository,
       enqueueProcess,
       acquireSendLock,
@@ -150,12 +155,23 @@ describe('SequenceSchedulerService', () => {
       'pending-id',
       SEQUENCE_ENROLLMENT_STATUSES.PENDING,
     );
-    const { service, enrollmentRepository } = setup({
+    const { service, sequenceRepository, enrollmentRepository } = setup({
       startedToday: 1,
       pendingEnrollments: [pendingEnrollment],
     });
 
     await service.tick(workspaceId, now);
+
+    expect(sequenceRepository.findOne).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          id: sequence.id,
+          status: SEQUENCE_STATUSES.ACTIVE,
+        },
+        lock: { mode: 'pessimistic_write' },
+      }),
+      expect.any(Object),
+    );
 
     const pendingFindCall = enrollmentRepository.find.mock.calls.find(
       ([options]) =>
@@ -172,6 +188,7 @@ describe('SequenceSchedulerService', () => {
         status: SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
         nextActionAt: now,
       }),
+      expect.any(Object),
     );
   });
 

@@ -1,6 +1,6 @@
 import { NetworkStatus } from '@apollo/client';
 import { useMutation, useQuery } from '@apollo/client/react';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { useApolloCoreClient } from '@/object-metadata/hooks/useApolloCoreClient';
 import { ADD_UNIBOX_CONTACTS_TO_CRM } from '@/unibox/graphql/mutations/addUniboxContactsToCrm';
@@ -12,7 +12,6 @@ import {
 } from '@/unibox/types/UniboxThread';
 
 const UNIBOX_CONTACTS_PAGE_SIZE = 30;
-const UNIBOX_SELECT_ALL_PAGE_SIZE = 100;
 const UNIBOX_ADD_CONTACTS_BATCH_SIZE = 1_000;
 
 type UniboxContactsData = {
@@ -24,6 +23,8 @@ type UniboxContactsVariables = {
     search?: string;
     since: UniboxContactSince;
     inCrmFilter: UniboxContactCrmFilter;
+    afterLastContactedAt?: string;
+    afterHandle?: string;
     page: number;
     pageSize: number;
   };
@@ -38,8 +39,21 @@ type AddContactsData = {
 };
 
 type AddContactsVariables = {
-  input: { handles: string[]; recordListId?: string };
+  input: {
+    handles?: string[];
+    filter?: UniboxContactsVariables['input'];
+    excludedHandles?: string[];
+    recordListId?: string;
+  };
 };
+
+type AddContactsSelection =
+  | { handles: string[]; filter?: never; excludedHandles?: never }
+  | {
+      handles?: never;
+      filter: UniboxContactsVariables['input'];
+      excludedHandles: string[];
+    };
 
 export const useUniboxContacts = ({
   search,
@@ -63,6 +77,12 @@ export const useUniboxContacts = ({
     }),
     [inCrmFilter, search, since],
   );
+  const queryKey = JSON.stringify(variables.input);
+  const [isEndReached, setIsEndReached] = useState(false);
+
+  useEffect(() => {
+    setIsEndReached(false);
+  }, [queryKey]);
   const { data, loading, networkStatus, fetchMore, refetch, error } = useQuery<
     UniboxContactsData,
     UniboxContactsVariables
@@ -78,21 +98,27 @@ export const useUniboxContacts = ({
 
   const contacts = data?.uniboxContacts.contacts ?? [];
   const totalCount = data?.uniboxContacts.totalCount ?? 0;
-  const hasNextPage = contacts.length < totalCount;
+  const hasNextPage = !isEndReached && contacts.length < totalCount;
 
   const fetchMoreContacts = async () => {
     if (!hasNextPage || networkStatus === NetworkStatus.fetchMore) return;
 
-    await fetchMore({
+    const lastContact = contacts.at(-1);
+
+    if (!lastContact) return;
+
+    const result = await fetchMore({
       variables: {
         input: {
           ...variables.input,
-          page: Math.floor(contacts.length / UNIBOX_CONTACTS_PAGE_SIZE) + 1,
+          afterLastContactedAt: lastContact.lastContactedAt,
+          afterHandle: lastContact.handle,
         },
       },
       updateQuery: (previousData, { fetchMoreResult }) => ({
         uniboxContacts: {
           ...fetchMoreResult.uniboxContacts,
+          totalCount: previousData.uniboxContacts.totalCount,
           contacts: [
             ...previousData.uniboxContacts.contacts,
             ...fetchMoreResult.uniboxContacts.contacts.filter(
@@ -105,68 +131,64 @@ export const useUniboxContacts = ({
         },
       }),
     });
+
+    setIsEndReached(
+      (result.data?.uniboxContacts.contacts.length ?? 0) <
+        UNIBOX_CONTACTS_PAGE_SIZE,
+    );
   };
 
-  const fetchAllMatchingHandles = useCallback(async () => {
-    const handles = new Set<string>();
-    const pageCount = Math.ceil(totalCount / UNIBOX_SELECT_ALL_PAGE_SIZE);
-
-    for (let page = 1; page <= pageCount; page += 1) {
-      const result = await apolloCoreClient.query<
-        UniboxContactsData,
-        UniboxContactsVariables
-      >({
-        query: UNIBOX_CONTACTS,
-        variables: {
-          input: {
-            ...variables.input,
-            page,
-            pageSize: UNIBOX_SELECT_ALL_PAGE_SIZE,
-          },
-        },
-        fetchPolicy: 'network-only',
-      });
-
-      for (const contact of result.data?.uniboxContacts.contacts ?? []) {
-        handles.add(contact.handle);
-      }
-    }
-
-    return [...handles];
-  }, [apolloCoreClient, totalCount, variables.input]);
-
   const addContacts = useCallback(
-    async (handles: string[], recordListId?: string) => {
-      const uniqueHandles = [...new Set(handles)];
+    async (selection: AddContactsSelection, recordListId?: string) => {
       const combinedResult: AddContactsData['addUniboxContactsToCrm'] = {
         createdPersonCount: 0,
         alreadyExistingCount: 0,
         personIds: [],
       };
 
-      for (
-        let batchStart = 0;
-        batchStart < uniqueHandles.length;
-        batchStart += UNIBOX_ADD_CONTACTS_BATCH_SIZE
-      ) {
+      if (selection.filter) {
         const result = await addContactsMutation({
           variables: {
             input: {
-              handles: uniqueHandles.slice(
-                batchStart,
-                batchStart + UNIBOX_ADD_CONTACTS_BATCH_SIZE,
-              ),
+              filter: selection.filter,
+              excludedHandles: selection.excludedHandles,
               recordListId,
             },
           },
         });
-        const batchResult = result.data?.addUniboxContactsToCrm;
 
-        if (!batchResult) continue;
+        Object.assign(
+          combinedResult,
+          result.data?.addUniboxContactsToCrm ?? combinedResult,
+        );
+      } else {
+        const uniqueHandles = [...new Set(selection.handles)];
 
-        combinedResult.createdPersonCount += batchResult.createdPersonCount;
-        combinedResult.alreadyExistingCount += batchResult.alreadyExistingCount;
-        combinedResult.personIds.push(...batchResult.personIds);
+        for (
+          let batchStart = 0;
+          batchStart < uniqueHandles.length;
+          batchStart += UNIBOX_ADD_CONTACTS_BATCH_SIZE
+        ) {
+          const result = await addContactsMutation({
+            variables: {
+              input: {
+                handles: uniqueHandles.slice(
+                  batchStart,
+                  batchStart + UNIBOX_ADD_CONTACTS_BATCH_SIZE,
+                ),
+                recordListId,
+              },
+            },
+          });
+          const batchResult = result.data?.addUniboxContactsToCrm;
+
+          if (!batchResult) continue;
+
+          combinedResult.createdPersonCount += batchResult.createdPersonCount;
+          combinedResult.alreadyExistingCount +=
+            batchResult.alreadyExistingCount;
+          combinedResult.personIds.push(...batchResult.personIds);
+        }
       }
 
       combinedResult.personIds = [...new Set(combinedResult.personIds)];
@@ -189,8 +211,8 @@ export const useUniboxContacts = ({
     isAdding,
     hasNextPage,
     fetchMoreContacts,
-    fetchAllMatchingHandles,
     addContacts,
+    contactFilter: variables.input,
     error,
   };
 };

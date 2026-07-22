@@ -2,6 +2,7 @@ import { styled } from '@linaria/react';
 import { t } from '@lingui/core/macro';
 import { isBefore, isToday, parseISO, startOfDay } from 'date-fns';
 import { themeCssVariables } from 'twenty-ui/theme-constants';
+import { Button } from 'twenty-ui/input';
 
 import { type TaskQueueRecord } from '../types/TaskQueueRecord';
 import { TaskQueueRow } from './TaskQueueRow';
@@ -39,16 +40,28 @@ const StyledEmpty = styled.div`
   padding: ${themeCssVariables.spacing[6]};
 `;
 
+const StyledLoadMore = styled.div`
+  display: flex;
+  justify-content: center;
+  padding: ${themeCssVariables.spacing[3]};
+`;
+
 type TaskQueueListProps = {
   tasks: TaskQueueRecord[];
   onTaskCompleted: () => Promise<void>;
   canUpdateTasks: boolean;
+  hasNextPage: boolean;
+  isLoadingMore: boolean;
+  onLoadMore: () => Promise<unknown>;
 };
 
 export const TaskQueueList = ({
   tasks,
   onTaskCompleted,
   canUpdateTasks,
+  hasNextPage,
+  isLoadingMore,
+  onLoadMore,
 }: TaskQueueListProps) => {
   const today = startOfDay(new Date());
   const groups = [
@@ -106,6 +119,17 @@ export const TaskQueueList = ({
             ))}
           </StyledGroup>
         ))}
+      {hasNextPage && (
+        <StyledLoadMore>
+          <Button
+            title={t`Load more tasks`}
+            variant="secondary"
+            size="small"
+            isLoading={isLoadingMore}
+            onClick={() => void onLoadMore()}
+          />
+        </StyledLoadMore>
+      )}
     </StyledList>
   );
 };

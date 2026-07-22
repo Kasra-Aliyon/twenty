@@ -53,7 +53,6 @@ describe('UniboxLinkedinThreadsService', () => {
   const workspaceId = 'workspace-id';
   const workspaceMemberId = 'workspace-member-id';
   let baseQuery: MockQueryBuilder;
-  let totalQuery: MockQueryBuilder;
   let pageQuery: MockQueryBuilder;
   let participantQuery: MockQueryBuilder;
   let linkedinMessageThreadRepository: { createQueryBuilder: jest.Mock };
@@ -68,7 +67,6 @@ describe('UniboxLinkedinThreadsService', () => {
 
   beforeEach(() => {
     baseQuery = createMockQueryBuilder();
-    totalQuery = createMockQueryBuilder([{ id: 'thread-id' }]);
     pageQuery = createMockQueryBuilder([
       {
         id: 'thread-id',
@@ -76,6 +74,7 @@ describe('UniboxLinkedinThreadsService', () => {
         lastMessagePreview: ' Hello ',
         lastMessageAt: '2026-07-22T10:00:00.000Z',
         messageCount: '2',
+        totalCount: '1',
       },
     ]);
     participantQuery = createMockQueryBuilder([
@@ -88,9 +87,7 @@ describe('UniboxLinkedinThreadsService', () => {
         personId: 'person-id',
       },
     ]);
-    baseQuery.clone
-      .mockReturnValueOnce(totalQuery)
-      .mockReturnValueOnce(pageQuery);
+    baseQuery.clone.mockReturnValueOnce(pageQuery);
 
     linkedinMessageThreadRepository = {
       createQueryBuilder: jest.fn(() => baseQuery),
@@ -198,6 +195,32 @@ describe('UniboxLinkedinThreadsService', () => {
         }),
       ],
     });
+  });
+
+  it('should use a stable cursor instead of an offset after the first page', async () => {
+    const afterLastMessageAt = new Date('2026-07-21T00:00:00.000Z');
+
+    await service.getThreads({
+      input: {
+        channel: UniboxChannel.LINKEDIN,
+        afterLastMessageAt,
+        afterThreadId: '11111111-1111-4111-8111-111111111111',
+        page: 99,
+        pageSize: 30,
+      },
+      workspaceId,
+      workspaceMemberId,
+    });
+
+    expect(baseQuery.andWhere).toHaveBeenCalledWith(
+      expect.stringContaining('linkedinMessageThread.id > :afterThreadId'),
+      {
+        afterLastMessageAt,
+        afterThreadId: '11111111-1111-4111-8111-111111111111',
+      },
+    );
+    expect(pageQuery.offset).not.toHaveBeenCalled();
+    expect(pageQuery.limit).toHaveBeenCalledWith(30);
   });
 
   it('should deduplicate person-list members before filtering threads', async () => {

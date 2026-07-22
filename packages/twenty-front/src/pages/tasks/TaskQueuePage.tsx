@@ -10,7 +10,6 @@ import { useIsFeatureEnabled } from '@/workspace/hooks/useIsFeatureEnabled';
 import { t } from '@lingui/core/macro';
 import { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
-import { QUERY_MAX_RECORDS } from 'twenty-shared/constants';
 import {
   AppPath,
   CoreObjectNameSingular,
@@ -27,6 +26,7 @@ import { TaskQueueList } from './components/TaskQueueList';
 import { type TaskQueueRecord } from './types/TaskQueueRecord';
 
 const TASK_QUEUE_REFRESH_INTERVAL_MILLISECONDS = 15_000;
+const TASK_QUEUE_PAGE_SIZE = 50;
 
 const TaskQueuePageContent = () => {
   const [typeFilter, setTypeFilter] = useState<TaskTypeFilter>('ALL');
@@ -39,12 +39,22 @@ const TaskQueuePageContent = () => {
   const taskPermissions = useObjectPermissionsForObject(
     taskObjectMetadataItem.id,
   );
-  const { records: tasks, refetch } = useFindManyRecords<TaskQueueRecord>({
+  const {
+    records: tasks,
+    refetch,
+    fetchMoreRecords,
+    hasNextPage,
+    loading,
+  } = useFindManyRecords<TaskQueueRecord>({
     objectNameSingular: CoreObjectNameSingular.Task,
     filter: {
       and: [
         { status: { in: ['TODO', 'IN_PROGRESS'] } },
         { assigneeId: { eq: currentWorkspaceMember?.id ?? '' } },
+        ...(typeFilter === 'ALL' ? [] : [{ type: { eq: typeFilter } }]),
+        ...(priorityFilter === 'ALL'
+          ? []
+          : [{ priority: { eq: priorityFilter } }]),
       ],
     },
     orderBy: [{ dueAt: 'AscNullsLast' }],
@@ -70,7 +80,7 @@ const TaskQueuePageContent = () => {
         },
       },
     },
-    limit: QUERY_MAX_RECORDS,
+    limit: TASK_QUEUE_PAGE_SIZE,
     skip: !currentWorkspaceMember?.id,
   });
 
@@ -85,12 +95,6 @@ const TaskQueuePageContent = () => {
 
     return () => window.clearInterval(intervalId);
   }, [currentWorkspaceMember?.id, refetch]);
-
-  const filteredTasks = tasks.filter(
-    (task) =>
-      (typeFilter === 'ALL' || task.type === typeFilter) &&
-      (priorityFilter === 'ALL' || task.priority === priorityFilter),
-  );
 
   return (
     <PageContainer>
@@ -111,7 +115,10 @@ const TaskQueuePageContent = () => {
         }
       >
         <TaskQueueList
-          tasks={filteredTasks}
+          tasks={tasks}
+          hasNextPage={hasNextPage}
+          isLoadingMore={loading && tasks.length > 0}
+          onLoadMore={fetchMoreRecords}
           canUpdateTasks={taskPermissions.canUpdateObjectRecords}
           onTaskCompleted={async () => {
             await refetch();

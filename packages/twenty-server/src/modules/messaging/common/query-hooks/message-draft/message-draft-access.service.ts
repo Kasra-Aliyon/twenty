@@ -64,7 +64,23 @@ export class MessageDraftAccessService {
   ): Partial<MessageDraftWorkspaceEntity> {
     return {
       ...data,
+      ...(data.subject !== undefined
+        ? { subject: typeof data.subject === 'string' ? data.subject : '' }
+        : {}),
+      ...(data.body !== undefined
+        ? { body: typeof data.body === 'string' ? data.body : '' }
+        : {}),
+      ...(data.to !== undefined
+        ? { to: typeof data.to === 'string' ? data.to : '' }
+        : {}),
+      ...(data.cc !== undefined
+        ? { cc: typeof data.cc === 'string' ? data.cc : '' }
+        : {}),
+      ...(data.bcc !== undefined
+        ? { bcc: typeof data.bcc === 'string' ? data.bcc : '' }
+        : {}),
       authorId: workspaceMemberId,
+      lastEditedAt: new Date(),
     };
   }
 

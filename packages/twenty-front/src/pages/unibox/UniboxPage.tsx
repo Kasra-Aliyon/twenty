@@ -214,7 +214,6 @@ const UniboxPageContent = () => {
               ) : isEmailThreadMetadataAvailable ? (
                 <UniboxEmailThreadView
                   key={`${tab}-${selectedThread?.id ?? 'empty'}`}
-                  tab={tab}
                   summary={selectedThread}
                   onSent={() => void refetch()}
                 />

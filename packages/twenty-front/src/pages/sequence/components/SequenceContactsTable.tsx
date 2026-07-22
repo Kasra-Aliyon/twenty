@@ -8,7 +8,7 @@ import { GenericDropdownContentWidth } from '@/ui/layout/dropdown/constants/Gene
 import { useCloseDropdown } from '@/ui/layout/dropdown/hooks/useCloseDropdown';
 import { styled } from '@linaria/react';
 import { t } from '@lingui/core/macro';
-import { QUERY_MAX_RECORDS } from 'twenty-shared/constants';
+import { useEffect } from 'react';
 import {
   SEQUENCE_ENROLLMENT_STATUSES,
   SEQUENCE_WAITING_ON,
@@ -20,7 +20,7 @@ import {
   IconMessage,
   IconPlayerPlay,
 } from 'twenty-ui/icon';
-import { LightIconButton } from 'twenty-ui/input';
+import { Button, LightIconButton } from 'twenty-ui/input';
 import { MenuItem } from 'twenty-ui/navigation';
 import { themeCssVariables } from 'twenty-ui/theme-constants';
 import { beautifyExactDateTime } from '~/utils/date-utils';
@@ -68,6 +68,15 @@ const StyledPersonEmail = styled.div`
   color: ${themeCssVariables.font.color.tertiary};
   font-size: ${themeCssVariables.font.size.xs};
 `;
+
+const StyledLoadMore = styled.div`
+  display: flex;
+  justify-content: center;
+  padding: ${themeCssVariables.spacing[3]};
+`;
+
+const SEQUENCE_CONTACTS_PAGE_SIZE = 50;
+const SEQUENCE_STEPS_PAGE_SIZE = 50;
 
 const STATUS_LABELS: Record<SequenceEnrollmentStatus, string> = {
   [SEQUENCE_ENROLLMENT_STATUSES.PENDING]: t`Pending`,
@@ -185,35 +194,45 @@ export const SequenceContactsTable = ({
   canUpdate,
   onEnrollmentUpdated,
 }: SequenceContactsTableProps) => {
-  const { records: enrollments, refetch } =
-    useFindManyRecords<SequenceEnrollmentRecord>({
-      objectNameSingular: 'sequenceEnrollment',
-      filter: { sequenceId: { eq: sequenceId } },
-      orderBy: [{ createdAt: 'DescNullsLast' }],
-      recordGqlFields: {
+  const {
+    records: enrollments,
+    refetch,
+    fetchMoreRecords: fetchMoreEnrollments,
+    hasNextPage: hasMoreEnrollments,
+    loading: areEnrollmentsLoading,
+  } = useFindManyRecords<SequenceEnrollmentRecord>({
+    objectNameSingular: 'sequenceEnrollment',
+    filter: { sequenceId: { eq: sequenceId } },
+    orderBy: [{ createdAt: 'DescNullsLast' }],
+    recordGqlFields: {
+      id: true,
+      createdAt: true,
+      sequenceId: true,
+      personId: true,
+      status: true,
+      currentStepId: true,
+      currentStepPosition: true,
+      waitingOn: true,
+      nextActionAt: true,
+      senderConnectedAccountId: true,
+      stopOnReply: true,
+      startedAt: true,
+      endedAt: true,
+      errorMessage: true,
+      person: {
         id: true,
-        createdAt: true,
-        sequenceId: true,
-        personId: true,
-        status: true,
-        currentStepId: true,
-        currentStepPosition: true,
-        waitingOn: true,
-        nextActionAt: true,
-        senderConnectedAccountId: true,
-        stopOnReply: true,
-        startedAt: true,
-        endedAt: true,
-        errorMessage: true,
-        person: {
-          id: true,
-          name: true,
-          emails: true,
-        },
+        name: true,
+        emails: true,
       },
-      limit: QUERY_MAX_RECORDS,
-    });
-  const { records: steps } = useFindManyRecords<SequenceStepRecord>({
+    },
+    limit: SEQUENCE_CONTACTS_PAGE_SIZE,
+  });
+  const {
+    records: steps,
+    fetchMoreRecords: fetchMoreSteps,
+    hasNextPage: hasMoreSteps,
+    loading: areStepsLoading,
+  } = useFindManyRecords<SequenceStepRecord>({
     objectNameSingular: 'sequenceStep',
     filter: { sequenceId: { eq: sequenceId } },
     orderBy: [{ position: 'AscNullsLast' }],
@@ -221,8 +240,14 @@ export const SequenceContactsTable = ({
       id: true,
       position: true,
     },
-    limit: QUERY_MAX_RECORDS,
+    limit: SEQUENCE_STEPS_PAGE_SIZE,
   });
+
+  useEffect(() => {
+    if (hasMoreSteps && !areStepsLoading) {
+      void fetchMoreSteps();
+    }
+  }, [areStepsLoading, fetchMoreSteps, hasMoreSteps]);
   const stepNumberById = new Map(
     steps
       .slice()
@@ -298,6 +323,17 @@ export const SequenceContactsTable = ({
           })}
         </tbody>
       </StyledTable>
+      {hasMoreEnrollments && (
+        <StyledLoadMore>
+          <Button
+            title={t`Load more contacts`}
+            variant="secondary"
+            size="small"
+            isLoading={areEnrollmentsLoading}
+            onClick={() => void fetchMoreEnrollments()}
+          />
+        </StyledLoadMore>
+      )}
     </StyledTableContainer>
   );
 };

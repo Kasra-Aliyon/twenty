@@ -10,6 +10,33 @@ import { MatchParticipantService } from 'src/modules/match-participant/match-par
 import { type MessageParticipantWorkspaceEntity } from 'src/modules/messaging/common/standard-objects/message-participant.workspace-entity';
 
 describe('UniboxContactsService', () => {
+  it.each([
+    ['neither handles nor a filter', {}],
+    [
+      'both handles and a filter',
+      {
+        handles: ['person@example.com'],
+        filter: {},
+      },
+    ],
+  ])('should reject selections with %s', async (_, input) => {
+    const service = new UniboxContactsService(
+      {} as GlobalWorkspaceOrmManager,
+      {} as UniboxEmailChannelService,
+      {} as CreateCompanyAndPersonService,
+      {} as MatchParticipantService<MessageParticipantWorkspaceEntity>,
+    );
+
+    await expect(
+      service.addContactsToCrm({
+        input,
+        workspaceId: 'workspace-id',
+        userWorkspaceId: 'user-workspace-id',
+        workspaceMemberId: 'workspace-member-id',
+      }),
+    ).rejects.toThrow(BadRequestException);
+  });
+
   it('should reject a non-person list before creating any people', async () => {
     const recordListRepository = {
       findOne: jest.fn().mockResolvedValue({

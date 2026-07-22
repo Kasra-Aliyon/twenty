@@ -19,6 +19,7 @@ import {
 } from 'typeorm';
 
 import { GlobalWorkspaceOrmManager } from 'src/engine/twenty-orm/global-workspace-datasource/global-workspace-orm.manager';
+import { type WorkspaceEntityManager } from 'src/engine/twenty-orm/entity-manager/workspace-entity-manager';
 import { type WorkspaceRepository } from 'src/engine/twenty-orm/repository/workspace.repository';
 import { buildSystemAuthContext } from 'src/engine/twenty-orm/utils/build-system-auth-context.util';
 import { LinkedinActionWorkspaceEntity } from 'src/modules/linkedin/standard-objects/linkedin-action.workspace-entity';
@@ -99,6 +100,7 @@ export class SequenceSchedulerService {
       for (const { sequence, settings } of eligibleSequences) {
         await this.admitPendingEnrollments({
           enrollmentRepository,
+          sequenceRepository,
           sequence,
           settings,
           now,
@@ -258,55 +260,86 @@ export class SequenceSchedulerService {
 
   private async admitPendingEnrollments({
     enrollmentRepository,
+    sequenceRepository,
     sequence,
     settings,
     now,
   }: {
     enrollmentRepository: WorkspaceRepository<SequenceEnrollmentWorkspaceEntity>;
+    sequenceRepository: WorkspaceRepository<SequenceWorkspaceEntity>;
     sequence: SequenceWorkspaceEntity;
     settings: SequenceSettings;
     now: Date;
   }): Promise<void> {
-    const startedToday = await enrollmentRepository.count({
-      where: {
-        sequenceId: sequence.id,
-        startedAt: MoreThanOrEqual(
-          startOfDayInTimezone(now, settings.timezone),
-        ),
-      },
-    });
-    const remainingStarts = Math.max(0, settings.dailyStarts - startedToday);
+    const workspaceDataSource =
+      await this.globalWorkspaceOrmManager.getGlobalWorkspaceDataSource();
 
-    if (remainingStarts === 0) {
-      return;
-    }
-
-    const pendingEnrollments = await enrollmentRepository.find({
-      where: {
-        sequenceId: sequence.id,
-        status: SEQUENCE_ENROLLMENT_STATUSES.PENDING,
-      },
-      order: { createdAt: 'ASC' },
-      take: Math.min(remainingStarts, SEQUENCE_SCHEDULER_BATCH_SIZE),
-    });
-
-    for (const enrollment of pendingEnrollments) {
-      await enrollmentRepository.update(
+    await workspaceDataSource.transaction(async (transactionManager) => {
+      const workspaceTransactionManager =
+        transactionManager as WorkspaceEntityManager;
+      const lockedSequence = await sequenceRepository.findOne(
         {
-          id: enrollment.id,
-          status: SEQUENCE_ENROLLMENT_STATUSES.PENDING,
+          where: {
+            id: sequence.id,
+            status: SEQUENCE_STATUSES.ACTIVE,
+          },
+          lock: { mode: 'pessimistic_write' },
         },
-        {
-          status: SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
-          startedAt: now,
-          waitingOn: SEQUENCE_WAITING_ON.DELAY,
-          nextActionAt: now,
-          senderConnectedAccountId:
-            enrollment.senderConnectedAccountId ??
-            sequence.senderConnectedAccountId,
-        },
+        workspaceTransactionManager,
       );
-    }
+
+      if (!lockedSequence) {
+        return;
+      }
+
+      const startedToday = await enrollmentRepository.count(
+        {
+          where: {
+            sequenceId: sequence.id,
+            startedAt: MoreThanOrEqual(
+              startOfDayInTimezone(now, settings.timezone),
+            ),
+          },
+        },
+        workspaceTransactionManager,
+      );
+      const remainingStarts = Math.max(0, settings.dailyStarts - startedToday);
+
+      if (remainingStarts === 0) {
+        return;
+      }
+
+      const pendingEnrollments = await enrollmentRepository.find(
+        {
+          where: {
+            sequenceId: sequence.id,
+            status: SEQUENCE_ENROLLMENT_STATUSES.PENDING,
+          },
+          order: { createdAt: 'ASC' },
+          take: Math.min(remainingStarts, SEQUENCE_SCHEDULER_BATCH_SIZE),
+        },
+        workspaceTransactionManager,
+      );
+
+      for (const enrollment of pendingEnrollments) {
+        await enrollmentRepository.update(
+          {
+            id: enrollment.id,
+            status: SEQUENCE_ENROLLMENT_STATUSES.PENDING,
+          },
+          {
+            status: SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
+            startedAt: now,
+            waitingOn: SEQUENCE_WAITING_ON.DELAY,
+            nextActionAt: now,
+            senderConnectedAccountId:
+              enrollment.senderConnectedAccountId ??
+              lockedSequence.senderConnectedAccountId,
+          },
+          workspaceTransactionManager,
+        );
+      }
+    });
   }
 
   private async allocateMailboxSlots({

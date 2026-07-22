@@ -38,7 +38,6 @@ const StyledSaveStatus = styled.span<{ isError: boolean }>`
 
 type UniboxDraftComposerProps = {
   draft: MessageDraftRecord | null;
-  authorId: string;
   connectedAccountId: string;
   defaultTo: string;
   defaultCc?: string;
@@ -55,7 +54,6 @@ type UniboxDraftComposerProps = {
 
 export const UniboxDraftComposer = ({
   draft,
-  authorId,
   connectedAccountId,
   defaultTo,
   defaultCc = '',
@@ -71,7 +69,6 @@ export const UniboxDraftComposer = ({
 }: UniboxDraftComposerProps) => {
   const draftPersistence = useUniboxDraft({
     initialDraftId: draft?.id ?? null,
-    authorId,
   });
   const { scheduleSave } = draftPersistence;
   const composerState = useEmailComposerState({

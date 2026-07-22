@@ -11,7 +11,6 @@ import { useIsFeatureEnabled } from '@/workspace/hooks/useIsFeatureEnabled';
 import { styled } from '@linaria/react';
 import { t } from '@lingui/core/macro';
 import { generatePath, Link, Navigate } from 'react-router-dom';
-import { QUERY_MAX_RECORDS } from 'twenty-shared/constants';
 import {
   AppPath,
   FeatureFlagKey,
@@ -23,6 +22,8 @@ import { themeCssVariables } from 'twenty-ui/theme-constants';
 
 import { StyledEmptyState, StyledPill } from './components/SequencePageStyles';
 import { type SequenceRecord } from './types/SequenceRecords';
+
+const SEQUENCES_PAGE_SIZE = 50;
 
 const StyledTableContainer = styled.div`
   flex: 1;
@@ -73,6 +74,12 @@ const StyledStatusControl = styled.div`
   gap: ${themeCssVariables.spacing[2]};
 `;
 
+const StyledLoadMore = styled.div`
+  display: flex;
+  justify-content: center;
+  padding: ${themeCssVariables.spacing[3]};
+`;
+
 const SequencesPageContent = () => {
   const { objectMetadataItem: sequenceObjectMetadataItem } =
     useObjectMetadataItem({ objectNameSingular: 'sequence' });
@@ -81,7 +88,13 @@ const SequencesPageContent = () => {
   );
   const { updateOneRecord } = useUpdateOneRecord();
   const { enqueueErrorSnackBar } = useSnackBar();
-  const { records: sequences, refetch } = useFindManyRecords<SequenceRecord>({
+  const {
+    records: sequences,
+    refetch,
+    fetchMoreRecords,
+    hasNextPage,
+    loading,
+  } = useFindManyRecords<SequenceRecord>({
     objectNameSingular: 'sequence',
     orderBy: [{ name: 'AscNullsLast' }],
     recordGqlFields: {
@@ -96,7 +109,7 @@ const SequencesPageContent = () => {
       repliedCount: true,
       failedCount: true,
     },
-    limit: QUERY_MAX_RECORDS,
+    limit: SEQUENCES_PAGE_SIZE,
   });
 
   const updateStatus = async (sequence: SequenceRecord, active: boolean) => {
@@ -201,6 +214,17 @@ const SequencesPageContent = () => {
                 })}
               </tbody>
             </StyledTable>
+            {hasNextPage && (
+              <StyledLoadMore>
+                <Button
+                  title={t`Load more sequences`}
+                  variant="secondary"
+                  size="small"
+                  isLoading={loading}
+                  onClick={() => void fetchMoreRecords()}
+                />
+              </StyledLoadMore>
+            )}
           </StyledTableContainer>
         )}
       </PageCardLayout>

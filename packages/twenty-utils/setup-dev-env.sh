@@ -275,6 +275,23 @@ else
 fi
 
 # =============================================================================
+# 5. Register background cron jobs
+# =============================================================================
+# The Docker entrypoints already do this. Without it the worker sits idle: email
+# and calendar syncs stall after their first batch, because nothing ever moves a
+# channel from MESSAGES_IMPORT_PENDING to scheduled.
+if command -v npx &>/dev/null && [ -d node_modules ]; then
+  info "Registering background cron jobs..."
+  if npx nx run twenty-server:command-no-deps -- cron:register:all; then
+    ok "Cron jobs registered"
+  else
+    fail "Cron job registration failed - run 'npx nx run twenty-server:command -- cron:register:all' after building"
+  fi
+else
+  info "Run 'npx nx run twenty-server:command -- cron:register:all' to register cron jobs"
+fi
+
+# =============================================================================
 echo ""
 echo "Dev environment ready."
 echo ""

@@ -14,7 +14,8 @@ import { currentWorkspaceMemberState } from '@/auth/states/currentWorkspaceMembe
 import { useDoObjectMetadataItemsExist } from '@/object-metadata/hooks/useDoObjectMetadataItemsExist';
 import { EmailThreadIntermediaryMessages } from '@/page-layout/widgets/email-thread/components/EmailThreadIntermediaryMessages';
 import { useUniboxDrafts } from '@/unibox/hooks/useUniboxDrafts';
-import { type UniboxTab, type UniboxThread } from '@/unibox/types/UniboxThread';
+import { type UniboxThread } from '@/unibox/types/UniboxThread';
+import { getUniboxReplyTo } from '@/unibox/utils/getUniboxReplyTo';
 import { useAtomStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomStateValue';
 import { UniboxDraftComposer } from '~/pages/unibox/components/UniboxDraftComposer';
 import { t } from '@lingui/core/macro';
@@ -171,7 +172,6 @@ const UniboxPersistedReplyComposer = ({
     <UniboxDraftComposer
       key={messageThreadId}
       draft={draft}
-      authorId={authorId}
       connectedAccountId={draft?.connectedAccountId ?? connectedAccountId}
       defaultTo={draft?.to ?? defaultTo}
       defaultCc={draft?.cc}
@@ -191,11 +191,9 @@ const UniboxPersistedReplyComposer = ({
 };
 
 export const UniboxEmailThreadView = ({
-  tab,
   summary,
   onSent,
 }: {
-  tab: UniboxTab;
   summary: UniboxThread | null;
   onSent: () => void;
 }) => {
@@ -207,6 +205,7 @@ export const UniboxEmailThreadView = ({
   const {
     messages,
     connectedAccountId,
+    connectedAccountHandle,
     threadLoading,
     messageChannelLoading,
     fetchMoreMessages,
@@ -246,10 +245,11 @@ export const UniboxEmailThreadView = ({
     isDefined(replyConnectedAccountId) &&
     (isDefined(summary.connectedAccountId) || !messageChannelLoading) &&
     isDefined(lastMessage);
-  const replyTo =
-    tab === 'SENT'
-      ? (summary.participants[0]?.handle ?? '')
-      : (lastMessage.sender.handle ?? '');
+  const replyTo = getUniboxReplyTo({
+    messages,
+    connectedAccountHandle,
+    fallbackHandle: summary.participants[0]?.handle ?? '',
+  });
 
   return (
     <StyledRoot key={summary.id}>

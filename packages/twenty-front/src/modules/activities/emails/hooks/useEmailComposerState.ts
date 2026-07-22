@@ -21,6 +21,9 @@ const countRecipients = (csv: string): number =>
     .map((entry) => entry.trim())
     .filter((entry) => entry.length > 0).length;
 
+const normalizeComposerText = (value: string | null | undefined): string =>
+  value ?? '';
+
 export const useEmailComposerState = ({
   connectedAccountId: initialConnectedAccountId,
   defaultTo = '',
@@ -31,20 +34,35 @@ export const useEmailComposerState = ({
   defaultInReplyTo,
   onSent,
 }: UseEmailComposerStateArgs) => {
+  const normalizedDefaultTo = normalizeComposerText(defaultTo);
+  const normalizedDefaultCc = normalizeComposerText(defaultCc);
+  const normalizedDefaultBcc = normalizeComposerText(defaultBcc);
+  const normalizedDefaultSubject = normalizeComposerText(defaultSubject);
+  const normalizedDefaultBody = normalizeComposerText(defaultBody);
   const [connectedAccountId, setConnectedAccountId] = useState(
     initialConnectedAccountId,
   );
-  const [to, setTo] = useState(defaultTo);
-  const [cc, setCc] = useState(defaultCc);
-  const [bcc, setBcc] = useState(defaultBcc);
-  const [subject, setSubject] = useState(defaultSubject);
-  const [body, setBody] = useState(defaultBody);
+  const [to, setToState] = useState(normalizedDefaultTo);
+  const [cc, setCcState] = useState(normalizedDefaultCc);
+  const [bcc, setBccState] = useState(normalizedDefaultBcc);
+  const [subject, setSubjectState] = useState(normalizedDefaultSubject);
+  const [body, setBodyState] = useState(normalizedDefaultBody);
   const [showCcBcc, setShowCcBcc] = useState(
-    defaultCc.length > 0 || defaultBcc.length > 0,
+    normalizedDefaultCc.length > 0 || normalizedDefaultBcc.length > 0,
   );
   const [files, setFiles] = useState<EmailAttachment[]>([]);
 
   const { sendEmail, loading } = useSendEmail();
+  const setTo = (value: string | null | undefined) =>
+    setToState(normalizeComposerText(value));
+  const setCc = (value: string | null | undefined) =>
+    setCcState(normalizeComposerText(value));
+  const setBcc = (value: string | null | undefined) =>
+    setBccState(normalizeComposerText(value));
+  const setSubject = (value: string | null | undefined) =>
+    setSubjectState(normalizeComposerText(value));
+  const setBody = (value: string | null | undefined) =>
+    setBodyState(normalizeComposerText(value));
 
   const recipientCount = useMemo(
     () => countRecipients(to) + countRecipients(cc) + countRecipients(bcc),
@@ -116,11 +134,11 @@ export const useEmailComposerState = ({
     handleSend,
     loading,
     canSend,
-    defaultTo,
-    defaultCc,
-    defaultBcc,
-    defaultSubject,
-    defaultBody,
+    defaultTo: normalizedDefaultTo,
+    defaultCc: normalizedDefaultCc,
+    defaultBcc: normalizedDefaultBcc,
+    defaultSubject: normalizedDefaultSubject,
+    defaultBody: normalizedDefaultBody,
     recipientCount,
     exceedsRecipientLimit,
     maxRecipients: MAX_EMAIL_RECIPIENTS,

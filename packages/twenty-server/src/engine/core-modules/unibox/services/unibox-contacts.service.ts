@@ -4,11 +4,7 @@ import {
   Injectable,
 } from '@nestjs/common';
 
-import {
-  FieldActorSource,
-  MessageParticipantRole,
-  RECORD_LIST_TYPES,
-} from 'twenty-shared/types';
+import { FieldActorSource, RECORD_LIST_TYPES } from 'twenty-shared/types';
 
 import { type AddUniboxContactsToCrmOutputDTO } from 'src/engine/core-modules/unibox/dtos/add-unibox-contacts-to-crm-output.dto';
 import { type AddUniboxContactsToCrmInput } from 'src/engine/core-modules/unibox/dtos/add-unibox-contacts-to-crm.input';
@@ -32,7 +28,6 @@ import { CreateCompanyAndPersonService } from 'src/modules/contact-creation-mana
 import { type Contact } from 'src/modules/contact-creation-manager/types/contact.type';
 import { MatchParticipantService } from 'src/modules/match-participant/match-participant.service';
 import { addPersonEmailFiltersToQueryBuilder } from 'src/modules/match-participant/utils/add-person-email-filters-to-query-builder';
-import { MessageDirection } from 'src/modules/messaging/common/enums/message-direction.enum';
 import { type MessageParticipantWorkspaceEntity } from 'src/modules/messaging/common/standard-objects/message-participant.workspace-entity';
 import { type PersonWorkspaceEntity } from 'src/modules/person/standard-objects/person.workspace-entity';
 import { type RecordListMemberWorkspaceEntity } from 'src/modules/record-list/standard-objects/record-list-member.workspace-entity';
@@ -60,6 +55,7 @@ type ContactAggregateRawRow = {
   lastContactedAt: Date | string;
   firstContactedAt: Date | string;
   latestMessageChannelId: string;
+  totalCount: string | number;
 };
 
 const EMPTY_UNIBOX_CONTACTS: UniboxContactsWithTotalDTO = {
@@ -119,9 +115,21 @@ export class UniboxContactsService {
     userWorkspaceId,
     workspaceMemberId,
   }: AddUniboxContactsToCrmArgs): Promise<AddUniboxContactsToCrmOutputDTO> {
-    const requestedHandles = normalizeUniboxContactHandles(input.handles);
+    const hasExplicitHandles = input.handles !== undefined;
+    const hasFilter = input.filter !== undefined;
 
-    if (requestedHandles.length === 0) {
+    if (hasExplicitHandles === hasFilter) {
+      throw new BadRequestException(
+        'Provide either handles or a contact filter, but not both',
+      );
+    }
+
+    const requestedHandles = normalizeUniboxContactHandles(input.handles ?? []);
+    const excludedHandles = normalizeUniboxContactHandles(
+      input.excludedHandles ?? [],
+    );
+
+    if (hasExplicitHandles && requestedHandles.length === 0) {
       return {
         createdPersonCount: 0,
         alreadyExistingCount: 0,
@@ -153,8 +161,9 @@ export class UniboxContactsService {
     const { rows: eligibleContactRows } = await this.getContactRows({
       workspaceId,
       ownedChannelContext,
-      handles: requestedHandles,
-      input: {
+      handles: hasExplicitHandles ? requestedHandles : undefined,
+      excludedHandles,
+      input: input.filter ?? {
         inCrmFilter: UniboxContactCrmFilter.ALL,
         since: UniboxContactSince.LIFETIME,
       },
@@ -272,13 +281,22 @@ export class UniboxContactsService {
     ownedChannelContext,
     input,
     handles,
+    excludedHandles,
     page,
     pageSize,
   }: {
     workspaceId: string;
     ownedChannelContext: OwnedEmailChannelContext;
-    input: Pick<UniboxContactsInput, 'inCrmFilter' | 'search' | 'since'>;
+    input: Pick<
+      UniboxContactsInput,
+      | 'afterHandle'
+      | 'afterLastContactedAt'
+      | 'inCrmFilter'
+      | 'search'
+      | 'since'
+    >;
     handles?: string[];
+    excludedHandles?: string[];
     page?: number;
     pageSize?: number;
   }): Promise<{ rows: ContactAggregateRawRow[]; totalCount: number }> {
@@ -309,21 +327,17 @@ export class UniboxContactsService {
             `(ARRAY_AGG("association"."messageChannelId" ORDER BY ${messageDateExpression} DESC, "message"."id" DESC, "association"."id" DESC))[1]`,
             'latestMessageChannelId',
           )
+          .addSelect('COUNT(*) OVER()', 'totalCount')
           .innerJoin('messageParticipant.message', 'message')
           .innerJoin('message.messageChannelMessageAssociations', 'association')
           .where('"association"."messageChannelId" IN (:...channelIds)', {
             channelIds: ownedChannelContext.channelIds,
           })
-          .andWhere('"association"."direction" = :direction', {
-            direction: MessageDirection.OUTGOING,
-          })
-          .andWhere('"messageParticipant"."role" IN (:...recipientRoles)', {
-            recipientRoles: [
-              MessageParticipantRole.TO,
-              MessageParticipantRole.CC,
-              MessageParticipantRole.BCC,
-            ],
-          })
+          // A counterpart is anyone on a message in the user's channels who is
+          // not the user, whatever the direction or role. Restricting to
+          // outgoing recipients would hide every inbound sender, and restricting
+          // to senders would hide everyone merely copied on a received thread.
+          // The workspace-member and owned-handle filters below exclude the user.
           .andWhere('"messageParticipant"."workspaceMemberId" IS NULL')
           .andWhere('"messageParticipant"."handle" IS NOT NULL')
           .andWhere('BTRIM("messageParticipant"."handle") <> \'\'')
@@ -342,6 +356,13 @@ export class UniboxContactsService {
           query.andWhere(
             'LOWER("messageParticipant"."handle") IN (:...handles)',
             { handles },
+          );
+        }
+
+        if (excludedHandles?.length) {
+          query.andWhere(
+            'LOWER("messageParticipant"."handle") NOT IN (:...excludedHandles)',
+            { excludedHandles },
           );
         }
 
@@ -373,19 +394,39 @@ export class UniboxContactsService {
           );
         }
 
-        const totalRows = await query
-          .clone()
-          .select('LOWER("messageParticipant"."handle")', 'handle')
-          .orderBy()
-          .getRawMany<{ handle: string }>();
+        const hasCursor =
+          input.afterLastContactedAt !== undefined &&
+          input.afterHandle !== undefined;
 
-        if (page && pageSize) {
-          query.offset(getUniboxPageOffset(page, pageSize)).limit(pageSize);
+        if (hasCursor) {
+          query.andHaving(
+            `(
+              MAX(${messageDateExpression}) < :afterLastContactedAt
+              OR (
+                MAX(${messageDateExpression}) = :afterLastContactedAt
+                AND LOWER("messageParticipant"."handle") > :afterHandle
+              )
+            )`,
+            {
+              afterLastContactedAt: input.afterLastContactedAt,
+              afterHandle: input.afterHandle,
+            },
+          );
         }
 
+        if (page && pageSize) {
+          if (!hasCursor) {
+            query.offset(getUniboxPageOffset(page, pageSize));
+          }
+
+          query.limit(pageSize);
+        }
+
+        const rows = await query.getRawMany<ContactAggregateRawRow>();
+
         return {
-          rows: await query.getRawMany<ContactAggregateRawRow>(),
-          totalCount: totalRows.length,
+          rows,
+          totalCount: Number(rows[0]?.totalCount ?? 0),
         };
       },
       authContext,

@@ -66,22 +66,22 @@ describe('UniboxEmailThreadsService', () => {
   const workspaceId = 'workspace-id';
   const userWorkspaceId = 'user-workspace-id';
   let baseQuery: MockQueryBuilder;
-  let totalQuery: MockQueryBuilder;
   let pageQuery: MockQueryBuilder;
   let participantQuery: MockQueryBuilder;
   let recordListRepository: { findOne: jest.Mock };
   let recordListMemberRepository: { find: jest.Mock };
   let relatedPersonIdsService: { getRelatedPersonIds: jest.Mock };
+  let emailChannelServiceMock: {
+    getOwnedEmailChannelContext: jest.Mock;
+    getUnreadFolderIds: jest.Mock;
+  };
   let service: UniboxEmailThreadsService;
 
   beforeEach(() => {
     baseQuery = createMockQueryBuilder();
-    totalQuery = createMockQueryBuilder([{ id: 'thread-id' }]);
     pageQuery = createMockQueryBuilder([]);
     participantQuery = createMockQueryBuilder([]);
-    baseQuery.clone
-      .mockReturnValueOnce(totalQuery)
-      .mockReturnValueOnce(pageQuery);
+    baseQuery.clone.mockReturnValueOnce(pageQuery);
 
     recordListRepository = {
       findOne: jest.fn(),
@@ -132,7 +132,10 @@ describe('UniboxEmailThreadsService', () => {
         ownedHandles: ['owner@example.com'],
         connectedAccountIdByChannelId: new Map(),
       }),
+      getUnreadFolderIds: jest.fn().mockResolvedValue(['unread-folder-id']),
     };
+
+    emailChannelServiceMock = emailChannelService;
 
     service = new UniboxEmailThreadsService(
       globalWorkspaceOrmManager as unknown as GlobalWorkspaceOrmManager,
@@ -178,7 +181,7 @@ describe('UniboxEmailThreadsService', () => {
       expect.any(Object),
     );
     expect(baseQuery.having).toHaveBeenCalledWith(
-      expect.stringContaining('ARRAY_AGG(association.direction'),
+      'BOOL_OR(association.direction = :folderDirection)',
       { folderDirection: MessageDirection.OUTGOING },
     );
     expect(baseQuery.andWhere).toHaveBeenCalledWith(
@@ -222,6 +225,124 @@ describe('UniboxEmailThreadsService', () => {
       'association.messageChannelId IN (:...ownedChannelIds)',
       { ownedChannelIds: ['channel-id'] },
     );
+  });
+
+  it('should use a stable cursor instead of an offset after the first page', async () => {
+    const afterLastMessageAt = new Date('2026-07-21T00:00:00.000Z');
+
+    await service.getThreads({
+      input: {
+        afterLastMessageAt,
+        afterThreadId: '11111111-1111-4111-8111-111111111111',
+        page: 99,
+        pageSize: 30,
+      },
+      workspaceId,
+      userWorkspaceId,
+    });
+
+    expect(baseQuery.andHaving).toHaveBeenCalledWith(
+      expect.stringContaining('messageThread.id > :afterThreadId'),
+      {
+        afterLastMessageAt,
+        afterThreadId: '11111111-1111-4111-8111-111111111111',
+      },
+    );
+    expect(pageQuery.offset).not.toHaveBeenCalled();
+    expect(pageQuery.limit).toHaveBeenCalledWith(30);
+  });
+
+  it('should derive isRead from unread folder membership', async () => {
+    pageQuery.getRawMany.mockResolvedValue([
+      {
+        id: 'unread-thread-id',
+        subject: 'Unread',
+        lastMessagePreview: 'Preview',
+        lastMessageAt: new Date('2026-07-22T00:00:00.000Z'),
+        messageCount: 1,
+        lastMessageChannelId: 'channel-id',
+        isUnread: true,
+      },
+      {
+        id: 'read-thread-id',
+        subject: 'Read',
+        lastMessagePreview: 'Preview',
+        lastMessageAt: new Date('2026-07-22T00:00:00.000Z'),
+        messageCount: 1,
+        lastMessageChannelId: 'channel-id',
+        isUnread: false,
+      },
+    ]);
+
+    const result = await service.getThreads({
+      input: {},
+      workspaceId,
+      userWorkspaceId,
+    });
+
+    expect(baseQuery.leftJoin).toHaveBeenCalledWith(
+      'association.messageFolders',
+      'associationFolder',
+    );
+    expect(baseQuery.setParameter).toHaveBeenCalledWith('unreadFolderIds', [
+      'unread-folder-id',
+    ]);
+    expect(result.threads.map((thread) => thread.isRead)).toEqual([
+      false,
+      true,
+    ]);
+  });
+
+  it('should filter on unread folder membership when unreadOnly is set', async () => {
+    await service.getThreads({
+      input: { unreadOnly: true },
+      workspaceId,
+      userWorkspaceId,
+    });
+
+    expect(baseQuery.andHaving).toHaveBeenCalledWith(
+      'COALESCE(BOOL_OR(associationFolder.messageFolderId IN (:...unreadFolderIds)), false)',
+    );
+  });
+
+  it('should treat threads as read when the provider syncs no unread folder', async () => {
+    emailChannelServiceMock.getUnreadFolderIds.mockResolvedValue([]);
+    pageQuery.getRawMany.mockResolvedValue([
+      {
+        id: 'thread-id',
+        subject: 'Subject',
+        lastMessagePreview: 'Preview',
+        lastMessageAt: new Date('2026-07-22T00:00:00.000Z'),
+        messageCount: 1,
+        lastMessageChannelId: 'channel-id',
+        isUnread: null,
+      },
+    ]);
+
+    const result = await service.getThreads({
+      input: {},
+      workspaceId,
+      userWorkspaceId,
+    });
+
+    expect(baseQuery.leftJoin).not.toHaveBeenCalledWith(
+      'association.messageFolders',
+      'associationFolder',
+    );
+    expect(result.threads[0].isRead).toBe(true);
+  });
+
+  it('should return no threads when unreadOnly is set without an unread folder', async () => {
+    emailChannelServiceMock.getUnreadFolderIds.mockResolvedValue([]);
+
+    const result = await service.getThreads({
+      input: { unreadOnly: true },
+      workspaceId,
+      userWorkspaceId,
+    });
+
+    expect(result).toEqual({ totalCount: 0, threads: [] });
+    expect(baseQuery.andHaving).not.toHaveBeenCalled();
   });
 
   it('should keep person-list filtering on the direct membership join', async () => {

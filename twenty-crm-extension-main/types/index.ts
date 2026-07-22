@@ -98,6 +98,8 @@ export type TwentyLinkedInAction = {
   connectionState: LinkedInConnectionState;
   attemptCount: number;
   errorMessage: string | null;
+  sequenceStepId: string | null;
+  skipIfAlreadyConnected: boolean;
 };
 
 export type LinkedInRunnerSessionState = {

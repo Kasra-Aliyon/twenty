@@ -173,6 +173,9 @@ describe('message draft query hooks', () => {
       connectedAccountId: CONNECTED_ACCOUNT_ID,
       authorId: '20202020-7777-4777-8777-777777777777',
       subject: 'Draft',
+      body: null as unknown as string,
+      cc: null as unknown as string,
+      bcc: null as unknown as string,
     } satisfies Partial<MessageDraftWorkspaceEntity>;
 
     const createOneResult = await createOneHook.execute(
@@ -187,6 +190,10 @@ describe('message draft query hooks', () => {
     );
 
     expect(createOneResult.data.authorId).toBe(WORKSPACE_MEMBER_ID);
+    expect(createOneResult.data).toEqual(
+      expect.objectContaining({ body: '', cc: '', bcc: '' }),
+    );
+    expect(createOneResult.data.lastEditedAt).toBeInstanceOf(Date);
     expect(createManyResult.data[0].authorId).toBe(WORKSPACE_MEMBER_ID);
     expect(connectedAccountRepository.countBy).toHaveBeenCalledWith(
       expect.objectContaining({

@@ -74,6 +74,17 @@ export class UniboxThreadsInput {
   @IsDate()
   dateFrom?: Date;
 
+  @Field(() => GraphQLISODateTime, { nullable: true })
+  @IsOptional()
+  @Type(() => Date)
+  @IsDate()
+  afterLastMessageAt?: Date;
+
+  @Field(() => UUIDScalarType, { nullable: true })
+  @IsOptional()
+  @IsUUID()
+  afterThreadId?: string;
+
   @Field(() => Int, { nullable: true, defaultValue: 1 })
   @IsOptional()
   @IsInt()

@@ -219,6 +219,7 @@ export const getLinkedInAutomationBlockReason = (): string | null => {
 
 export const sendConnectionRequest = async (
   noteText: string,
+  skipIfAlreadyConnected = true,
 ): Promise<LinkedInAutomationResult> => {
   const blockReason = getLinkedInAutomationBlockReason();
 
@@ -238,11 +239,11 @@ export const sendConnectionRequest = async (
     };
   }
 
-  if (detectConnectionDegree() === 'FIRST') {
+  if (skipIfAlreadyConnected && detectConnectionDegree() === 'FIRST') {
     return { status: 'SKIPPED', connectionState: 'CONNECTED' };
   }
 
-  if (detectPendingInvitation()) {
+  if (skipIfAlreadyConnected && detectPendingInvitation()) {
     return { status: 'SKIPPED', connectionState: 'PENDING' };
   }
 

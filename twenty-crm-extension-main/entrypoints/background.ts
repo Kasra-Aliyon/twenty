@@ -24,6 +24,7 @@ import {
   setLinkedInSafetySettings,
 } from '../utils/linkedin-safety';
 import { getStoredLinkedInIdentity } from '../utils/linkedin-sync-state';
+import { getRunnerStateAfterTabRemoval } from '../utils/linkedin-runner-state';
 import type {
   ExtensionMessage,
   ExtensionResponse,
@@ -281,6 +282,46 @@ const setLinkedinRunnerState = async (
   state: LinkedInRunnerSessionState,
 ): Promise<void> => {
   await browser.storage.session.set({ [LINKEDIN_RUNNER_STATE_KEY]: state });
+};
+
+const handleLinkedinRunnerTabRemoved = async (tabId: number): Promise<void> => {
+  await removeLinkedinSyncLocksForTab(tabId);
+  const runnerState = await getLinkedinRunnerState();
+
+  if (runnerState.tabId !== tabId) {
+    return;
+  }
+
+  const didStartAction =
+    runnerState.activeAction !== null &&
+    runnerState.activeActionStartedAt !== null;
+  let didReportInterruptedAction = false;
+
+  if (didStartAction && runnerState.activeAction) {
+    try {
+      const client = await getApiClient();
+
+      await reportAction(client, runnerState.activeAction.id, {
+        status: 'FAILED',
+        connectionState: 'UNKNOWN',
+        errorMessage:
+          'The runner tab closed after this action began, so its outcome is unknown.',
+      });
+      didReportInterruptedAction = true;
+    } catch (error) {
+      console.error(
+        '[Twenty] Could not report the interrupted LinkedIn action:',
+        error,
+      );
+    }
+  }
+
+  await setLinkedinRunnerState(
+    getRunnerStateAfterTabRemoval({
+      runnerState,
+      didReportInterruptedAction,
+    }),
+  );
 };
 
 // Cache for API client
@@ -1207,7 +1248,9 @@ export default defineBackground(() => {
     ensurePeriodicAlarm(LINKEDIN_SYNC_ALARM, 30),
   ]);
   browser.tabs.onRemoved.addListener((tabId) => {
-    void removeLinkedinSyncLocksForTab(tabId);
+    void handleLinkedinRunnerTabRemoved(tabId).catch((error) =>
+      console.error('[Twenty] Runner tab cleanup failed:', error),
+    );
   });
   browser.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === LINKEDIN_SYNC_ALARM) {

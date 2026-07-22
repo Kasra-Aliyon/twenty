@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import { RECORD_LIST_TYPES } from 'twenty-shared/types';
+import { isDefined } from 'twenty-shared/utils';
 
 import { type UniboxThreadParticipantDTO } from 'src/engine/core-modules/unibox/dtos/unibox-thread-participant.dto';
 import { type UniboxThreadsWithTotalDTO } from 'src/engine/core-modules/unibox/dtos/unibox-threads-with-total.dto';
@@ -29,6 +30,7 @@ type LinkedinThreadRawRow = {
   lastMessagePreview: string | null;
   lastMessageAt: Date | string;
   messageCount: string | number | null;
+  totalCount: string | number;
 };
 
 type LinkedinParticipantRawRow = {
@@ -160,14 +162,28 @@ export class UniboxLinkedinThreadsService {
           });
         }
 
-        const totalRows = await baseQuery
-          .clone()
-          .select('linkedinMessageThread.id', 'id')
-          .distinct(true)
-          .getRawMany<{ id: string }>();
+        const hasCursor =
+          isDefined(input.afterLastMessageAt) && isDefined(input.afterThreadId);
+
+        if (hasCursor) {
+          baseQuery.andWhere(
+            `(
+              ${lastMessageAtExpression} < :afterLastMessageAt
+              OR (
+                ${lastMessageAtExpression} = :afterLastMessageAt
+                AND linkedinMessageThread.id > :afterThreadId
+              )
+            )`,
+            {
+              afterLastMessageAt: input.afterLastMessageAt,
+              afterThreadId: input.afterThreadId,
+            },
+          );
+        }
+
         const page = input.page ?? 1;
         const pageSize = input.pageSize ?? 30;
-        const rows = await baseQuery
+        const pageQuery = baseQuery
           .clone()
           .select('linkedinMessageThread.id', 'id')
           .addSelect('linkedinMessageThread.name', 'subject')
@@ -177,12 +193,17 @@ export class UniboxLinkedinThreadsService {
           )
           .addSelect(lastMessageAtExpression, 'lastMessageAt')
           .addSelect('linkedinMessageThread.messageCount', 'messageCount')
+          .addSelect('COUNT(*) OVER()', 'totalCount')
           .distinct(true)
           .orderBy(lastMessageAtExpression, 'DESC')
           .addOrderBy('linkedinMessageThread.id', 'ASC')
-          .offset(getUniboxPageOffset(page, pageSize))
-          .limit(pageSize)
-          .getRawMany<LinkedinThreadRawRow>();
+          .limit(pageSize);
+
+        if (!hasCursor) {
+          pageQuery.offset(getUniboxPageOffset(page, pageSize));
+        }
+
+        const rows = await pageQuery.getRawMany<LinkedinThreadRawRow>();
         const participantsByThreadId = await this.getParticipantsByThreadId({
           linkedinThreadParticipantRepository,
           threadIds: rows.map(({ id }) => id),
@@ -190,7 +211,7 @@ export class UniboxLinkedinThreadsService {
         });
 
         return {
-          totalCount: totalRows.length,
+          totalCount: Number(rows[0]?.totalCount ?? 0),
           threads: rows.map((row) => {
             const participants = participantsByThreadId.get(row.id) ?? [];
 

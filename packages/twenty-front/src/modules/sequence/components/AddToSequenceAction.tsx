@@ -38,6 +38,8 @@ type ExistingSequenceEnrollment = ObjectRecord & {
   personId: string;
 };
 
+const SEQUENCES_PAGE_SIZE = 50;
+
 const AddToSequenceActionContent = () => {
   const dropdownId = 'add-selected-people-to-sequence';
   const [isSaving, setIsSaving] = useState(false);
@@ -50,7 +52,12 @@ const AddToSequenceActionContent = () => {
   const enrollmentPermissions = useObjectPermissionsForObject(
     enrollmentObjectMetadataItem.id,
   );
-  const { records: sequences } = useFindManyRecords<SequenceForEnrollment>({
+  const {
+    records: sequences,
+    fetchMoreRecords: fetchMoreSequences,
+    hasNextPage: hasMoreSequences,
+    loading: areSequencesLoading,
+  } = useFindManyRecords<SequenceForEnrollment>({
     objectNameSingular: 'sequence',
     orderBy: [{ name: 'AscNullsLast' }],
     recordGqlFields: {
@@ -60,8 +67,9 @@ const AddToSequenceActionContent = () => {
       senderConnectedAccountId: true,
       settings: true,
     },
-    limit: QUERY_MAX_RECORDS,
+    limit: SEQUENCES_PAGE_SIZE,
   });
+
   const {
     loading: areEnrollmentsLoading,
     refetch: refetchExistingEnrollments,
@@ -138,7 +146,6 @@ const AddToSequenceActionContent = () => {
           senderConnectedAccountId: sequence.senderConnectedAccountId,
           stopOnReply: sequence.settings.stopOnReply,
         })),
-        upsert: true,
       });
       await apolloCoreClient.refetchQueries({ include: 'active' });
       enqueueSuccessSnackBar({ message: t`People added to the sequence.` });
@@ -181,6 +188,13 @@ const AddToSequenceActionContent = () => {
             ))}
             {sequences.length === 0 && (
               <MenuItem text={t`No sequences available`} disabled />
+            )}
+            {hasMoreSequences && (
+              <MenuItem
+                text={t`Load more sequences`}
+                disabled={areSequencesLoading}
+                onClick={() => void fetchMoreSequences()}
+              />
             )}
           </DropdownMenuItemsContainer>
         </DropdownContent>

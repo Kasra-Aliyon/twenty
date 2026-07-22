@@ -717,10 +717,27 @@ export default defineContentScript({
       }
 
       if (runnerState.activeActionStartedAt) {
+        const reportResponse = await sendMessage('REPORT_LINKEDIN_ACTION', {
+          id: action.id,
+          status: 'FAILED',
+          connectionState: 'UNKNOWN',
+          errorMessage:
+            'The runner tab reloaded or stopped after this action began, so its outcome is unknown.',
+        });
+
+        if (!reportResponse.success) {
+          throw new Error(
+            reportResponse.error ||
+              'Could not record the interrupted LinkedIn action',
+          );
+        }
+
+        await Promise.all([refreshRunnerState(), refreshQueue()]);
         statusMessage =
-          'This tab closed or reloaded after the action started. Its outcome is unknown; Twenty will not retry it silently.';
+          'The interrupted action was marked failed because its outcome is unknown.';
         statusIsError = true;
         render();
+        schedulePoll(RUNNER_LOCAL_MINIMUM_GAP_MILLISECONDS);
         return;
       }
 
@@ -780,7 +797,10 @@ export default defineContentScript({
       let result: LinkedInAutomationResult;
 
       if (action.type === 'SEND_CONNECTION_REQUEST') {
-        result = await sendConnectionRequest(action.noteText);
+        result = await sendConnectionRequest(
+          action.noteText,
+          action.skipIfAlreadyConnected,
+        );
       } else if (action.type === 'SEND_MESSAGE') {
         result = await sendDirectMessage(action.noteText);
       } else {

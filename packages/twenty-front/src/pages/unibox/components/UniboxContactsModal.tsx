@@ -142,7 +142,8 @@ export const UniboxContactsModal = () => {
   const [inCrmFilter, setInCrmFilter] =
     useState<UniboxContactCrmFilter>('NOT_IN_CRM');
   const [selectedHandles, setSelectedHandles] = useState<string[]>([]);
-  const [isSelectingAll, setIsSelectingAll] = useState(false);
+  const [isAllMatchingSelected, setIsAllMatchingSelected] = useState(false);
+  const [excludedHandles, setExcludedHandles] = useState<string[]>([]);
   const { enqueueSuccessSnackBar, enqueueErrorSnackBar } = useSnackBar();
   const {
     contacts,
@@ -151,8 +152,8 @@ export const UniboxContactsModal = () => {
     isFetchingMore,
     isAdding,
     fetchMoreContacts,
-    fetchAllMatchingHandles,
     addContacts,
+    contactFilter,
     error,
   } = useUniboxContacts({
     search: debouncedSearch,
@@ -160,23 +161,24 @@ export const UniboxContactsModal = () => {
     inCrmFilter,
   });
 
-  const resetSelection = () => setSelectedHandles([]);
-
-  const handleSelectAllMatching = async () => {
-    setIsSelectingAll(true);
-
-    try {
-      setSelectedHandles(await fetchAllMatchingHandles());
-    } catch {
-      enqueueErrorSnackBar({ message: t`Contacts could not be selected.` });
-    } finally {
-      setIsSelectingAll(false);
-    }
+  const resetSelection = () => {
+    setSelectedHandles([]);
+    setExcludedHandles([]);
+    setIsAllMatchingSelected(false);
   };
+
+  const selectedCount = isAllMatchingSelected
+    ? Math.max(totalCount - excludedHandles.length, 0)
+    : selectedHandles.length;
 
   const handleAdd = async (recordListId?: string) => {
     try {
-      const result = await addContacts(selectedHandles, recordListId);
+      const result = await addContacts(
+        isAllMatchingSelected
+          ? { filter: contactFilter, excludedHandles }
+          : { handles: selectedHandles },
+        recordListId,
+      );
       enqueueSuccessSnackBar({
         message: t`${result.createdPersonCount} contacts added to Twenty.`,
       });
@@ -252,11 +254,18 @@ export const UniboxContactsModal = () => {
           {contacts.length > 0 && (
             <StyledSelectAll
               type="button"
-              disabled={isSelectingAll}
-              onClick={() => void handleSelectAllMatching()}
+              onClick={() => {
+                if (isAllMatchingSelected) {
+                  resetSelection();
+                } else {
+                  setSelectedHandles([]);
+                  setExcludedHandles([]);
+                  setIsAllMatchingSelected(true);
+                }
+              }}
             >
-              {isSelectingAll
-                ? t`Selecting contacts…`
+              {isAllMatchingSelected
+                ? t`Clear selection`
                 : t`Select all ${totalCount} matching contacts`}
             </StyledSelectAll>
           )}
@@ -265,16 +274,31 @@ export const UniboxContactsModal = () => {
             return (
               <StyledRow key={contact.handle}>
                 <Checkbox
-                  checked={selectedHandles.includes(contact.handle)}
-                  onCheckedChange={(checked) =>
+                  checked={
+                    isAllMatchingSelected
+                      ? !excludedHandles.includes(contact.handle)
+                      : selectedHandles.includes(contact.handle)
+                  }
+                  onCheckedChange={(checked) => {
+                    if (isAllMatchingSelected) {
+                      setExcludedHandles((currentHandles) =>
+                        checked
+                          ? currentHandles.filter(
+                              (handle) => handle !== contact.handle,
+                            )
+                          : [...new Set([...currentHandles, contact.handle])],
+                      );
+                      return;
+                    }
+
                     setSelectedHandles((currentHandles) =>
                       checked
                         ? [...new Set([...currentHandles, contact.handle])]
                         : currentHandles.filter(
                             (handle) => handle !== contact.handle,
                           ),
-                    )
-                  }
+                    );
+                  }}
                   aria-label={t`Select ${label}`}
                 />
                 <Avatar
@@ -319,11 +343,11 @@ export const UniboxContactsModal = () => {
           />
         </StyledList>
       </ModalContent>
-      {selectedHandles.length > 0 && (
+      {selectedCount > 0 && (
         <ModalFooter autoHeight>
           <StyledFooter>
             <Button
-              title={t`${selectedHandles.length} selected ×`}
+              title={t`${selectedCount} selected ×`}
               variant="tertiary"
               size="small"
               onClick={resetSelection}

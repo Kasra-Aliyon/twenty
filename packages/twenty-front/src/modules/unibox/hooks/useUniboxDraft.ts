@@ -31,10 +31,8 @@ const MESSAGE_DRAFT_FIELDS = {
 // messageDraft metadata existence gate has passed.
 export const useUniboxDraft = ({
   initialDraftId,
-  authorId,
 }: {
   initialDraftId: string | null;
-  authorId: string;
 }) => {
   const apolloCoreClient = useApolloCoreClient();
   const [draftId, setDraftId] = useState(initialDraftId);
@@ -72,8 +70,6 @@ export const useUniboxDraft = ({
           createDraft: async (draftValues) =>
             createOneRecord({
               ...draftValues,
-              authorId,
-              lastEditedAt: new Date().toISOString(),
             }),
           updateDraft: async (idToUpdate, draftValues) => {
             await updateOneRecord<MessageDraftRecord>({
@@ -81,8 +77,6 @@ export const useUniboxDraft = ({
               idToUpdate,
               updateOneRecordInput: {
                 ...draftValues,
-                authorId,
-                lastEditedAt: new Date().toISOString(),
               },
               recordGqlFields: MESSAGE_DRAFT_FIELDS,
             });
@@ -99,13 +93,7 @@ export const useUniboxDraft = ({
         setIsSaving(false);
       }
     },
-    [
-      authorId,
-      createOneRecord,
-      persistenceManager,
-      refetchDrafts,
-      updateOneRecord,
-    ],
+    [createOneRecord, persistenceManager, refetchDrafts, updateOneRecord],
   );
 
   const debouncedSave = useDebouncedCallback(persistNow, DRAFT_AUTOSAVE_DELAY, {

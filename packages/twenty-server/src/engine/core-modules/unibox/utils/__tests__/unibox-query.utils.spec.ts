@@ -13,7 +13,7 @@ import {
 import { MessageDirection } from 'src/modules/messaging/common/enums/message-direction.enum';
 
 describe('Unibox query utilities', () => {
-  it('should map Inbox and Sent to disjoint latest-message directions', () => {
+  it('should map Inbox and Sent to their counterpart roles and directions', () => {
     expect(getUniboxEmailFolderQueryConfig(UniboxFolder.INBOX)).toEqual({
       counterpartRoles: [MessageParticipantRole.FROM],
       direction: MessageDirection.INCOMING,

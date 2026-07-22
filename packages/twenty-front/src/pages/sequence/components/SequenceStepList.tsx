@@ -9,7 +9,7 @@ import { GenericDropdownContentWidth } from '@/ui/layout/dropdown/constants/Gene
 import { useCloseDropdown } from '@/ui/layout/dropdown/hooks/useCloseDropdown';
 import { styled } from '@linaria/react';
 import { t } from '@lingui/core/macro';
-import { QUERY_MAX_RECORDS } from 'twenty-shared/constants';
+import { useEffect } from 'react';
 import {
   SEQUENCE_STEP_TYPES,
   SEQUENCE_TASK_TYPES,
@@ -35,6 +35,7 @@ import { StyledEmptyState } from './SequencePageStyles';
 import { SequenceStepCard } from './SequenceStepCard';
 
 const ADD_STEP_DROPDOWN_ID = 'sequence-add-step';
+const SEQUENCE_STEPS_PAGE_SIZE = 50;
 
 const StyledContainer = styled.div`
   display: flex;
@@ -121,7 +122,13 @@ export const SequenceStepList = ({
       objectNameSingular: 'sequenceStep',
       skipPostOptimisticEffect: true,
     });
-  const { records: steps, refetch } = useFindManyRecords<SequenceStepRecord>({
+  const {
+    records: steps,
+    refetch,
+    fetchMoreRecords,
+    hasNextPage,
+    loading,
+  } = useFindManyRecords<SequenceStepRecord>({
     objectNameSingular: 'sequenceStep',
     filter: { sequenceId: { eq: sequenceId } },
     orderBy: [{ position: 'AscNullsLast' }],
@@ -133,8 +140,14 @@ export const SequenceStepList = ({
       position: true,
       settings: true,
     },
-    limit: QUERY_MAX_RECORDS,
+    limit: SEQUENCE_STEPS_PAGE_SIZE,
   });
+
+  useEffect(() => {
+    if (hasNextPage && !loading) {
+      void fetchMoreRecords();
+    }
+  }, [fetchMoreRecords, hasNextPage, loading]);
 
   const sortedSteps = steps
     .slice()

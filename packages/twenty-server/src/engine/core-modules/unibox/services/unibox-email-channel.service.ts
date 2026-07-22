@@ -4,8 +4,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { MessageChannelType } from 'twenty-shared/types';
 import { In, IsNull, type FindOptionsWhere, type Repository } from 'typeorm';
 
+import { UNIBOX_UNREAD_FOLDER_NAME } from 'src/engine/core-modules/unibox/constants/unibox.constants';
 import { ConnectedAccountEntity } from 'src/engine/metadata-modules/connected-account/entities/connected-account.entity';
 import { MessageChannelEntity } from 'src/engine/metadata-modules/message-channel/entities/message-channel.entity';
+import { MessageFolderEntity } from 'src/engine/metadata-modules/message-folder/entities/message-folder.entity';
 
 export type OwnedEmailChannelContext = {
   accounts: ConnectedAccountEntity[];
@@ -28,7 +30,28 @@ export class UniboxEmailChannelService {
     private readonly connectedAccountRepository: Repository<ConnectedAccountEntity>,
     @InjectRepository(MessageChannelEntity)
     private readonly messageChannelRepository: Repository<MessageChannelEntity>,
+    @InjectRepository(MessageFolderEntity)
+    private readonly messageFolderRepository: Repository<MessageFolderEntity>,
   ) {}
+
+  // Message folders live in the core schema while the associations that point at
+  // them are workspace entities, so read state has to be resolved to ids here
+  // rather than joined across schemas from the thread query.
+  async getUnreadFolderIds(channelIds: string[]): Promise<string[]> {
+    if (channelIds.length === 0) {
+      return [];
+    }
+
+    const unreadFolders = await this.messageFolderRepository.find({
+      where: {
+        messageChannelId: In(channelIds),
+        name: UNIBOX_UNREAD_FOLDER_NAME,
+      },
+      select: { id: true },
+    });
+
+    return unreadFolders.map((unreadFolder) => unreadFolder.id);
+  }
 
   async getOwnedEmailChannelContext({
     workspaceId,
