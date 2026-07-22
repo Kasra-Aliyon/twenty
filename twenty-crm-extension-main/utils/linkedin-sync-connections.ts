@@ -9,12 +9,13 @@ import {
 } from './linkedin-harvest-store';
 import {
   getLinkedInSyncState,
+  LINKEDIN_CONNECTION_SYNC_REVISION,
   LINKEDIN_INVITATION_SYNC_REVISION,
   updateLinkedInSyncState,
 } from './linkedin-sync-state';
 import { linkedInVoyagerClient, randomDelay } from './linkedin-voyager-client';
 
-const CONNECTION_PAGE_SIZE = 500;
+const CONNECTION_PAGE_SIZE = 100;
 const CONNECTION_ALREADY_KNOWN_THRESHOLD = 50;
 const INVITATION_PAGE_SIZE = 100;
 const INVITATION_ALREADY_KNOWN_THRESHOLD = 10;
@@ -132,6 +133,7 @@ const parseConnections = (page: VoyagerPage): LinkedInHarvestConnection[] => {
 
       return {
         profileUrn,
+        linkedinUrn: profileUrn,
         linkedinId: getLinkedInIdFromProfileUrn(profileUrn),
         handle,
         name: `${firstName} ${lastName}`.trim() || handle,
@@ -436,6 +438,90 @@ const syncConnections = async (
   runStartedAt: number,
   progress: LinkedInSyncProgress,
 ): Promise<void> => {
+  let state = await getLinkedInSyncState(ownerLinkedinId);
+
+  if (state.connectionSyncRevision !== LINKEDIN_CONNECTION_SYNC_REVISION) {
+    state = await updateLinkedInSyncState(ownerLinkedinId, {
+      connectionBackfillComplete: false,
+      connectionBackfillStart: 0,
+      connectionSyncRevision: LINKEDIN_CONNECTION_SYNC_REVISION,
+    });
+  }
+
+  if (!state.connectionBackfillComplete) {
+    let start = Math.max(
+      0,
+      state.connectionBackfillStart -
+        (state.connectionBackfillStart > 0 ? CONNECTION_PAGE_SIZE : 0),
+    );
+
+    if (start > 0) {
+      const recentPage = await linkedInVoyagerClient.fetchConnectionsPage(
+        0,
+        CONNECTION_PAGE_SIZE,
+      );
+      const recentRecords = parseConnections(recentPage);
+
+      if (recentRecords.length > 0) {
+        const result = await writeLinkedInConnections(
+          ownerLinkedinId,
+          recentRecords,
+          runStartedAt,
+        );
+
+        progress.connections += result.received;
+        await randomDelay(500, 5_000);
+      }
+    }
+
+    for (;;) {
+      const page = await linkedInVoyagerClient.fetchConnectionsPage(
+        start,
+        CONNECTION_PAGE_SIZE,
+      );
+      const records = parseConnections(page);
+
+      if (records.length === 0) {
+        if (page.hasMore && page.nextStart && page.nextStart > start) {
+          start = page.nextStart;
+          await updateLinkedInSyncState(ownerLinkedinId, {
+            connectionBackfillStart: start,
+          });
+          await randomDelay(500, 5_000);
+          continue;
+        }
+
+        await updateLinkedInSyncState(ownerLinkedinId, {
+          connectionBackfillComplete: true,
+          connectionBackfillStart: 0,
+        });
+        return;
+      }
+
+      const result = await writeLinkedInConnections(
+        ownerLinkedinId,
+        records,
+        runStartedAt,
+      );
+
+      progress.connections += result.received;
+
+      if (!page.hasMore || !page.nextStart || page.nextStart <= start) {
+        await updateLinkedInSyncState(ownerLinkedinId, {
+          connectionBackfillComplete: true,
+          connectionBackfillStart: 0,
+        });
+        return;
+      }
+
+      start = page.nextStart;
+      await updateLinkedInSyncState(ownerLinkedinId, {
+        connectionBackfillStart: start,
+      });
+      await randomDelay(500, 5_000);
+    }
+  }
+
   let start = 0;
 
   for (;;) {
@@ -449,12 +535,13 @@ const syncConnections = async (
       break;
     }
 
-    progress.connections += records.length;
     const result = await writeLinkedInConnections(
       ownerLinkedinId,
       records,
       runStartedAt,
     );
+
+    progress.connections += result.received;
 
     if (
       !page.hasMore ||
@@ -551,7 +638,7 @@ export const syncLinkedInConnectionsAndInvitations = async (
 
   await syncConnections(ownerLinkedinId, runStartedAt, progress);
 
-  for (const direction of ['SENT'] as const) {
+  for (const direction of ['SENT', 'RECEIVED'] as const) {
     try {
       const warning = await syncInvitationDirection(
         ownerLinkedinId,

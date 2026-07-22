@@ -82,6 +82,10 @@ export const serializeDefaultValue = ({
       }
 
       if (Array.isArray(defaultValue)) {
+        if (columnType === 'jsonb') {
+          return escapeAndCast(JSON.stringify(defaultValue));
+        }
+
         const arrayValues = defaultValue
           .map((val) => escapeLiteral(stripSurroundingQuotes(String(val))))
           .join(',');

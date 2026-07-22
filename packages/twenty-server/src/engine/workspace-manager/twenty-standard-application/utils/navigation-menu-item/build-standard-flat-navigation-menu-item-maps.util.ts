@@ -33,6 +33,7 @@ const WORKFLOWS_FOLDER_ITEM_NAMES = [
 ] as const;
 
 const LINK_NAVIGATION_MENU_ITEM_NAMES = [
+  'unibox',
   'lists',
   'sequences',
   'taskQueue',

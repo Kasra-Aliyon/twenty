@@ -69,6 +69,7 @@ export type TwentyRecordList = {
 
 export type LinkedInActionType =
   | 'SEND_CONNECTION_REQUEST'
+  | 'SEND_MESSAGE'
   | 'WITHDRAW_CONNECTION_REQUEST';
 
 export type LinkedInActionStatus =
@@ -122,6 +123,7 @@ export type LinkedInIdentity = {
 
 export type LinkedInHarvestConnection = {
   profileUrn: string;
+  linkedinUrn: string;
   linkedinId: string | null;
   handle: string;
   name: string;
@@ -146,6 +148,14 @@ export type LinkedInHarvestParticipant = {
   linkedinUrn: string | null;
   name: string;
   headline: string | null;
+  handle: string | null;
+  profileUrl: string | null;
+  isSelf: boolean;
+};
+
+export type LinkedInHarvestThreadParticipant = LinkedInHarvestParticipant & {
+  sourceThreadId: string;
+  threadId: string;
 };
 
 export type LinkedInHarvestThread = {
@@ -159,12 +169,12 @@ export type LinkedInHarvestThread = {
 
 export type LinkedInHarvestMessage = {
   messageId: string;
-  threadExternalId: string;
+  threadId: string;
   body: string;
   deliveredAt: string;
   direction: LinkedInMessageDirection;
   senderName: string;
-  senderHandle: string | null;
+  senderLinkedinUrn: string | null;
 };
 
 export type LinkedInSyncProgress = {
@@ -179,13 +189,38 @@ export type LinkedInSyncTotals = LinkedInSyncProgress;
 export type LinkedInSyncState = {
   safeSyncedThroughLastActivityAt: number | null;
   historicalBackfillComplete: boolean;
+  connectionBackfillComplete: boolean;
+  connectionBackfillStart: number;
+  connectionSyncRevision: number;
   invitationSyncRevision: number;
   messageSyncRevision: number;
   lastConnectionSyncAt: number | null;
   lastMessageSyncAt: number | null;
+  lastAttemptAt: number | null;
   lastRunAt: number | null;
   syncStartedAt: number | null;
   lastError: string | null;
+};
+
+export type LinkedInSafetyState = {
+  readRequestTimestamps: number[];
+  outboundAttempts: Array<{ actionId: string; attemptedAt: number }>;
+  cooldownUntil: number | null;
+  cooldownReason: string | null;
+};
+
+export type LinkedInSafetySnapshot = {
+  readRequestsLastHour: number;
+  readRequestsToday: number;
+  outboundAttemptsToday: number;
+  outboundDailyLimit: number;
+  nextOutboundAt: number | null;
+  cooldownUntil: number | null;
+  cooldownReason: string | null;
+};
+
+export type LinkedInSafetySettings = {
+  dailyOutboundLimit: number;
 };
 
 export type LinkedInSyncLock = {
@@ -247,8 +282,12 @@ export type MessageType =
   | 'GET_LINKEDIN_RUNNER_STATE'
   | 'SET_LINKEDIN_RUNNER_STATE'
   | 'RUN_LINKEDIN_POLL'
+  | 'REQUEST_LINKEDIN_SYNC'
   | 'GET_LINKEDIN_CSRF_TOKEN'
   | 'GET_LINKEDIN_SYNC_TOTALS'
+  | 'GET_LINKEDIN_SAFETY_SNAPSHOT'
+  | 'GET_LINKEDIN_SAFETY_SETTINGS'
+  | 'SET_LINKEDIN_SAFETY_SETTINGS'
   | 'LINKEDIN_HARVEST_STORE'
   | 'SYNC_LOCK_ACQUIRE'
   | 'SYNC_LOCK_HEARTBEAT'

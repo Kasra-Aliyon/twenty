@@ -5,24 +5,36 @@ import type {
   LinkedInHarvestInvitation,
   LinkedInHarvestMessage,
   LinkedInHarvestThread,
+  LinkedInHarvestThreadParticipant,
   LinkedInSyncTotals,
 } from '../types';
 import type { TwentyApiClient } from './twenty-api';
-import { ensureLinkedinSchema } from './twenty-linkedin-schema';
 
 const TWENTY_BATCH_SIZE = 200;
+const LINKEDIN_MESSAGE_PREVIEW_MAX_LENGTH = 200;
 
 type WriteResult = { received: number; alreadyKnown: number };
 
+type WrittenRecord = {
+  id: string;
+  externalId: string;
+  createdAt: string;
+};
+
+type UpsertResult = WriteResult & { writtenRecords: WrittenRecord[] };
+
+export type LinkedInThreadWriteResult = WriteResult & {
+  writtenThreads: Array<{ id: string; externalId: string }>;
+};
+
 export type LinkedInMessageSyncCandidate = {
+  twentyThreadId: string;
   threadId: string;
-  threadExternalId: string;
   lastMessageTime: string;
   maxMessageTime: string | null;
 };
 
 export type LinkedInHarvestStoreRequest =
-  | { action: 'ENSURE_SCHEMA' }
   | {
       action: 'WRITE_CONNECTIONS';
       ownerLinkedinId: string;
@@ -41,23 +53,28 @@ export type LinkedInHarvestStoreRequest =
       records: LinkedInHarvestThread[];
     }
   | {
+      action: 'WRITE_THREAD_PARTICIPANTS';
+      ownerLinkedinId: string;
+      records: LinkedInHarvestThreadParticipant[];
+    }
+  | {
       action: 'WRITE_MESSAGES';
       ownerLinkedinId: string;
       records: LinkedInHarvestMessage[];
     }
+  | { action: 'UPDATE_THREAD_SUMMARY'; threadId: string }
   | { action: 'GET_OLDEST_THREAD'; ownerLinkedinId: string }
   | { action: 'GET_MESSAGE_SYNC_CANDIDATES'; ownerLinkedinId: string }
-  | { action: 'GET_TOTALS' };
-
-type CreatedRecord = { externalId: string; createdAt: string };
+  | { action: 'GET_TOTALS'; ownerLinkedinId: string };
 
 type MessageThreadsResult = {
   linkedinMessageThreads: {
     edges: Array<{
       node: {
-        externalId: string;
+        id: string;
         threadId: string;
         lastMessageTime: string;
+        messageCount: number;
       };
     }>;
     pageInfo: { hasNextPage: boolean; endCursor: string | null };
@@ -83,9 +100,9 @@ const upsertRecords = async (
   objectNamePlural: string,
   data: Array<Record<string, unknown>>,
   runStartedAt?: number,
-): Promise<WriteResult> => {
+): Promise<UpsertResult> => {
   if (data.length === 0) {
-    return { received: 0, alreadyKnown: 0 };
+    return { received: 0, alreadyKnown: 0, writtenRecords: [] };
   }
 
   const mutation = `
@@ -94,20 +111,24 @@ const upsertRecords = async (
       $upsert: Boolean
     ) {
       create${capitalize(objectNamePlural)}(data: $data, upsert: $upsert) {
+        id
         externalId
         createdAt
       }
     }
   `;
   let alreadyKnown = 0;
+  const allWrittenRecords: WrittenRecord[] = [];
 
   for (const records of chunk(data, TWENTY_BATCH_SIZE)) {
-    const result = await client.graphqlRequest<Record<string, CreatedRecord[]>>(
+    const result = await client.graphqlRequest<Record<string, WrittenRecord[]>>(
       mutation,
       { data: records, upsert: true },
     );
     const writtenRecords =
       result.data?.[`create${capitalize(objectNamePlural)}`] ?? [];
+
+    allWrittenRecords.push(...writtenRecords);
 
     if (runStartedAt) {
       alreadyKnown += writtenRecords.filter(
@@ -116,7 +137,11 @@ const upsertRecords = async (
     }
   }
 
-  return { received: data.length, alreadyKnown };
+  return {
+    received: data.length,
+    alreadyKnown,
+    writtenRecords: allWrittenRecords,
+  };
 };
 
 const writeConnectionsWithClient = (
@@ -138,6 +163,7 @@ const writeConnectionsWithClient = (
         primaryLinkUrl: record.profileUrl,
         primaryLinkLabel: record.name,
       },
+      linkedinUrn: record.linkedinUrn,
       connectedAt: record.connectedAt,
       ownerLinkedinId,
     })),
@@ -167,12 +193,12 @@ const writeInvitationsWithClient = (
     runStartedAt,
   );
 
-const writeThreadsWithClient = (
+const writeThreadsWithClient = async (
   client: TwentyApiClient,
   ownerLinkedinId: string,
   records: LinkedInHarvestThread[],
-): Promise<WriteResult> =>
-  upsertRecords(
+): Promise<LinkedInThreadWriteResult> => {
+  const result = await upsertRecords(
     client,
     'linkedinMessageThread',
     'linkedinMessageThreads',
@@ -182,9 +208,58 @@ const writeThreadsWithClient = (
       threadId: record.threadId,
       firstMessageTime: record.firstMessageTime,
       lastMessageTime: record.lastMessageTime,
-      participants: record.participants,
       labels: record.labels,
       ownerLinkedinId,
+    })),
+  );
+
+  return {
+    received: result.received,
+    alreadyKnown: result.alreadyKnown,
+    writtenThreads: result.writtenRecords.map(({ id, externalId }) => ({
+      id,
+      externalId,
+    })),
+  };
+};
+
+const getParticipantExternalId = (
+  ownerLinkedinId: string,
+  record: LinkedInHarvestThreadParticipant,
+): string => {
+  const participantIdentifier =
+    record.linkedinUrn ??
+    record.linkedinId ??
+    record.handle ??
+    record.name.toLowerCase();
+
+  return `${ownerLinkedinId}:${record.sourceThreadId}:${participantIdentifier}`;
+};
+
+const writeThreadParticipantsWithClient = (
+  client: TwentyApiClient,
+  ownerLinkedinId: string,
+  records: LinkedInHarvestThreadParticipant[],
+): Promise<WriteResult> =>
+  upsertRecords(
+    client,
+    'linkedinThreadParticipant',
+    'linkedinThreadParticipants',
+    records.map((record) => ({
+      externalId: getParticipantExternalId(ownerLinkedinId, record),
+      linkedinUrn: record.linkedinUrn,
+      linkedinMemberId: record.linkedinId,
+      name: record.name,
+      headline: record.headline,
+      handle: record.handle,
+      profileUrl: record.profileUrl
+        ? {
+            primaryLinkUrl: record.profileUrl,
+            primaryLinkLabel: record.name,
+          }
+        : null,
+      isSelf: record.isSelf,
+      threadId: record.threadId,
     })),
   );
 
@@ -199,17 +274,73 @@ const writeMessagesWithClient = (
     'linkedinMessages',
     records.map((record) => ({
       externalId: `${ownerLinkedinId}:${record.messageId}`,
-      name: record.senderName || 'LinkedIn message',
       messageId: record.messageId,
-      threadExternalId: record.threadExternalId,
       body: record.body,
       deliveredAt: record.deliveredAt,
       direction: record.direction,
       senderName: record.senderName,
-      senderHandle: record.senderHandle,
+      senderLinkedinUrn: record.senderLinkedinUrn,
       ownerLinkedinId,
+      threadId: record.threadId,
     })),
   );
+
+const updateThreadSummaryWithClient = async (
+  client: TwentyApiClient,
+  threadId: string,
+): Promise<{ messageCount: number; lastMessagePreview: string }> => {
+  const result = await client.graphqlRequest<{
+    linkedinMessages: {
+      edges: Array<{ node: { body: string } }>;
+      totalCount: number;
+    };
+  }>(
+    `
+      query LinkedinMessageThreadSummary($threadId: UUID!) {
+        linkedinMessages(
+          filter: { threadId: { eq: $threadId } }
+          orderBy: [{ deliveredAt: DescNullsLast }]
+          first: 1
+        ) {
+          edges {
+            node {
+              body
+            }
+          }
+          totalCount
+        }
+      }
+    `,
+    { threadId },
+  );
+  const messages = result.data?.linkedinMessages;
+  const lastMessagePreview =
+    messages?.edges[0]?.node.body
+      .trim()
+      .slice(0, LINKEDIN_MESSAGE_PREVIEW_MAX_LENGTH) ?? '';
+  const messageCount = messages?.totalCount ?? 0;
+
+  await client.graphqlRequest<{
+    updateLinkedinMessageThread: { id: string };
+  }>(
+    `
+      mutation UpdateLinkedinMessageThreadSummary(
+        $id: UUID!
+        $data: LinkedinMessageThreadUpdateInput!
+      ) {
+        updateLinkedinMessageThread(id: $id, data: $data) {
+          id
+        }
+      }
+    `,
+    {
+      id: threadId,
+      data: { lastMessagePreview, messageCount },
+    },
+  );
+
+  return { messageCount, lastMessagePreview };
+};
 
 const getOldestThreadWithClient = async (
   client: TwentyApiClient,
@@ -244,25 +375,26 @@ const getOldestThreadWithClient = async (
   return result.data?.linkedinMessageThreads.edges[0]?.node ?? null;
 };
 
-const getNewestMessageTime = async (
+const getMessageCheckpoint = async (
   client: TwentyApiClient,
   ownerLinkedinId: string,
-  threadExternalId: string,
-): Promise<string | null> => {
+  threadId: string,
+): Promise<{ maxMessageTime: string | null; messageCount: number }> => {
   const result = await client.graphqlRequest<{
     linkedinMessages: {
       edges: Array<{ node: { deliveredAt: string } }>;
+      totalCount: number;
     };
   }>(
     `
       query NewestLinkedinMessage(
         $ownerLinkedinId: String!
-        $threadExternalId: String!
+        $threadId: UUID!
       ) {
         linkedinMessages(
           filter: {
             ownerLinkedinId: { eq: $ownerLinkedinId }
-            threadExternalId: { eq: $threadExternalId }
+            threadId: { eq: $threadId }
           }
           orderBy: [{ deliveredAt: DescNullsLast }]
           first: 1
@@ -272,13 +404,18 @@ const getNewestMessageTime = async (
               deliveredAt
             }
           }
+          totalCount
         }
       }
     `,
-    { ownerLinkedinId, threadExternalId },
+    { ownerLinkedinId, threadId },
   );
 
-  return result.data?.linkedinMessages.edges[0]?.node.deliveredAt ?? null;
+  return {
+    maxMessageTime:
+      result.data?.linkedinMessages.edges[0]?.node.deliveredAt ?? null,
+    messageCount: result.data?.linkedinMessages.totalCount ?? 0,
+  };
 };
 
 const getMessageSyncCandidatesWithClient = async (
@@ -286,9 +423,10 @@ const getMessageSyncCandidatesWithClient = async (
   ownerLinkedinId: string,
 ): Promise<LinkedInMessageSyncCandidate[]> => {
   const threads: Array<{
-    externalId: string;
+    id: string;
     threadId: string;
     lastMessageTime: string;
+    messageCount: number;
   }> = [];
   let after: string | null = null;
 
@@ -307,9 +445,10 @@ const getMessageSyncCandidatesWithClient = async (
           ) {
             edges {
               node {
-                externalId
+                id
                 threadId
                 lastMessageTime
+                messageCount
               }
             }
             pageInfo {
@@ -340,28 +479,34 @@ const getMessageSyncCandidatesWithClient = async (
   for (const threadBatch of chunk(threads, 20)) {
     const batchCandidates = await Promise.all(
       threadBatch.map(async (thread) => {
-        const maxMessageTime = await getNewestMessageTime(
+        const checkpoint = await getMessageCheckpoint(
           client,
           ownerLinkedinId,
-          thread.externalId,
+          thread.id,
         );
 
         return {
-          threadId: thread.threadId,
-          threadExternalId: thread.externalId,
-          lastMessageTime: thread.lastMessageTime,
-          maxMessageTime,
+          syncCandidate: {
+            twentyThreadId: thread.id,
+            threadId: thread.threadId,
+            lastMessageTime: thread.lastMessageTime,
+            maxMessageTime: checkpoint.maxMessageTime,
+          },
+          summaryIsStale: thread.messageCount !== checkpoint.messageCount,
         };
       }),
     );
 
     candidates.push(
-      ...batchCandidates.filter(
-        (candidate) =>
-          !candidate.maxMessageTime ||
-          new Date(candidate.lastMessageTime).getTime() >
-            new Date(candidate.maxMessageTime).getTime(),
-      ),
+      ...batchCandidates
+        .filter(
+          ({ summaryIsStale, syncCandidate }) =>
+            !syncCandidate.maxMessageTime ||
+            summaryIsStale ||
+            new Date(syncCandidate.lastMessageTime).getTime() >
+              new Date(syncCandidate.maxMessageTime).getTime(),
+        )
+        .map(({ syncCandidate }) => syncCandidate),
     );
   }
 
@@ -370,54 +515,8 @@ const getMessageSyncCandidatesWithClient = async (
 
 export const getLinkedInSyncTotalsWithClient = async (
   client: TwentyApiClient,
+  ownerLinkedinId: string,
 ): Promise<LinkedInSyncTotals> => {
-  try {
-    const result = await client.metadataRequest<{
-      objectRecordCounts: Array<{
-        objectNamePlural: string;
-        totalCount: number;
-      }>;
-    }>(`
-      query LinkedinHarvestRecordCounts {
-        objectRecordCounts {
-          objectNamePlural
-          totalCount
-        }
-      }
-    `);
-    const counts = new Map(
-      (result.data?.objectRecordCounts ?? []).map((count) => [
-        count.objectNamePlural,
-        count.totalCount,
-      ]),
-    );
-    const sentInvitationResult = await client.graphqlRequest<{
-      linkedinInvitations: { totalCount: number };
-    }>(`
-      query SentLinkedinInvitationCount {
-        linkedinInvitations(
-          filter: { direction: { in: ["SENT"] } }
-          first: 1
-        ) {
-          totalCount
-        }
-      }
-    `);
-
-    return {
-      connections: counts.get('linkedinConnections') ?? 0,
-      invitations:
-        sentInvitationResult.data?.linkedinInvitations.totalCount ?? 0,
-      threads: counts.get('linkedinMessageThreads') ?? 0,
-      messages: counts.get('linkedinMessages') ?? 0,
-    };
-  } catch (error) {
-    console.warn(
-      '[Twenty] Metadata record counts unavailable; using data API:',
-      error,
-    );
-  }
-
   const objectNames = [
     ['connections', 'linkedinConnections'],
     ['invitations', 'linkedinInvitations'],
@@ -434,14 +533,20 @@ export const getLinkedInSyncTotalsWithClient = async (
   await Promise.all(
     objectNames.map(async ([key, objectName]) => {
       try {
-        const argumentsSource =
-          key === 'invitations'
-            ? '(filter: { direction: { in: ["SENT"] } }, first: 1)'
-            : '(first: 1)';
         const result = await client.graphqlRequest<
           Record<string, { totalCount: number }>
         >(
-          `query LinkedinHarvest${capitalize(key)}Count { ${objectName}${argumentsSource} { totalCount } }`,
+          `
+            query LinkedinSync${capitalize(key)}Count($ownerLinkedinId: String!) {
+              ${objectName}(
+                filter: { ownerLinkedinId: { eq: $ownerLinkedinId } }
+                first: 1
+              ) {
+                totalCount
+              }
+            }
+          `,
+          { ownerLinkedinId },
         );
 
         totals[key] = result.data?.[objectName]?.totalCount ?? 0;
@@ -458,13 +563,7 @@ export const handleLinkedInHarvestStoreRequest = async (
   client: TwentyApiClient,
   request: LinkedInHarvestStoreRequest,
 ): Promise<unknown> => {
-  if (request.action !== 'GET_TOTALS') {
-    await ensureLinkedinSchema(client);
-  }
-
   switch (request.action) {
-    case 'ENSURE_SCHEMA':
-      return { ready: true };
     case 'WRITE_CONNECTIONS':
       return writeConnectionsWithClient(
         client,
@@ -485,12 +584,20 @@ export const handleLinkedInHarvestStoreRequest = async (
         request.ownerLinkedinId,
         request.records,
       );
+    case 'WRITE_THREAD_PARTICIPANTS':
+      return writeThreadParticipantsWithClient(
+        client,
+        request.ownerLinkedinId,
+        request.records,
+      );
     case 'WRITE_MESSAGES':
       return writeMessagesWithClient(
         client,
         request.ownerLinkedinId,
         request.records,
       );
+    case 'UPDATE_THREAD_SUMMARY':
+      return updateThreadSummaryWithClient(client, request.threadId);
     case 'GET_OLDEST_THREAD':
       return getOldestThreadWithClient(client, request.ownerLinkedinId);
     case 'GET_MESSAGE_SYNC_CANDIDATES':
@@ -499,7 +606,7 @@ export const handleLinkedInHarvestStoreRequest = async (
         request.ownerLinkedinId,
       );
     case 'GET_TOTALS':
-      return getLinkedInSyncTotalsWithClient(client);
+      return getLinkedInSyncTotalsWithClient(client, request.ownerLinkedinId);
   }
 };
 
@@ -519,9 +626,6 @@ const sendStoreRequest = async <TData>(
 
   return response.data;
 };
-
-export const ensureLinkedInHarvestSchema = (): Promise<{ ready: boolean }> =>
-  sendStoreRequest({ action: 'ENSURE_SCHEMA' });
 
 export const writeLinkedInConnections = (
   ownerLinkedinId: string,
@@ -550,9 +654,19 @@ export const writeLinkedInInvitations = (
 export const writeLinkedInThreads = (
   ownerLinkedinId: string,
   records: LinkedInHarvestThread[],
-): Promise<WriteResult> =>
+): Promise<LinkedInThreadWriteResult> =>
   sendStoreRequest({
     action: 'WRITE_THREADS',
+    ownerLinkedinId,
+    records,
+  });
+
+export const writeLinkedInThreadParticipants = (
+  ownerLinkedinId: string,
+  records: LinkedInHarvestThreadParticipant[],
+): Promise<WriteResult> =>
+  sendStoreRequest({
+    action: 'WRITE_THREAD_PARTICIPANTS',
     ownerLinkedinId,
     records,
   });
@@ -566,6 +680,11 @@ export const writeLinkedInMessages = (
     ownerLinkedinId,
     records,
   });
+
+export const updateLinkedInThreadSummary = (
+  threadId: string,
+): Promise<{ messageCount: number; lastMessagePreview: string }> =>
+  sendStoreRequest({ action: 'UPDATE_THREAD_SUMMARY', threadId });
 
 export const getOldestLinkedInThread = (
   ownerLinkedinId: string,

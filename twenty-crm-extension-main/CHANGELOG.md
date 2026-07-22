@@ -2,6 +2,28 @@
 
 All notable changes to Twenty CRM LinkedIn Capture Extension.
 
+## [Unreleased]
+
+### Changed
+
+- Replaced start/pause harvesting with manual **Sync now** and automatic
+  30-minute sync dispatch.
+- Made connection history resumable and retained incremental thread/message
+  checkpoints and stable-ID upserts.
+- Scoped connection, invite, thread, and message totals to the signed-in
+  LinkedIn account and included both sent and received invitations.
+- Persisted the cross-tab sync lock through Manifest V3 service-worker restarts.
+- Added durable read budgets, a fail-closed restriction cooldown, a local
+  cross-sequence outbound cap, and a 15-minute minimum outbound gap.
+- Changed new sequence defaults to 20 LinkedIn actions per day with conservative
+  15–45 minute spacing; server throttling is now workspace-wide.
+- Made the local daily automation cap configurable from 1–20 in the connector
+  popup and clamped the CRM sequence setting to the same maximum.
+- Added direct LinkedIn message sequence steps for recognized first-degree
+  connections using LinkedIn's visible composer UI and existing safety limits.
+- Compacted the runner so outbound controls, sync totals, and status remain
+  visible within the browser viewport.
+
 ## [1.0.0] - 2024-12-17
 
 ### ✨ Features

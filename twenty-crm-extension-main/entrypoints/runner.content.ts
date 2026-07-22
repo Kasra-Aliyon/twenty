@@ -2,6 +2,7 @@ import type {
   ExtensionResponse,
   LinkedInIdentity,
   LinkedInRunnerSessionState,
+  LinkedInSafetySnapshot,
   LinkedInSyncLock,
   LinkedInSyncProgress,
   LinkedInSyncState,
@@ -9,31 +10,44 @@ import type {
   TwentyLinkedInAction,
 } from '../types';
 import {
+  getLinkedInAutomationBlockReason,
   sendConnectionRequest,
+  sendDirectMessage,
   withdrawConnectionRequest,
   type LinkedInAutomationResult,
 } from '../utils/linkedin-automation';
-import { ensureLinkedInHarvestSchema } from '../utils/linkedin-harvest-store';
+import {
+  assertLinkedInOutboundAllowed,
+  getLinkedInSafetySnapshot,
+  LinkedInSafetyLimitError,
+  recordLinkedInOutboundAttempt,
+  tripLinkedInSafetyCircuit,
+} from '../utils/linkedin-safety';
+import {
+  LINKEDIN_OUTBOUND_ATTEMPTS_PER_DAY,
+  LINKEDIN_OUTBOUND_MINIMUM_GAP_MILLISECONDS,
+  LINKEDIN_READ_REQUESTS_PER_HOUR,
+} from '../utils/linkedin-safety-policy';
 import { syncLinkedInConnectionsAndInvitations } from '../utils/linkedin-sync-connections';
 import { syncLinkedInMessages } from '../utils/linkedin-sync-messages';
 import {
   getCachedLinkedInIdentity,
-  getLinkedInHarvestEnabled,
   getLinkedInSyncState,
+  LINKEDIN_CONNECTION_SYNC_REVISION,
   LINKEDIN_INVITATION_SYNC_REVISION,
   LINKEDIN_MESSAGE_SYNC_REVISION,
   setCachedLinkedInIdentity,
-  setLinkedInHarvestEnabled,
   updateLinkedInSyncState,
 } from '../utils/linkedin-sync-state';
 import { linkedInVoyagerClient } from '../utils/linkedin-voyager-client';
 
-const RUNNER_LOCAL_MINIMUM_GAP_MILLISECONDS = 60_000;
+const RUNNER_LOCAL_MINIMUM_GAP_MILLISECONDS =
+  LINKEDIN_OUTBOUND_MINIMUM_GAP_MILLISECONDS;
 const RUNNER_POLL_INTERVAL_MILLISECONDS = 60_000;
 const LINKEDIN_INVITATION_MANAGER_PATH = '/mynetwork/invitation-manager/sent/';
 const HARVEST_AUTO_SYNC_INTERVAL_MILLISECONDS = 60_000;
-const HARVEST_COMPLETED_SYNC_GAP_MILLISECONDS = 10 * 60_000;
-const HARVEST_RECENT_SYNC_TTL_MILLISECONDS = 30_000;
+const HARVEST_COMPLETED_SYNC_GAP_MILLISECONDS = 30 * 60_000;
+const HARVEST_RECENT_SYNC_TTL_MILLISECONDS = 2 * 60_000;
 const HARVEST_HEARTBEAT_INTERVAL_MILLISECONDS = 10_000;
 const HARVEST_LOCK_STATUS_INTERVAL_MILLISECONDS = 5_000;
 const HARVEST_TOTALS_INTERVAL_MILLISECONDS = 30_000;
@@ -84,10 +98,12 @@ const RUNNER_STYLES = `
     bottom: 52px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.22);
     color: #1f2937;
-    overflow: hidden;
+    max-height: calc(100vh - 88px);
+    max-width: calc(100vw - 32px);
+    overflow-y: auto;
     position: absolute;
     right: 0;
-    width: 340px;
+    width: 360px;
   }
 
   .twenty-linkedin-runner-header {
@@ -96,7 +112,7 @@ const RUNNER_STYLES = `
     border-bottom: 1px solid #e5e7eb;
     display: flex;
     justify-content: space-between;
-    padding: 12px 16px;
+    padding: 9px 12px;
   }
 
   .twenty-linkedin-runner-title {
@@ -115,14 +131,14 @@ const RUNNER_STYLES = `
   .twenty-linkedin-runner-body {
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    padding: 16px;
+    gap: 7px;
+    padding: 10px;
   }
 
   .twenty-linkedin-runner-stats {
     display: grid;
-    gap: 8px;
-    grid-template-columns: repeat(2, 1fr);
+    gap: 5px;
+    grid-template-columns: repeat(4, 1fr);
   }
 
   .twenty-linkedin-runner-section-title {
@@ -142,13 +158,15 @@ const RUNNER_STYLES = `
     background: #f3f4f6;
     border-radius: 8px;
     font-size: 12px;
-    padding: 10px;
+    min-width: 0;
+    padding: 6px;
+    text-align: center;
   }
 
   .twenty-linkedin-runner-stat strong {
     display: block;
-    font-size: 16px;
-    margin-bottom: 2px;
+    font-size: 14px;
+    margin-bottom: 1px;
   }
 
   .twenty-linkedin-runner-warning,
@@ -159,7 +177,7 @@ const RUNNER_STYLES = `
     color: #92400e;
     font-size: 12px;
     line-height: 1.4;
-    padding: 10px;
+    padding: 7px 8px;
   }
 
   .twenty-linkedin-runner-status {
@@ -169,9 +187,27 @@ const RUNNER_STYLES = `
   }
 
   .twenty-linkedin-runner-status.is-error {
-    background: #fef2f2;
-    border-color: #fecaca;
-    color: #991b1b;
+    background: #fffbeb;
+    border-color: #fde68a;
+    color: #92400e;
+  }
+
+  .twenty-linkedin-runner-meta {
+    display: grid;
+    gap: 5px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .twenty-linkedin-runner-meta .twenty-linkedin-runner-status {
+    font-size: 11px;
+    overflow-wrap: anywhere;
+    padding: 6px;
+  }
+
+  .twenty-linkedin-runner-sync-copy {
+    color: #6b7280;
+    font-size: 11px;
+    margin: 0;
   }
 
   .twenty-linkedin-runner-action {
@@ -182,7 +218,7 @@ const RUNNER_STYLES = `
     cursor: pointer;
     font-size: 13px;
     font-weight: 600;
-    padding: 10px 14px;
+    padding: 8px 12px;
     width: 100%;
   }
 
@@ -192,10 +228,6 @@ const RUNNER_STYLES = `
 
   .twenty-linkedin-runner-action.is-harvest {
     background: #0a66c2;
-  }
-
-  .twenty-linkedin-runner-action.is-harvest.is-pause {
-    background: #475569;
   }
 `;
 
@@ -214,6 +246,16 @@ const emptySyncProgress = (): LinkedInSyncProgress => ({
   invitations: 0,
   threads: 0,
   messages: 0,
+});
+
+const emptySafetySnapshot = (): LinkedInSafetySnapshot => ({
+  readRequestsLastHour: 0,
+  readRequestsToday: 0,
+  outboundAttemptsToday: 0,
+  outboundDailyLimit: LINKEDIN_OUTBOUND_ATTEMPTS_PER_DAY,
+  nextOutboundAt: null,
+  cooldownUntil: null,
+  cooldownReason: null,
 });
 
 const wait = (milliseconds: number) =>
@@ -252,15 +294,15 @@ export default defineContentScript({
     let statusMessage = 'Runner is paused.';
     let statusIsError = false;
     let pollTimeout: ReturnType<typeof setTimeout> | null = null;
-    let harvestEnabled = false;
     let isHarvestSyncing = false;
     let isHarvestOwnedByAnotherTab = false;
     let harvestIdentity: LinkedInIdentity | null = null;
     let harvestSyncState: LinkedInSyncState | null = null;
     let harvestTotals = emptySyncProgress();
     let harvestProgress = emptySyncProgress();
-    let harvestStatusMessage = 'LinkedIn harvest is paused.';
+    let harvestStatusMessage = 'Waiting for the next automatic sync.';
     let harvestStatusIsError = false;
+    let safetySnapshot = emptySafetySnapshot();
     let harvestLockKey: string | null = null;
     let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
     let autoSyncInterval: ReturnType<typeof setInterval> | null = null;
@@ -304,11 +346,18 @@ export default defineContentScript({
     const refreshHarvestTotals = async () => {
       const response = await sendMessage<LinkedInSyncTotals>(
         'GET_LINKEDIN_SYNC_TOTALS',
+        harvestIdentity
+          ? { ownerLinkedinId: harvestIdentity.linkedinId }
+          : undefined,
       );
 
       if (response.success && response.data) {
         harvestTotals = response.data;
       }
+    };
+
+    const refreshSafetySnapshot = async () => {
+      safetySnapshot = await getLinkedInSafetySnapshot();
     };
 
     const refreshHarvestIdentity = async (): Promise<LinkedInIdentity> => {
@@ -383,11 +432,8 @@ export default defineContentScript({
         harvestProgress = lock.progress;
         harvestStatusMessage = 'Sync in progress in another tab.';
         harvestStatusIsError = false;
-      } else if (
-        harvestEnabled &&
-        harvestStatusMessage.includes('another tab')
-      ) {
-        harvestStatusMessage = 'Waiting for the next automatic harvest.';
+      } else if (harvestStatusMessage.includes('another tab')) {
+        harvestStatusMessage = 'Waiting for the next automatic sync.';
       }
 
       render();
@@ -399,6 +445,9 @@ export default defineContentScript({
       }
 
       if (
+        harvestSyncState.connectionSyncRevision !==
+          LINKEDIN_CONNECTION_SYNC_REVISION ||
+        !harvestSyncState.connectionBackfillComplete ||
         harvestSyncState.messageSyncRevision !==
           LINKEDIN_MESSAGE_SYNC_REVISION ||
         harvestSyncState.invitationSyncRevision !==
@@ -416,18 +465,30 @@ export default defineContentScript({
       }
 
       return (
-        !harvestSyncState.lastRunAt ||
-        Date.now() - harvestSyncState.lastRunAt >=
+        !harvestSyncState.lastAttemptAt ||
+        Date.now() - harvestSyncState.lastAttemptAt >=
           HARVEST_COMPLETED_SYNC_GAP_MILLISECONDS
       );
     };
 
     const syncAllHarvestData = async (force = false) => {
-      if (isHarvestSyncing || (!harvestEnabled && !force)) {
+      if (isHarvestSyncing) {
         return;
       }
 
       try {
+        await refreshSafetySnapshot();
+
+        if (
+          safetySnapshot.cooldownUntil !== null &&
+          safetySnapshot.cooldownUntil > Date.now()
+        ) {
+          harvestStatusMessage = `${safetySnapshot.cooldownReason ?? 'LinkedIn safety cooldown is active.'} Sync will remain paused until ${new Date(safetySnapshot.cooldownUntil).toLocaleString()}.`;
+          harvestStatusIsError = true;
+          render();
+          return;
+        }
+
         harvestProgress = emptySyncProgress();
         let ownerLinkedinId =
           harvestIdentity?.linkedinId ?? getPageLinkedInId();
@@ -460,7 +521,7 @@ export default defineContentScript({
         isHarvestSyncing = true;
         isHarvestOwnedByAnotherTab = false;
         harvestLockKey = key;
-        harvestStatusMessage = 'Preparing the Twenty LinkedIn data model…';
+        harvestStatusMessage = 'Preparing LinkedIn sync…';
         harvestStatusIsError = false;
         render();
 
@@ -476,28 +537,36 @@ export default defineContentScript({
         }
 
         if (!shouldRunHarvest(force)) {
+          harvestStatusMessage = 'Waiting for the next automatic sync.';
+          harvestStatusIsError = false;
           return;
         }
-
-        await ensureLinkedInHarvestSchema();
 
         const runStartedAt = Date.now();
 
         harvestSyncState = await updateLinkedInSyncState(identity.linkedinId, {
           syncStartedAt: runStartedAt,
+          lastAttemptAt: runStartedAt,
           lastError: null,
         });
-        harvestStatusMessage = 'Harvesting LinkedIn data…';
+        harvestStatusMessage = 'Syncing LinkedIn data incrementally…';
         render();
 
-        const [connectionsResult, messagesResult] = await Promise.allSettled([
+        const [connectionsResult] = await Promise.allSettled([
           syncLinkedInConnectionsAndInvitations(
             identity.linkedinId,
             runStartedAt,
             harvestProgress,
           ),
-          syncLinkedInMessages(identity, harvestProgress),
         ]);
+        const messagesResult =
+          connectionsResult.status === 'fulfilled'
+            ? (
+                await Promise.allSettled([
+                  syncLinkedInMessages(identity, harvestProgress),
+                ])
+              )[0]
+            : connectionsResult;
         const completedAt = Date.now();
         const stateUpdate: Partial<LinkedInSyncState> = {
           syncStartedAt: null,
@@ -511,16 +580,20 @@ export default defineContentScript({
           stateUpdate.lastMessageSyncAt = completedAt;
         }
 
-        const errors = [connectionsResult, messagesResult]
-          .filter(
-            (result): result is PromiseRejectedResult =>
-              result.status === 'rejected',
-          )
-          .map((result) =>
-            result.reason instanceof Error
-              ? result.reason.message
-              : String(result.reason),
-          );
+        const errors = [
+          ...new Set(
+            [connectionsResult, messagesResult]
+              .filter(
+                (result): result is PromiseRejectedResult =>
+                  result.status === 'rejected',
+              )
+              .map((result) =>
+                result.reason instanceof Error
+                  ? result.reason.message
+                  : String(result.reason),
+              ),
+          ),
+        ];
 
         harvestSyncState = await updateLinkedInSyncState(
           identity.linkedinId,
@@ -542,15 +615,16 @@ export default defineContentScript({
         });
         harvestStatusMessage =
           warnings.length > 0
-            ? `LinkedIn harvest completed. ${warnings.join(' ')}`
-            : 'LinkedIn harvest completed.';
+            ? `LinkedIn sync completed. ${warnings.join(' ')}`
+            : 'LinkedIn sync completed.';
         harvestStatusIsError = false;
-        await refreshHarvestTotals();
+        await Promise.all([refreshHarvestTotals(), refreshSafetySnapshot()]);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
 
         harvestStatusMessage = message;
-        harvestStatusIsError = true;
+        harvestStatusIsError = !/read limit reached/i.test(message);
+        await refreshSafetySnapshot().catch(() => undefined);
 
         if (harvestIdentity) {
           harvestSyncState = await updateLinkedInSyncState(
@@ -566,23 +640,6 @@ export default defineContentScript({
 
         isHarvestSyncing = false;
         await releaseHarvestLock();
-        render();
-      }
-    };
-
-    const setHarvestEnabled = async (enabled: boolean) => {
-      harvestEnabled = enabled;
-      await setLinkedInHarvestEnabled(enabled);
-
-      if (enabled) {
-        harvestStatusMessage = 'Starting LinkedIn harvest…';
-        harvestStatusIsError = false;
-        render();
-        void syncAllHarvestData(true);
-      } else {
-        harvestStatusMessage = isHarvestSyncing
-          ? 'Harvest will pause after the current sync finishes.'
-          : 'LinkedIn harvest is paused.';
         render();
       }
     };
@@ -634,7 +691,7 @@ export default defineContentScript({
 
     const executeAction = async (action: TwentyLinkedInAction) => {
       if (
-        action.type === 'SEND_CONNECTION_REQUEST' &&
+        action.type !== 'WITHDRAW_CONNECTION_REQUEST' &&
         !getProfileHandle(action.linkedinUrl)
       ) {
         const reportResponse = await sendMessage('REPORT_LINKEDIN_ACTION', {
@@ -659,6 +716,26 @@ export default defineContentScript({
         return;
       }
 
+      if (runnerState.activeActionStartedAt) {
+        statusMessage =
+          'This tab closed or reloaded after the action started. Its outcome is unknown; Twenty will not retry it silently.';
+        statusIsError = true;
+        render();
+        return;
+      }
+
+      const blockReason = getLinkedInAutomationBlockReason();
+
+      if (blockReason) {
+        await tripLinkedInSafetyCircuit(blockReason);
+        await setRunnerEnabled(false);
+        statusMessage = `${blockReason} The runner was stopped and the safety cooldown was activated.`;
+        statusIsError = true;
+        await refreshSafetySnapshot();
+        render();
+        return;
+      }
+
       if (!ensureActionPage(action)) {
         statusMessage =
           'Navigating to the LinkedIn page required for the claimed action…';
@@ -667,11 +744,17 @@ export default defineContentScript({
         return;
       }
 
-      if (runnerState.activeActionStartedAt) {
-        statusMessage =
-          'This tab closed or reloaded after the action started. Its outcome is unknown; Twenty will not retry it silently.';
-        statusIsError = true;
+      try {
+        await assertLinkedInOutboundAllowed(action.id);
+      } catch (error) {
+        if (!(error instanceof LinkedInSafetyLimitError)) {
+          throw error;
+        }
+
+        statusMessage = `${error.message} Next eligible check: ${new Date(error.retryAt).toLocaleString()}.`;
+        statusIsError = false;
         render();
+        schedulePoll(error.retryAt - Date.now());
         return;
       }
 
@@ -687,6 +770,8 @@ export default defineContentScript({
       }
 
       runnerState = markResponse.data ?? runnerState;
+      await recordLinkedInOutboundAttempt(action.id);
+      await refreshSafetySnapshot();
       statusMessage = `Running ${action.type.replaceAll('_', ' ').toLowerCase()}…`;
       statusIsError = false;
       render();
@@ -696,12 +781,25 @@ export default defineContentScript({
 
       if (action.type === 'SEND_CONNECTION_REQUEST') {
         result = await sendConnectionRequest(action.noteText);
+      } else if (action.type === 'SEND_MESSAGE') {
+        result = await sendDirectMessage(action.noteText);
       } else {
         result = await withdrawConnectionRequest(action.linkedinUrl);
       }
 
       if (result.status === 'NAVIGATING') {
         return;
+      }
+
+      if (
+        result.status === 'FAILED' &&
+        /restriction|verification|unusual activity|invitation limit|commercial use limit/i.test(
+          result.errorMessage,
+        )
+      ) {
+        await tripLinkedInSafetyCircuit(result.errorMessage);
+        await setRunnerEnabled(false);
+        await refreshSafetySnapshot();
       }
 
       const reportResponse = await sendMessage('REPORT_LINKEDIN_ACTION', {
@@ -792,6 +890,21 @@ export default defineContentScript({
           return;
         }
 
+        try {
+          await assertLinkedInOutboundAllowed(dueAction.id);
+        } catch (error) {
+          if (!(error instanceof LinkedInSafetyLimitError)) {
+            throw error;
+          }
+
+          statusMessage = `${error.message} The action remains unclaimed. Next eligible check: ${new Date(error.retryAt).toLocaleString()}.`;
+          statusIsError = false;
+          await refreshSafetySnapshot();
+          render();
+          schedulePoll(error.retryAt - Date.now());
+          return;
+        }
+
         const claimResponse = await sendMessage<TwentyLinkedInAction | null>(
           'CLAIM_LINKEDIN_ACTION',
           { id: dueAction.id },
@@ -858,7 +971,7 @@ export default defineContentScript({
       logo.innerHTML =
         '<rect width="40" height="40" rx="8" fill="white" fill-opacity="0.18"/><path d="M12 14h16v3H12zM12 20h12v3H12zM12 26h8v3H12z" fill="white"/>';
       dot.className = `twenty-linkedin-runner-dot${
-        runnerState.enabled || harvestEnabled ? ' is-running' : ''
+        runnerState.enabled || isHarvestSyncing ? ' is-running' : ''
       }`;
       button.append(logo, dot, document.createTextNode('Twenty runner'));
       button.addEventListener('click', () => {
@@ -874,13 +987,19 @@ export default defineContentScript({
         const nextActionLabel = nextAction
           ? new Date(nextAction.scheduledAt).toLocaleString()
           : 'None scheduled';
-        const displayedHarvestCounts =
-          isHarvestSyncing || isHarvestOwnedByAnotherTab
-            ? harvestProgress
-            : harvestTotals;
         const lastHarvestLabel = harvestSyncState?.lastRunAt
           ? new Date(harvestSyncState.lastRunAt).toLocaleString()
           : 'No completed sync yet';
+        const progressLabel =
+          isHarvestSyncing || isHarvestOwnedByAnotherTab
+            ? `Processed this run: ${harvestProgress.connections} connections, ${harvestProgress.invitations} invites, ${harvestProgress.threads} threads, ${harvestProgress.messages} messages.`
+            : '';
+        const cooldownLabel = safetySnapshot.cooldownUntil
+          ? `Paused until ${new Date(safetySnapshot.cooldownUntil).toLocaleString()}: ${safetySnapshot.cooldownReason ?? 'LinkedIn returned a safety signal.'}`
+          : null;
+        const nextOutboundLabel = safetySnapshot.nextOutboundAt
+          ? new Date(safetySnapshot.nextOutboundAt).toLocaleString()
+          : 'Now';
 
         panel.innerHTML = `
           <div class="twenty-linkedin-runner-header">
@@ -895,22 +1014,29 @@ export default defineContentScript({
               <div class="twenty-linkedin-runner-stat"><strong>${runnerState.failedCount}</strong>Failed</div>
               <div class="twenty-linkedin-runner-stat"><strong>${runnerState.activeAction ? '1' : '0'}</strong>Claimed</div>
             </div>
-            <div class="twenty-linkedin-runner-status">Next scheduled: ${escapeHtml(nextActionLabel)}</div>
-            <div class="twenty-linkedin-runner-warning">Keep this tab open. LinkedIn automation can put your account at risk; Twenty uses the server schedule and a local safety gap, but cannot remove that risk.</div>
+            <div class="twenty-linkedin-runner-meta">
+              <div class="twenty-linkedin-runner-status">Next: ${escapeHtml(nextActionLabel)}</div>
+              <div class="twenty-linkedin-runner-status">Today: ${safetySnapshot.outboundAttemptsToday}/${safetySnapshot.outboundDailyLimit} · Eligible: ${escapeHtml(nextOutboundLabel)}</div>
+            </div>
+            ${cooldownLabel ? `<div class="twenty-linkedin-runner-status is-error">${escapeHtml(cooldownLabel)}</div>` : ''}
             <div class="twenty-linkedin-runner-status${statusIsError ? ' is-error' : ''}">${escapeHtml(statusMessage)}</div>
             <button class="twenty-linkedin-runner-action${runnerState.enabled ? ' is-pause' : ''}" data-action="runner">${runnerState.enabled ? 'Pause runner' : 'Start runner'}</button>
             <div class="twenty-linkedin-runner-divider"></div>
-            <div class="twenty-linkedin-runner-section-title">Read-only harvest</div>
+            <div class="twenty-linkedin-runner-section-title">Read-only LinkedIn sync</div>
             <div class="twenty-linkedin-runner-stats">
-              <div class="twenty-linkedin-runner-stat"><strong>${displayedHarvestCounts.connections}</strong>Connections</div>
-              <div class="twenty-linkedin-runner-stat"><strong>${displayedHarvestCounts.invitations}</strong>Invites</div>
-              <div class="twenty-linkedin-runner-stat"><strong>${displayedHarvestCounts.threads}</strong>Threads</div>
-              <div class="twenty-linkedin-runner-stat"><strong>${displayedHarvestCounts.messages}</strong>Messages</div>
+              <div class="twenty-linkedin-runner-stat"><strong>${harvestTotals.connections}</strong>Connections</div>
+              <div class="twenty-linkedin-runner-stat"><strong>${harvestTotals.invitations}</strong>Invites</div>
+              <div class="twenty-linkedin-runner-stat"><strong>${harvestTotals.threads}</strong>Threads</div>
+              <div class="twenty-linkedin-runner-stat"><strong>${harvestTotals.messages}</strong>Messages</div>
             </div>
-            <div class="twenty-linkedin-runner-status">Last completed harvest: ${escapeHtml(lastHarvestLabel)}</div>
-            <div class="twenty-linkedin-runner-warning">Harvesting only reads LinkedIn data, but it uses LinkedIn's unofficial internal API. The rate-limited client reduces—not eliminates—account risk.</div>
+            <div class="twenty-linkedin-runner-meta">
+              <div class="twenty-linkedin-runner-status">Last completed sync: ${escapeHtml(lastHarvestLabel)}</div>
+              <div class="twenty-linkedin-runner-status">Read budget: ${safetySnapshot.readRequestsLastHour}/${LINKEDIN_READ_REQUESTS_PER_HOUR} requests in the last hour.</div>
+            </div>
+            ${progressLabel ? `<div class="twenty-linkedin-runner-status">${escapeHtml(progressLabel)}</div>` : ''}
+            <p class="twenty-linkedin-runner-sync-copy">Sync every 30 mins</p>
             <div class="twenty-linkedin-runner-status${harvestStatusIsError ? ' is-error' : ''}">${escapeHtml(harvestStatusMessage)}</div>
-            <button class="twenty-linkedin-runner-action is-harvest${harvestEnabled ? ' is-pause' : ''}" data-action="harvest">${harvestEnabled ? 'Pause harvest' : 'Start harvest'}</button>
+            <button class="twenty-linkedin-runner-action is-harvest" data-action="sync" ${isHarvestSyncing || isHarvestOwnedByAnotherTab ? 'disabled' : ''}>${isHarvestSyncing || isHarvestOwnedByAnotherTab ? 'Syncing…' : 'Sync now'}</button>
           </div>
         `;
 
@@ -927,20 +1053,22 @@ export default defineContentScript({
             () => void setRunnerEnabled(!runnerState.enabled),
           );
         panel
-          .querySelector('[data-action="harvest"]')
-          ?.addEventListener(
-            'click',
-            () => void setHarvestEnabled(!harvestEnabled),
-          );
+          .querySelector('[data-action="sync"]')
+          ?.addEventListener('click', () => void syncAllHarvestData(true));
         wrapper.appendChild(panel);
       }
 
       root.replaceChildren(wrapper);
     }
 
-    const runtimeMessageListener = (message: { type?: string }) => {
+    const runtimeMessageListener = (message: {
+      type?: string;
+      force?: boolean;
+    }) => {
       if (message.type === 'RUN_LINKEDIN_POLL') {
         void poll();
+      } else if (message.type === 'RUN_LINKEDIN_SYNC') {
+        void syncAllHarvestData(message.force === true);
       }
     };
 
@@ -948,7 +1076,6 @@ export default defineContentScript({
 
     void (async () => {
       try {
-        harvestEnabled = await getLinkedInHarvestEnabled();
         harvestIdentity = await getCachedLinkedInIdentity();
 
         await Promise.all([refreshRunnerState(), refreshQueue()]);
@@ -959,27 +1086,19 @@ export default defineContentScript({
           );
         }
 
-        await refreshHarvestTotals();
-
-        harvestStatusMessage = harvestEnabled
-          ? 'Waiting for the next automatic harvest.'
-          : 'LinkedIn harvest is paused.';
+        await Promise.all([refreshHarvestTotals(), refreshSafetySnapshot()]);
+        harvestStatusMessage = 'Waiting for the next automatic sync.';
       } catch (error) {
         statusMessage = error instanceof Error ? error.message : String(error);
         statusIsError = true;
-
-        if (harvestEnabled) {
-          harvestStatusMessage = statusMessage;
-          harvestStatusIsError = true;
-        }
+        harvestStatusMessage = statusMessage;
+        harvestStatusIsError = true;
       }
 
       render();
 
       autoSyncInterval = setInterval(() => {
-        if (harvestEnabled) {
-          void syncAllHarvestData();
-        }
+        void syncAllHarvestData();
       }, HARVEST_AUTO_SYNC_INTERVAL_MILLISECONDS);
       lockStatusInterval = setInterval(
         () => void refreshHarvestLockStatus(),
@@ -987,7 +1106,7 @@ export default defineContentScript({
       );
       totalsInterval = setInterval(
         () =>
-          void refreshHarvestTotals()
+          void Promise.all([refreshHarvestTotals(), refreshSafetySnapshot()])
             .then(render)
             .catch(() => undefined),
         HARVEST_TOTALS_INTERVAL_MILLISECONDS,
@@ -997,9 +1116,7 @@ export default defineContentScript({
         void poll();
       }
 
-      if (harvestEnabled) {
-        void syncAllHarvestData();
-      }
+      void syncAllHarvestData();
     })();
 
     ctx.onInvalidated(() => {

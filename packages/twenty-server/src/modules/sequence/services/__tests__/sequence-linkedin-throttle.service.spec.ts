@@ -40,7 +40,10 @@ describe('SequenceLinkedinThrottleService', () => {
   it('cycles the configured delay pattern and wraps', async () => {
     const { service } = buildService();
     const now = new Date('2026-07-20T09:00:00.000Z');
-    const settings = buildSettings();
+    const settings = buildSettings({
+      linkedinDailyActions: 20,
+      linkedinDelayPatternMinutes: [1, 3, 5, 2, 8, 4, 6],
+    });
     const slots: Date[] = [];
 
     for (let index = 0; index < 8; index += 1) {
@@ -78,6 +81,38 @@ describe('SequenceLinkedinThrottleService', () => {
     ]);
     expect(slots.slice(3).map((slot) => slot.getUTCDate())).toEqual([21, 21]);
     expect(slots[3].toISOString()).toBe('2026-07-21T09:00:00.000Z');
+  });
+
+  it('shares the daily cap and safety gap across sequences', async () => {
+    const { service } = buildService();
+    const now = new Date('2026-07-20T09:00:00.000Z');
+    const settings = buildSettings({
+      linkedinDailyActions: 2,
+      linkedinDelayPatternMinutes: [15],
+    });
+
+    const firstSlot = await service.reserveSlot({
+      workspaceId,
+      sequenceId: 'first-sequence',
+      settings,
+      now,
+    });
+    const secondSlot = await service.reserveSlot({
+      workspaceId,
+      sequenceId: 'second-sequence',
+      settings,
+      now,
+    });
+    const thirdSlot = await service.reserveSlot({
+      workspaceId,
+      sequenceId: 'third-sequence',
+      settings,
+      now,
+    });
+
+    expect(firstSlot.toISOString()).toBe('2026-07-20T09:15:00.000Z');
+    expect(secondSlot.toISOString()).toBe('2026-07-20T09:30:00.000Z');
+    expect(thirdSlot.toISOString()).toBe('2026-07-21T09:00:00.000Z');
   });
 
   it('always returns a slot inside the configured sending window', async () => {

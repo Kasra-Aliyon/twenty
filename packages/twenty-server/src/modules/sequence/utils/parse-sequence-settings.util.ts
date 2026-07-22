@@ -1,6 +1,9 @@
 import { type SequenceSettings } from 'twenty-shared/types';
 
-import { DEFAULT_SEQUENCE_SETTINGS } from 'src/modules/sequence/sequence.constants';
+import {
+  DEFAULT_SEQUENCE_SETTINGS,
+  LINKEDIN_DAILY_ACTIONS_MAXIMUM,
+} from 'src/modules/sequence/sequence.constants';
 
 const TIME_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 
@@ -74,12 +77,15 @@ export const parseSequenceSettings = (value: unknown): SequenceSettings => {
       value.staggerMinutes,
       DEFAULT_SEQUENCE_SETTINGS.staggerMinutes,
     ),
-    linkedinDailyActions: Math.max(
-      1,
-      Math.floor(
-        toPositiveNumber(
-          value.linkedinDailyActions,
-          DEFAULT_SEQUENCE_SETTINGS.linkedinDailyActions,
+    linkedinDailyActions: Math.min(
+      LINKEDIN_DAILY_ACTIONS_MAXIMUM,
+      Math.max(
+        1,
+        Math.floor(
+          toPositiveNumber(
+            value.linkedinDailyActions,
+            DEFAULT_SEQUENCE_SETTINGS.linkedinDailyActions,
+          ),
         ),
       ),
     ),

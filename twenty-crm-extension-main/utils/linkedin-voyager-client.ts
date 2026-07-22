@@ -3,11 +3,16 @@ import {
   getLinkedInSignature,
   usesLinkedInTimestampThreadPagination,
 } from './linkedin-signatures';
+import {
+  reserveLinkedInReadRequest,
+  tripLinkedInSafetyCircuit,
+} from './linkedin-safety';
+import { isLinkedInRestrictionUrl } from './linkedin-safety-policy';
 
-const MAX_REQUESTS_PER_MINUTE = 20;
+const MAX_REQUESTS_PER_MINUTE = 8;
 const REQUEST_WINDOW_MILLISECONDS = 60_000;
-const MIN_REQUEST_DELAY_MILLISECONDS = 2_000;
-const MAX_REQUEST_DELAY_MILLISECONDS = 5_000;
+const MIN_REQUEST_DELAY_MILLISECONDS = 6_000;
+const MAX_REQUEST_DELAY_MILLISECONDS = 12_000;
 
 type VoyagerResponse = Record<string, unknown>;
 
@@ -212,6 +217,7 @@ class LinkedInVoyagerClient {
     options: { pageToken?: string; graphql?: boolean } = {},
   ): Promise<VoyagerResponse> {
     return this.queueRequest(async () => {
+      await reserveLinkedInReadRequest();
       const response = await fetch(`https://www.linkedin.com${path}`, {
         method: 'GET',
         headers: this.buildRequestHeaders(
@@ -223,15 +229,41 @@ class LinkedInVoyagerClient {
         referrerPolicy: 'no-referrer-when-downgrade',
       });
 
-      if (!response.ok) {
-        const responseText = await response.text();
+      if (
+        isLinkedInRestrictionUrl(response.url) ||
+        [403, 429, 999].includes(response.status)
+      ) {
+        const reason =
+          response.status === 429
+            ? 'LinkedIn returned a rate-limit response. Automatic LinkedIn activity is paused for safety.'
+            : 'LinkedIn returned a restriction or verification response. Automatic LinkedIn activity is paused for safety.';
 
+        await tripLinkedInSafetyCircuit(reason);
+        throw new Error(reason);
+      }
+
+      if (!response.ok) {
         throw new Error(
-          `LinkedIn request failed (${response.status}): ${responseText.slice(0, 300)}`,
+          `LinkedIn request failed (${response.status}). Sync stopped without retrying.`,
         );
       }
 
-      return (await response.json()) as VoyagerResponse;
+      const responseData = (await response.json()) as VoyagerResponse;
+      const responsePreview = JSON.stringify(responseData).slice(0, 4_000);
+
+      if (
+        /FUSE_LIMIT_EXCEEDED|CHALLENGE_REQUIRED|ACCOUNT_RESTRICTED|TOO_MANY_REQUESTS/i.test(
+          responsePreview,
+        )
+      ) {
+        const reason =
+          'LinkedIn returned a limit or verification signal. Automatic LinkedIn activity is paused for safety.';
+
+        await tripLinkedInSafetyCircuit(reason);
+        throw new Error(reason);
+      }
+
+      return responseData;
     });
   }
 

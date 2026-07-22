@@ -522,6 +522,33 @@ export const buildWorkspaceMemberStandardFlatFieldMetadatas = ({
     twentyStandardApplicationId,
     now,
   }),
+  messageDrafts: {
+    ...createStandardRelationFieldFlatMetadata({
+      objectName,
+      workspaceId,
+      context: {
+        type: FieldMetadataType.RELATION,
+        morphId: null,
+        fieldName: 'messageDrafts',
+        label: i18nLabel(msg`Message Drafts`),
+        description: i18nLabel(msg`Email drafts owned by the workspace member`),
+        icon: 'IconMail',
+        isNullable: false,
+        isUIEditable: false,
+        targetObjectName: 'messageDraft',
+        targetFieldName: 'author',
+        settings: {
+          relationType: RelationType.ONE_TO_MANY,
+        },
+      },
+      standardObjectMetadataRelatedEntityIds,
+      dependencyFlatEntityMaps,
+      twentyStandardApplicationId,
+      now,
+    }),
+    // Query hooks do not run for nested relation selections.
+    isActive: false,
+  },
   blocklist: createStandardRelationFieldFlatMetadata({
     objectName,
     workspaceId,

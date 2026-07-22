@@ -299,6 +299,7 @@ export type {
   SequenceCreateTaskStepSettings,
   SequenceConnectionRequestStepSettings,
   SequenceWithdrawConnectionRequestStepSettings,
+  SequenceLinkedInMessageStepSettings,
   SequenceStepSettings,
 } from './SequenceTypes';
 export {

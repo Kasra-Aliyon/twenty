@@ -10,6 +10,8 @@ import { AddRecordListsCommand } from 'src/database/commands/upgrade-version-com
 import { MakeRecordListFolderOptionalCommand } from 'src/database/commands/upgrade-version-command/2-15/2-15-workspace-command-1800000006000-make-record-list-folder-optional.command';
 import { AddOutreachSequencesCommand } from 'src/database/commands/upgrade-version-command/2-15/2-15-workspace-command-1800000007000-add-outreach-sequences.command';
 import { AddLinkedinConnectorCommand } from 'src/database/commands/upgrade-version-command/2-15/2-15-workspace-command-1800000008000-add-linkedin-connector.command';
+import { AddUniboxCommand } from 'src/database/commands/upgrade-version-command/2-15/2-15-workspace-command-1800000009000-add-unibox.command';
+import { EnableLinkedinDirectMessagesCommand } from 'src/database/commands/upgrade-version-command/2-15/2-15-workspace-command-1800000010000-enable-linkedin-direct-messages.command';
 import { ApplicationModule } from 'src/engine/core-modules/application/application.module';
 import { FeatureFlagModule } from 'src/engine/core-modules/feature-flag/feature-flag.module';
 import { FieldMetadataModule } from 'src/engine/metadata-modules/field-metadata/field-metadata.module';
@@ -38,6 +40,8 @@ import { WorkspaceMigrationModule } from 'src/engine/workspace-manager/workspace
     MakeRecordListFolderOptionalCommand,
     AddOutreachSequencesCommand,
     AddLinkedinConnectorCommand,
+    AddUniboxCommand,
+    EnableLinkedinDirectMessagesCommand,
   ],
 })
 export class V2_15_UpgradeVersionCommandModule {}

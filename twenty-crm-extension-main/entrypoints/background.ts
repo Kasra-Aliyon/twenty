@@ -18,7 +18,12 @@ import {
   handleLinkedInHarvestStoreRequest,
   type LinkedInHarvestStoreRequest,
 } from '../utils/linkedin-harvest-store';
-import { resetLinkedinSchemaSessionCache } from '../utils/twenty-linkedin-schema';
+import {
+  getLinkedInSafetySettings,
+  getLinkedInSafetySnapshot,
+  setLinkedInSafetySettings,
+} from '../utils/linkedin-safety';
+import { getStoredLinkedInIdentity } from '../utils/linkedin-sync-state';
 import type {
   ExtensionMessage,
   ExtensionResponse,
@@ -34,20 +39,58 @@ import type {
 } from '../types';
 
 const LINKEDIN_RUNNER_ALARM = 'twenty-linkedin-runner-poll';
+const LINKEDIN_SYNC_ALARM = 'twenty-linkedin-automatic-sync';
 const LINKEDIN_RUNNER_STATE_KEY = 'twentyLinkedinRunnerState';
+const LINKEDIN_SYNC_LOCKS_KEY = 'twentyLinkedinSyncLocks';
 const LINKEDIN_SYNC_LOCK_TTL_MILLISECONDS = 30_000;
 
-const linkedinSyncLocks = new Map<string, LinkedInSyncLock>();
+let linkedinSyncLockOperation: Promise<void> = Promise.resolve();
 
-const getLiveLinkedinSyncLock = (key: string): LinkedInSyncLock | null => {
-  const lock = linkedinSyncLocks.get(key);
+const withLinkedinSyncLockStore = <TResult>(
+  operation: () => Promise<TResult>,
+): Promise<TResult> => {
+  const result = linkedinSyncLockOperation.then(operation, operation);
+
+  linkedinSyncLockOperation = result.then(
+    () => undefined,
+    () => undefined,
+  );
+
+  return result;
+};
+
+const getStoredLinkedinSyncLocks = async (): Promise<
+  Record<string, LinkedInSyncLock>
+> => {
+  const storedValue = await browser.storage.session.get(
+    LINKEDIN_SYNC_LOCKS_KEY,
+  );
+
+  return (
+    (storedValue[LINKEDIN_SYNC_LOCKS_KEY] as
+      | Record<string, LinkedInSyncLock>
+      | undefined) ?? {}
+  );
+};
+
+const saveStoredLinkedinSyncLocks = async (
+  locks: Record<string, LinkedInSyncLock>,
+): Promise<void> => {
+  await browser.storage.session.set({ [LINKEDIN_SYNC_LOCKS_KEY]: locks });
+};
+
+const getLiveLinkedinSyncLockFromStore = (
+  locks: Record<string, LinkedInSyncLock>,
+  key: string,
+): LinkedInSyncLock | null => {
+  const lock = locks[key];
 
   if (!lock) {
     return null;
   }
 
   if (lock.expiresAt <= Date.now()) {
-    linkedinSyncLocks.delete(key);
+    delete locks[key];
     return null;
   }
 
@@ -68,59 +111,130 @@ const acquireLinkedinSyncLock = async (
   ownerTabId: number,
   progress: LinkedInSyncProgress,
 ): Promise<{ acquired: boolean; lock: LinkedInSyncLock }> => {
-  const existingLock = getLiveLinkedinSyncLock(key);
+  return withLinkedinSyncLockStore(async () => {
+    const locks = await getStoredLinkedinSyncLocks();
+    const existingLock = getLiveLinkedinSyncLockFromStore(locks, key);
 
-  if (
-    existingLock &&
-    existingLock.ownerTabId !== ownerTabId &&
-    (await isTabAlive(existingLock.ownerTabId))
-  ) {
-    return { acquired: false, lock: existingLock };
-  }
+    if (
+      existingLock &&
+      existingLock.ownerTabId !== ownerTabId &&
+      (await isTabAlive(existingLock.ownerTabId))
+    ) {
+      await saveStoredLinkedinSyncLocks(locks);
+      return { acquired: false, lock: existingLock };
+    }
 
-  const lock: LinkedInSyncLock = {
-    key,
-    ownerTabId,
-    expiresAt: Date.now() + LINKEDIN_SYNC_LOCK_TTL_MILLISECONDS,
-    progress,
-  };
+    const lock: LinkedInSyncLock = {
+      key,
+      ownerTabId,
+      expiresAt: Date.now() + LINKEDIN_SYNC_LOCK_TTL_MILLISECONDS,
+      progress,
+    };
 
-  linkedinSyncLocks.set(key, lock);
+    locks[key] = lock;
+    await saveStoredLinkedinSyncLocks(locks);
 
-  return { acquired: true, lock };
+    return { acquired: true, lock };
+  });
 };
 
-const heartbeatLinkedinSyncLock = (
+const heartbeatLinkedinSyncLock = async (
   key: string,
   ownerTabId: number,
   progress: LinkedInSyncProgress,
-): LinkedInSyncLock | null => {
-  const lock = getLiveLinkedinSyncLock(key);
+): Promise<LinkedInSyncLock | null> =>
+  withLinkedinSyncLockStore(async () => {
+    const locks = await getStoredLinkedinSyncLocks();
+    const lock = getLiveLinkedinSyncLockFromStore(locks, key);
 
-  if (!lock || lock.ownerTabId !== ownerTabId) {
-    return null;
-  }
+    if (!lock || lock.ownerTabId !== ownerTabId) {
+      await saveStoredLinkedinSyncLocks(locks);
+      return null;
+    }
 
-  const nextLock = {
-    ...lock,
-    expiresAt: Date.now() + LINKEDIN_SYNC_LOCK_TTL_MILLISECONDS,
-    progress,
-  };
+    const nextLock = {
+      ...lock,
+      expiresAt: Date.now() + LINKEDIN_SYNC_LOCK_TTL_MILLISECONDS,
+      progress,
+    };
 
-  linkedinSyncLocks.set(key, nextLock);
+    locks[key] = nextLock;
+    await saveStoredLinkedinSyncLocks(locks);
 
-  return nextLock;
-};
+    return nextLock;
+  });
 
-const releaseLinkedinSyncLock = (key: string, ownerTabId: number): boolean => {
-  const lock = getLiveLinkedinSyncLock(key);
+const releaseLinkedinSyncLock = async (
+  key: string,
+  ownerTabId: number,
+): Promise<boolean> =>
+  withLinkedinSyncLockStore(async () => {
+    const locks = await getStoredLinkedinSyncLocks();
+    const lock = getLiveLinkedinSyncLockFromStore(locks, key);
 
-  if (!lock || lock.ownerTabId !== ownerTabId) {
+    if (!lock || lock.ownerTabId !== ownerTabId) {
+      await saveStoredLinkedinSyncLocks(locks);
+      return false;
+    }
+
+    delete locks[key];
+    await saveStoredLinkedinSyncLocks(locks);
+    return true;
+  });
+
+const getLiveLinkedinSyncLock = async (
+  key: string,
+): Promise<LinkedInSyncLock | null> =>
+  withLinkedinSyncLockStore(async () => {
+    const locks = await getStoredLinkedinSyncLocks();
+    const lock = getLiveLinkedinSyncLockFromStore(locks, key);
+
+    await saveStoredLinkedinSyncLocks(locks);
+    return lock;
+  });
+
+const removeLinkedinSyncLocksForTab = async (tabId: number): Promise<void> =>
+  withLinkedinSyncLockStore(async () => {
+    const locks = await getStoredLinkedinSyncLocks();
+
+    for (const [key, lock] of Object.entries(locks)) {
+      if (lock.ownerTabId === tabId) {
+        delete locks[key];
+      }
+    }
+
+    await saveStoredLinkedinSyncLocks(locks);
+  });
+
+const requestLinkedinSyncInExistingTab = async (
+  force: boolean,
+): Promise<boolean> => {
+  const tabs = await browser.tabs.query({
+    url: ['*://linkedin.com/*', '*://*.linkedin.com/*'],
+  });
+  const targetTab =
+    tabs.find((tab) => tab.active && !tab.discarded && tab.id !== undefined) ??
+    tabs.find((tab) => !tab.discarded && tab.id !== undefined);
+
+  if (targetTab?.id === undefined) {
     return false;
   }
 
-  linkedinSyncLocks.delete(key);
+  await browser.tabs.sendMessage(targetTab.id, {
+    type: 'RUN_LINKEDIN_SYNC',
+    force,
+  });
+
   return true;
+};
+
+const ensurePeriodicAlarm = async (
+  name: string,
+  periodInMinutes: number,
+): Promise<void> => {
+  if (!(await browser.alarms.get(name))) {
+    await browser.alarms.create(name, { periodInMinutes });
+  }
 };
 
 const getLinkedinCsrfToken = async (): Promise<string> => {
@@ -697,7 +811,6 @@ async function handleMessage(
         if (newSettings.twentyApiUrl) {
           apiClient = null;
           cachedTwentyApiUrl = null;
-          resetLinkedinSchemaSessionCache();
         }
         console.log('Settings saved successfully');
         return { success: true };
@@ -876,10 +989,70 @@ async function handleMessage(
       }
 
       case 'GET_LINKEDIN_SYNC_TOTALS': {
+        const requestedOwnerLinkedinId = (
+          message.payload as { ownerLinkedinId?: string } | undefined
+        )?.ownerLinkedinId;
+        const ownerLinkedinId =
+          requestedOwnerLinkedinId ??
+          (await getStoredLinkedInIdentity())?.linkedinId;
+
+        if (!ownerLinkedinId) {
+          return {
+            success: true,
+            data: {
+              connections: 0,
+              invitations: 0,
+              threads: 0,
+              messages: 0,
+            },
+          };
+        }
+
         const client = await getApiClient();
-        const totals = await getLinkedInSyncTotalsWithClient(client);
+        const totals = await getLinkedInSyncTotalsWithClient(
+          client,
+          ownerLinkedinId,
+        );
 
         return { success: true, data: totals };
+      }
+
+      case 'GET_LINKEDIN_SAFETY_SNAPSHOT':
+        return { success: true, data: await getLinkedInSafetySnapshot() };
+
+      case 'GET_LINKEDIN_SAFETY_SETTINGS':
+        return { success: true, data: await getLinkedInSafetySettings() };
+
+      case 'SET_LINKEDIN_SAFETY_SETTINGS':
+        return {
+          success: true,
+          data: await setLinkedInSafetySettings(
+            message.payload as { dailyOutboundLimit?: number },
+          ),
+        };
+
+      case 'REQUEST_LINKEDIN_SYNC': {
+        const safetySnapshot = await getLinkedInSafetySnapshot();
+
+        if (
+          safetySnapshot.cooldownUntil !== null &&
+          safetySnapshot.cooldownUntil > Date.now()
+        ) {
+          return {
+            success: false,
+            error: `${safetySnapshot.cooldownReason ?? 'LinkedIn safety cooldown is active.'} Sync is paused until ${new Date(safetySnapshot.cooldownUntil).toLocaleString()}.`,
+          };
+        }
+
+        const dispatched = await requestLinkedinSyncInExistingTab(true);
+
+        return {
+          success: dispatched,
+          data: { dispatched },
+          error: dispatched
+            ? undefined
+            : 'Open LinkedIn in a tab before starting a sync.',
+        };
       }
 
       case 'LINKEDIN_HARVEST_STORE': {
@@ -926,7 +1099,7 @@ async function handleMessage(
           };
         }
 
-        const lock = heartbeatLinkedinSyncLock(key, tabId, progress);
+        const lock = await heartbeatLinkedinSyncLock(key, tabId, progress);
 
         return {
           success: lock !== null,
@@ -941,7 +1114,8 @@ async function handleMessage(
 
         return {
           success:
-            typeof tabId === 'number' && releaseLinkedinSyncLock(key, tabId),
+            typeof tabId === 'number' &&
+            (await releaseLinkedinSyncLock(key, tabId)),
         };
       }
 
@@ -950,7 +1124,7 @@ async function handleMessage(
 
         return {
           success: true,
-          data: { lock: getLiveLinkedinSyncLock(key) },
+          data: { lock: await getLiveLinkedinSyncLock(key) },
         };
       }
 
@@ -1028,15 +1202,24 @@ export default defineBackground(() => {
     },
   );
 
-  browser.alarms.create(LINKEDIN_RUNNER_ALARM, { periodInMinutes: 1 });
+  void Promise.all([
+    ensurePeriodicAlarm(LINKEDIN_RUNNER_ALARM, 1),
+    ensurePeriodicAlarm(LINKEDIN_SYNC_ALARM, 30),
+  ]);
   browser.tabs.onRemoved.addListener((tabId) => {
-    for (const [key, lock] of linkedinSyncLocks) {
-      if (lock.ownerTabId === tabId) {
-        linkedinSyncLocks.delete(key);
-      }
-    }
+    void removeLinkedinSyncLocksForTab(tabId);
   });
   browser.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === LINKEDIN_SYNC_ALARM) {
+      void requestLinkedinSyncInExistingTab(false).catch((error) =>
+        console.error(
+          '[Twenty] Automatic LinkedIn sync dispatch failed:',
+          error,
+        ),
+      );
+      return;
+    }
+
     if (alarm.name !== LINKEDIN_RUNNER_ALARM) {
       return;
     }

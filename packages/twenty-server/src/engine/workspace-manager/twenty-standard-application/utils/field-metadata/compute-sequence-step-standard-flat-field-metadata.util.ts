@@ -94,10 +94,17 @@ export const buildSequenceStepStandardFlatFieldMetadatas = (
           color: 'blue',
         },
         {
+          id: '1e668c0c-4b0e-47e2-9388-5906b58014ab',
+          value: SEQUENCE_STEP_TYPES.SEND_LINKEDIN_MESSAGE,
+          label: i18nLabel(msg`Send LinkedIn message`),
+          position: 4,
+          color: 'purple',
+        },
+        {
           id: '0272b0a2-3d0e-489d-aaf9-28c238438dc8',
           value: SEQUENCE_STEP_TYPES.WITHDRAW_CONNECTION_REQUEST,
           label: i18nLabel(msg`Withdraw connection request`),
-          position: 4,
+          position: 5,
           color: 'orange',
         },
       ],

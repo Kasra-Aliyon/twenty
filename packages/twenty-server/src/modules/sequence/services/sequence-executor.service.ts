@@ -13,6 +13,7 @@ import {
   type SequenceConnectionRequestStepSettings,
   type SequenceDelayStepSettings,
   type SequenceEmailStepSettings,
+  type SequenceLinkedInMessageStepSettings,
   type SequenceSettings,
   type SequenceWithdrawConnectionRequestStepSettings,
 } from 'twenty-shared/types';
@@ -32,6 +33,7 @@ import { SequenceTaskCreatorService } from 'src/modules/sequence/services/sequen
 import { SequenceVariableService } from 'src/modules/sequence/services/sequence-variable.service';
 import {
   LINKEDIN_CONNECTION_NOTE_MAX_LENGTH,
+  LINKEDIN_DIRECT_MESSAGE_MAX_LENGTH,
   SEQUENCE_ERROR_MESSAGE_MAX_LENGTH,
   SEQUENCE_EXECUTION_ERROR,
   SEQUENCE_SEND_ATTEMPT_LEASE_MILLISECONDS,
@@ -247,6 +249,31 @@ export class SequenceExecutorService {
           }
 
           await this.processConnectionRequestStep({
+            workspaceId,
+            enrollmentRepository,
+            enrollment,
+            person,
+            sequenceSettings: parseSequenceSettings(sequence.settings),
+            sequenceSenderConnectedAccountId: sequence.senderConnectedAccountId,
+            step: nextStep,
+            settings: nextStep.settings,
+          });
+
+          return;
+        case SEQUENCE_STEP_TYPES.SEND_LINKEDIN_MESSAGE:
+          if (
+            nextStep.settings.type !== SEQUENCE_STEP_TYPES.SEND_LINKEDIN_MESSAGE
+          ) {
+            await this.failInvalidStepSettings({
+              enrollmentRepository,
+              enrollment,
+              step: nextStep,
+            });
+
+            return;
+          }
+
+          await this.processLinkedInMessageStep({
             workspaceId,
             enrollmentRepository,
             enrollment,
@@ -542,6 +569,88 @@ export class SequenceExecutorService {
     });
   }
 
+  private async processLinkedInMessageStep({
+    workspaceId,
+    enrollmentRepository,
+    enrollment,
+    person,
+    sequenceSettings,
+    sequenceSenderConnectedAccountId,
+    step,
+    settings,
+  }: {
+    workspaceId: string;
+    enrollmentRepository: WorkspaceRepository<SequenceEnrollmentWorkspaceEntity>;
+    enrollment: SequenceEnrollmentWorkspaceEntity;
+    person: PersonWorkspaceEntity;
+    sequenceSettings: SequenceSettings;
+    sequenceSenderConnectedAccountId: string | null;
+    step: SequenceStepWorkspaceEntity;
+    settings: SequenceLinkedInMessageStepSettings;
+  }): Promise<void> {
+    if (!isNonEmptyString(person.linkedinLink?.primaryLinkUrl)) {
+      await this.failEnrollment({
+        enrollmentRepository,
+        enrollment,
+        errorMessage: SEQUENCE_EXECUTION_ERROR.MISSING_LINKEDIN_URL,
+        stepId: step.id,
+        stepPosition: step.position,
+      });
+
+      return;
+    }
+
+    const variables = await this.sequenceVariableService.buildVariables({
+      workspaceId,
+      person,
+      connectedAccountId:
+        enrollment.senderConnectedAccountId ?? sequenceSenderConnectedAccountId,
+    });
+    const messageText = renderSequenceTemplate(
+      typeof settings.messageTemplate === 'string'
+        ? settings.messageTemplate
+        : '',
+      variables,
+      { escapeValues: false },
+    ).trim();
+
+    if (!isNonEmptyString(messageText)) {
+      await this.failEnrollment({
+        enrollmentRepository,
+        enrollment,
+        errorMessage: SEQUENCE_EXECUTION_ERROR.LINKEDIN_MESSAGE_EMPTY,
+        stepId: step.id,
+        stepPosition: step.position,
+      });
+
+      return;
+    }
+
+    if (messageText.length > LINKEDIN_DIRECT_MESSAGE_MAX_LENGTH) {
+      await this.failEnrollment({
+        enrollmentRepository,
+        enrollment,
+        errorMessage: SEQUENCE_EXECUTION_ERROR.LINKEDIN_MESSAGE_TOO_LONG,
+        stepId: step.id,
+        stepPosition: step.position,
+      });
+
+      return;
+    }
+
+    await this.createLinkedinAction({
+      workspaceId,
+      enrollmentRepository,
+      enrollment,
+      person,
+      sequenceSettings,
+      step,
+      type: LINKEDIN_ACTION_TYPES.SEND_MESSAGE,
+      noteText: messageText,
+      reserveFrom: new Date(),
+    });
+  }
+
   private async createLinkedinAction({
     workspaceId,
     enrollmentRepository,
@@ -561,6 +670,7 @@ export class SequenceExecutorService {
     step: SequenceStepWorkspaceEntity;
     type:
       | typeof LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST
+      | typeof LINKEDIN_ACTION_TYPES.SEND_MESSAGE
       | typeof LINKEDIN_ACTION_TYPES.WITHDRAW_CONNECTION_REQUEST;
     noteText: string;
     reserveFrom: Date;

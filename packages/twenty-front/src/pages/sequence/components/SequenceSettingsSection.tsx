@@ -301,13 +301,14 @@ export const SequenceSettingsSection = ({
           <StyledInput
             type="number"
             min={1}
+            max={20}
             value={settings.linkedinDailyActions}
             onChange={(event) =>
               setSettings((currentSettings) => ({
                 ...currentSettings,
                 linkedinDailyActions: Math.max(
                   1,
-                  Number(event.target.value) || 1,
+                  Math.min(20, Number(event.target.value) || 1),
                 ),
               }))
             }
@@ -325,7 +326,7 @@ export const SequenceSettingsSection = ({
         </StyledField>
       </StyledFieldsGrid>
       <StyledHelperText>
-        {t`LinkedIn automation can put your account at risk. Keep the runner opt-in, use a conservative daily ceiling, and vary the delay between actions.`}
+        {t`Choose 1–20 LinkedIn actions per day. The connector's local limit and 15-minute safety interval also apply.`}
       </StyledHelperText>
 
       <StyledActions>

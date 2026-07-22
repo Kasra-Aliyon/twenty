@@ -10,7 +10,10 @@ export const useDoObjectMetadataItemsExist = (
     objectNameSingulars,
   );
 
-  return objectMetadataItems.every((objectMetadataItem) =>
-    isDefined(objectMetadataItem),
+  return (
+    objectMetadataItems.length === objectNameSingulars.length &&
+    objectMetadataItems.every((objectMetadataItem) =>
+      isDefined(objectMetadataItem),
+    )
   );
 };

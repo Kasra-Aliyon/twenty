@@ -58,6 +58,7 @@ export const useSendEmail = () => {
 
           await apolloCoreClient.refetchQueries({
             include: [
+              'UniboxThreads',
               getTimelineThreadsFromObjectRecord,
               'FindManyMessages',
               'FindManyMessageParticipants',

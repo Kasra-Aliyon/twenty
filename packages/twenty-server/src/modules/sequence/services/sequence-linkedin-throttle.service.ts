@@ -32,7 +32,7 @@ export class SequenceLinkedinThrottleService {
 
   async reserveSlot({
     workspaceId,
-    sequenceId,
+    sequenceId: _sequenceId,
     settings,
     now,
   }: {
@@ -41,7 +41,7 @@ export class SequenceLinkedinThrottleService {
     settings: SequenceSettings;
     now: Date;
   }): Promise<Date> {
-    const lockKey = this.getLockKey(workspaceId, sequenceId);
+    const lockKey = this.getLockKey(workspaceId);
     const lockAcquired = await this.acquireLock(lockKey);
 
     if (!lockAcquired) {
@@ -51,10 +51,10 @@ export class SequenceLinkedinThrottleService {
     try {
       const [lastActionAtValue, patternIndexValue] = await Promise.all([
         this.cacheStorageService.get<string>(
-          this.getLastActionAtKey(workspaceId, sequenceId),
+          this.getLastActionAtKey(workspaceId),
         ),
         this.cacheStorageService.get<number>(
-          this.getPatternIndexKey(workspaceId, sequenceId),
+          this.getPatternIndexKey(workspaceId),
         ),
       ]);
       const lastActionAt = isDefined(lastActionAtValue)
@@ -84,7 +84,6 @@ export class SequenceLinkedinThrottleService {
 
       let scheduledDayCount = await this.getScheduledDayCount({
         workspaceId,
-        sequenceId,
         candidate,
         settings,
       });
@@ -101,7 +100,6 @@ export class SequenceLinkedinThrottleService {
         candidate = this.getNextDayWindowOpen(candidate, settings);
         scheduledDayCount = await this.getScheduledDayCount({
           workspaceId,
-          sequenceId,
           candidate,
           settings,
         });
@@ -109,22 +107,17 @@ export class SequenceLinkedinThrottleService {
 
       await Promise.all([
         this.cacheStorageService.set(
-          this.getLastActionAtKey(workspaceId, sequenceId),
+          this.getLastActionAtKey(workspaceId),
           candidate.toISOString(),
           SEQUENCE_LINKEDIN_THROTTLE_CACHE_TTL,
         ),
         this.cacheStorageService.set(
-          this.getPatternIndexKey(workspaceId, sequenceId),
+          this.getPatternIndexKey(workspaceId),
           patternIndex + 1,
           SEQUENCE_LINKEDIN_THROTTLE_CACHE_TTL,
         ),
         this.cacheStorageService.set(
-          this.getDailyCountKey(
-            workspaceId,
-            sequenceId,
-            candidate,
-            settings.timezone,
-          ),
+          this.getDailyCountKey(workspaceId, candidate, settings.timezone),
           scheduledDayCount + 1,
           SEQUENCE_LINKEDIN_THROTTLE_CACHE_TTL,
         ),
@@ -161,22 +154,15 @@ export class SequenceLinkedinThrottleService {
 
   private async getScheduledDayCount({
     workspaceId,
-    sequenceId,
     candidate,
     settings,
   }: {
     workspaceId: string;
-    sequenceId: string;
     candidate: Date;
     settings: SequenceSettings;
   }): Promise<number> {
     const cachedCount = await this.cacheStorageService.get<number>(
-      this.getDailyCountKey(
-        workspaceId,
-        sequenceId,
-        candidate,
-        settings.timezone,
-      ),
+      this.getDailyCountKey(workspaceId, candidate, settings.timezone),
     );
 
     return typeof cachedCount === 'number' &&
@@ -210,24 +196,23 @@ export class SequenceLinkedinThrottleService {
 
   private getDailyCountKey(
     workspaceId: string,
-    sequenceId: string,
     candidate: Date,
     timeZone: string,
   ): string {
     const dayKey = startOfDayInTimezone(candidate, timeZone).toISOString();
 
-    return `${SEQUENCE_LINKEDIN_DAILY_COUNT_CACHE_KEY_PREFIX}:${workspaceId}:${sequenceId}:${dayKey}`;
+    return `${SEQUENCE_LINKEDIN_DAILY_COUNT_CACHE_KEY_PREFIX}:${workspaceId}:${dayKey}`;
   }
 
-  private getLastActionAtKey(workspaceId: string, sequenceId: string): string {
-    return `${SEQUENCE_LINKEDIN_LAST_ACTION_AT_CACHE_KEY_PREFIX}:${workspaceId}:${sequenceId}`;
+  private getLastActionAtKey(workspaceId: string): string {
+    return `${SEQUENCE_LINKEDIN_LAST_ACTION_AT_CACHE_KEY_PREFIX}:${workspaceId}`;
   }
 
-  private getPatternIndexKey(workspaceId: string, sequenceId: string): string {
-    return `${SEQUENCE_LINKEDIN_PATTERN_INDEX_CACHE_KEY_PREFIX}:${workspaceId}:${sequenceId}`;
+  private getPatternIndexKey(workspaceId: string): string {
+    return `${SEQUENCE_LINKEDIN_PATTERN_INDEX_CACHE_KEY_PREFIX}:${workspaceId}`;
   }
 
-  private getLockKey(workspaceId: string, sequenceId: string): string {
-    return `${SEQUENCE_LINKEDIN_ACTION_LOCK_KEY_PREFIX}:${workspaceId}:${sequenceId}`;
+  private getLockKey(workspaceId: string): string {
+    return `${SEQUENCE_LINKEDIN_ACTION_LOCK_KEY_PREFIX}:${workspaceId}`;
   }
 }

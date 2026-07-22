@@ -11,6 +11,7 @@ import {
   IconClock,
   IconListCheck,
   IconMail,
+  IconMessage,
   IconTrash,
   IconUserMinus,
 } from 'twenty-ui/icon';
@@ -21,6 +22,7 @@ import { type SequenceStepRecord } from '../types/SequenceRecords';
 import { SequenceDelayStepEditor } from './SequenceDelayStepEditor';
 import { SequenceEmailStepEditor } from './SequenceEmailStepEditor';
 import { SequenceConnectionRequestStepEditor } from './SequenceConnectionRequestStepEditor';
+import { SequenceLinkedInMessageStepEditor } from './SequenceLinkedInMessageStepEditor';
 import { SequenceTaskStepEditor } from './SequenceTaskStepEditor';
 import { SequenceWithdrawConnectionRequestStepEditor } from './SequenceWithdrawConnectionRequestStepEditor';
 
@@ -85,6 +87,10 @@ const STEP_PRESENTATION = {
   [SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST]: {
     label: t`Send LinkedIn connection request`,
     Icon: IconBrandLinkedin,
+  },
+  [SEQUENCE_STEP_TYPES.SEND_LINKEDIN_MESSAGE]: {
+    label: t`Send LinkedIn message`,
+    Icon: IconMessage,
   },
   [SEQUENCE_STEP_TYPES.WITHDRAW_CONNECTION_REQUEST]: {
     label: t`Withdraw LinkedIn connection request`,
@@ -194,6 +200,13 @@ export const SequenceStepCard = ({
         )}
         {step.settings.type === SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST && (
           <SequenceConnectionRequestStepEditor
+            step={step}
+            settings={step.settings}
+            disabled={!isEditable}
+          />
+        )}
+        {step.settings.type === SEQUENCE_STEP_TYPES.SEND_LINKEDIN_MESSAGE && (
+          <SequenceLinkedInMessageStepEditor
             step={step}
             settings={step.settings}
             disabled={!isEditable}

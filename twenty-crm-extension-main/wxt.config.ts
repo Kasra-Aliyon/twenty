@@ -5,8 +5,9 @@ export default defineConfig({
   modules: ['@wxt-dev/module-vue'],
   manifest: {
     name: 'Twenty CRM - LinkedIn Capture',
-    description: 'Capture LinkedIn profiles and companies to your Twenty CRM',
-    version: '1.0.0',
+    description:
+      'Safely capture and incrementally sync LinkedIn data with Twenty CRM',
+    version: '1.2.0',
     permissions: [
       'storage',
       'cookies',

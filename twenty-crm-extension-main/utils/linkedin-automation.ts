@@ -1,4 +1,8 @@
 import type { LinkedInConnectionState } from '../types';
+import { isLinkedInRestrictionUrl } from './linkedin-safety-policy';
+
+const LINKEDIN_CONNECTION_NOTE_MAX_LENGTH = 200;
+const LINKEDIN_DIRECT_MESSAGE_MAX_LENGTH = 2_000;
 
 const LINKEDIN_SELECTORS = {
   connectionDegree: [
@@ -18,6 +22,17 @@ const LINKEDIN_SELECTORS = {
     'textarea#custom-message',
     'div[role="dialog"] textarea',
     '.artdeco-modal textarea',
+  ],
+  messageComposer: [
+    '.msg-form',
+    '.msg-overlay-conversation-bubble',
+    'div[role="dialog"]',
+  ],
+  messageInput: [
+    '.msg-form__contenteditable[contenteditable="true"]',
+    '[contenteditable="true"][role="textbox"]',
+    'textarea[name="message"]',
+    'textarea',
   ],
   invitationRows: [
     'main li.invitation-card',
@@ -136,6 +151,13 @@ export const detectConnectionDegree = ():
     }
   }
 
+  const topCard = findVisibleElement<HTMLElement>(LINKEDIN_SELECTORS.topCard);
+  const topCardText = topCard ? normalizedText(topCard) : '';
+
+  if (/\b1st\b/.test(topCardText)) return 'FIRST';
+  if (/\b2nd\b/.test(topCardText)) return 'SECOND';
+  if (/\b3rd\+?\b/.test(topCardText)) return 'THIRD';
+
   return 'UNKNOWN';
 };
 
@@ -159,9 +181,63 @@ const setTextareaValue = (
   textarea.dispatchEvent(new Event('change', { bubbles: true }));
 };
 
+const setContentEditableValue = (element: HTMLElement, value: string): void => {
+  element.focus();
+  element.replaceChildren(document.createTextNode(value));
+  element.dispatchEvent(
+    new InputEvent('input', {
+      bubbles: true,
+      data: value,
+      inputType: 'insertText',
+    }),
+  );
+};
+
+export const getLinkedInAutomationBlockReason = (): string | null => {
+  if (isLinkedInRestrictionUrl(window.location.href)) {
+    return 'LinkedIn opened a verification or restriction page.';
+  }
+
+  const visibleText = (document.body?.innerText ?? '').toLowerCase();
+  const restrictionSignals = [
+    'unusual activity',
+    'temporarily restricted',
+    'your account has been restricted',
+    'verify your identity',
+    'security verification',
+    'commercial use limit',
+    'weekly invitation limit',
+  ];
+  const signal = restrictionSignals.find((candidate) =>
+    visibleText.includes(candidate),
+  );
+
+  return signal
+    ? `LinkedIn displayed a safety or limit warning (${signal}).`
+    : null;
+};
+
 export const sendConnectionRequest = async (
   noteText: string,
 ): Promise<LinkedInAutomationResult> => {
+  const blockReason = getLinkedInAutomationBlockReason();
+
+  if (blockReason) {
+    return {
+      status: 'FAILED',
+      connectionState: 'UNKNOWN',
+      errorMessage: blockReason,
+    };
+  }
+
+  if (noteText.length > LINKEDIN_CONNECTION_NOTE_MAX_LENGTH) {
+    return {
+      status: 'FAILED',
+      connectionState: 'NOT_CONNECTED',
+      errorMessage: `Connection notes must be ${LINKEDIN_CONNECTION_NOTE_MAX_LENGTH} characters or fewer`,
+    };
+  }
+
   if (detectConnectionDegree() === 'FIRST') {
     return { status: 'SKIPPED', connectionState: 'CONNECTED' };
   }
@@ -278,7 +354,135 @@ export const sendConnectionRequest = async (
     sendButton.click();
   }
 
+  await wait(1_500);
+  const postSendBlockReason = getLinkedInAutomationBlockReason();
+
+  if (postSendBlockReason) {
+    return {
+      status: 'FAILED',
+      connectionState: 'UNKNOWN',
+      errorMessage: postSendBlockReason,
+    };
+  }
+
   return { status: 'COMPLETED', connectionState: 'PENDING' };
+};
+
+export const sendDirectMessage = async (
+  rawMessageText: string,
+): Promise<LinkedInAutomationResult> => {
+  const blockReason = getLinkedInAutomationBlockReason();
+
+  if (blockReason) {
+    return {
+      status: 'FAILED',
+      connectionState: 'UNKNOWN',
+      errorMessage: blockReason,
+    };
+  }
+
+  const messageText = rawMessageText.trim();
+
+  if (messageText.length === 0) {
+    return {
+      status: 'FAILED',
+      connectionState: 'CONNECTED',
+      errorMessage: 'LinkedIn messages cannot be empty',
+    };
+  }
+
+  if (messageText.length > LINKEDIN_DIRECT_MESSAGE_MAX_LENGTH) {
+    return {
+      status: 'FAILED',
+      connectionState: 'CONNECTED',
+      errorMessage: 'LinkedIn messages must be 2000 characters or fewer',
+    };
+  }
+
+  const connectionDegree = detectConnectionDegree();
+
+  if (connectionDegree !== 'FIRST') {
+    return {
+      status: 'FAILED',
+      connectionState:
+        connectionDegree === 'UNKNOWN' ? 'UNKNOWN' : 'NOT_CONNECTED',
+      errorMessage:
+        'Direct messages are limited to recognized first-degree connections',
+    };
+  }
+
+  const topCard = findVisibleElement<HTMLElement>(LINKEDIN_SELECTORS.topCard);
+  const messageButton = topCard
+    ? findClickableByText('Message', topCard)
+    : null;
+
+  if (!messageButton) {
+    return {
+      status: 'FAILED',
+      connectionState: 'CONNECTED',
+      errorMessage: 'Could not find the profile Message control',
+    };
+  }
+
+  messageButton.click();
+  const composer = await waitForElement(() =>
+    findVisibleElement<HTMLElement>(LINKEDIN_SELECTORS.messageComposer),
+  );
+
+  if (!composer) {
+    return {
+      status: 'FAILED',
+      connectionState: 'CONNECTED',
+      errorMessage: 'LinkedIn did not open a recognized message composer',
+    };
+  }
+
+  const input = await waitForElement(() =>
+    findVisibleElement<HTMLElement>(LINKEDIN_SELECTORS.messageInput, composer),
+  );
+
+  if (!input) {
+    return {
+      status: 'FAILED',
+      connectionState: 'CONNECTED',
+      errorMessage: 'The LinkedIn message field was not recognized',
+    };
+  }
+
+  if (input instanceof HTMLTextAreaElement) {
+    setTextareaValue(input, messageText);
+  } else {
+    setContentEditableValue(input, messageText);
+  }
+
+  await wait(300);
+  const sendButton =
+    [
+      ...composer.querySelectorAll<HTMLButtonElement>('button[type="submit"]'),
+    ].find((button) => isVisible(button) && !button.disabled) ??
+    findClickableByText('Send', composer);
+
+  if (!sendButton || sendButton.getAttribute('aria-disabled') === 'true') {
+    return {
+      status: 'FAILED',
+      connectionState: 'CONNECTED',
+      errorMessage: 'The LinkedIn message composer was not ready to send',
+    };
+  }
+
+  sendButton.click();
+  await wait(1_500);
+  const postSendBlockReason = getLinkedInAutomationBlockReason();
+
+  if (postSendBlockReason) {
+    return {
+      status: 'FAILED',
+      connectionState: 'UNKNOWN',
+      errorMessage: postSendBlockReason,
+    };
+  }
+
+  return { status: 'COMPLETED', connectionState: 'CONNECTED' };
 };
 
 const getProfileHandle = (profileUrl: string): string | null => {
@@ -295,6 +499,16 @@ const getProfileHandle = (profileUrl: string): string | null => {
 export const withdrawConnectionRequest = async (
   profileUrl: string,
 ): Promise<LinkedInAutomationResult> => {
+  const blockReason = getLinkedInAutomationBlockReason();
+
+  if (blockReason) {
+    return {
+      status: 'FAILED',
+      connectionState: 'UNKNOWN',
+      errorMessage: blockReason,
+    };
+  }
+
   const invitationManagerPath = '/mynetwork/invitation-manager/sent/';
 
   if (!window.location.pathname.startsWith(invitationManagerPath)) {

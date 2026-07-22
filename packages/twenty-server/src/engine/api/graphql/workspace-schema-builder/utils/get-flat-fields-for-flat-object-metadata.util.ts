@@ -10,5 +10,5 @@ export const getFlatFieldsFromFlatObjectMetadata = (
   return findManyFlatEntityByIdInFlatEntityMaps({
     flatEntityIds: flatObjectMetadata.fieldIds,
     flatEntityMaps: flatFieldMetadataMaps,
-  });
+  }).filter((fieldMetadata) => fieldMetadata.isActive);
 };

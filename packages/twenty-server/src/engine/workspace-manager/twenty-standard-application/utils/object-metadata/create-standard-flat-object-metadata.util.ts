@@ -469,6 +469,37 @@ export const STANDARD_FLAT_OBJECT_METADATA_BUILDERS_BY_OBJECT_NAME = {
       twentyStandardApplicationId,
       now,
     }),
+  messageDraft: ({
+    now,
+    workspaceId,
+    standardObjectMetadataRelatedEntityIds,
+    twentyStandardApplicationId,
+    dependencyFlatEntityMaps,
+  }: Omit<
+    CreateStandardObjectArgs<'messageDraft'>,
+    'context' | 'objectName'
+  >) =>
+    createStandardObjectFlatMetadata({
+      objectName: 'messageDraft',
+      dependencyFlatEntityMaps,
+      context: {
+        universalIdentifier: STANDARD_OBJECTS.messageDraft.universalIdentifier,
+        nameSingular: 'messageDraft',
+        namePlural: 'messageDrafts',
+        labelSingular: i18nLabel(msg`Message Draft`),
+        labelPlural: i18nLabel(msg`Message Drafts`),
+        description: i18nLabel(msg`An email draft`),
+        icon: 'IconMail',
+        isSystem: true,
+        isAuditLogged: false,
+        isUICreatable: false,
+        labelIdentifierFieldMetadataName: 'subject',
+      },
+      workspaceId,
+      standardObjectMetadataRelatedEntityIds,
+      twentyStandardApplicationId,
+      now,
+    }),
   message: ({
     now,
     workspaceId,
@@ -723,6 +754,166 @@ export const STANDARD_FLAT_OBJECT_METADATA_BUILDERS_BY_OBJECT_NAME = {
         isSystem: true,
         isUICreatable: false,
         labelIdentifierFieldMetadataName: 'linkedinUrl',
+      },
+      workspaceId,
+      standardObjectMetadataRelatedEntityIds,
+      twentyStandardApplicationId,
+      now,
+    }),
+  linkedinMessageThread: ({
+    now,
+    workspaceId,
+    standardObjectMetadataRelatedEntityIds,
+    twentyStandardApplicationId,
+    dependencyFlatEntityMaps,
+  }: Omit<
+    CreateStandardObjectArgs<'linkedinMessageThread'>,
+    'context' | 'objectName'
+  >) =>
+    createStandardObjectFlatMetadata({
+      objectName: 'linkedinMessageThread',
+      dependencyFlatEntityMaps,
+      context: {
+        universalIdentifier:
+          STANDARD_OBJECTS.linkedinMessageThread.universalIdentifier,
+        nameSingular: 'linkedinMessageThread',
+        namePlural: 'linkedinMessageThreads',
+        labelSingular: i18nLabel(msg`LinkedIn Message Thread`),
+        labelPlural: i18nLabel(msg`LinkedIn Message Threads`),
+        description: i18nLabel(msg`A harvested LinkedIn conversation`),
+        icon: 'IconMessages',
+        isSystem: true,
+        isAuditLogged: false,
+        isUICreatable: false,
+        labelIdentifierFieldMetadataName: 'name',
+      },
+      workspaceId,
+      standardObjectMetadataRelatedEntityIds,
+      twentyStandardApplicationId,
+      now,
+    }),
+  linkedinMessage: ({
+    now,
+    workspaceId,
+    standardObjectMetadataRelatedEntityIds,
+    twentyStandardApplicationId,
+    dependencyFlatEntityMaps,
+  }: Omit<
+    CreateStandardObjectArgs<'linkedinMessage'>,
+    'context' | 'objectName'
+  >) =>
+    createStandardObjectFlatMetadata({
+      objectName: 'linkedinMessage',
+      dependencyFlatEntityMaps,
+      context: {
+        universalIdentifier:
+          STANDARD_OBJECTS.linkedinMessage.universalIdentifier,
+        nameSingular: 'linkedinMessage',
+        namePlural: 'linkedinMessages',
+        labelSingular: i18nLabel(msg`LinkedIn Message`),
+        labelPlural: i18nLabel(msg`LinkedIn Messages`),
+        description: i18nLabel(msg`A harvested LinkedIn message`),
+        icon: 'IconMessage',
+        isSystem: true,
+        isAuditLogged: false,
+        isUICreatable: false,
+        labelIdentifierFieldMetadataName: 'externalId',
+      },
+      workspaceId,
+      standardObjectMetadataRelatedEntityIds,
+      twentyStandardApplicationId,
+      now,
+    }),
+  linkedinThreadParticipant: ({
+    now,
+    workspaceId,
+    standardObjectMetadataRelatedEntityIds,
+    twentyStandardApplicationId,
+    dependencyFlatEntityMaps,
+  }: Omit<
+    CreateStandardObjectArgs<'linkedinThreadParticipant'>,
+    'context' | 'objectName'
+  >) =>
+    createStandardObjectFlatMetadata({
+      objectName: 'linkedinThreadParticipant',
+      dependencyFlatEntityMaps,
+      context: {
+        universalIdentifier:
+          STANDARD_OBJECTS.linkedinThreadParticipant.universalIdentifier,
+        nameSingular: 'linkedinThreadParticipant',
+        namePlural: 'linkedinThreadParticipants',
+        labelSingular: i18nLabel(msg`LinkedIn Thread Participant`),
+        labelPlural: i18nLabel(msg`LinkedIn Thread Participants`),
+        description: i18nLabel(msg`A participant in a LinkedIn conversation`),
+        icon: 'IconUser',
+        isSystem: true,
+        isAuditLogged: false,
+        isUICreatable: false,
+        labelIdentifierFieldMetadataName: 'name',
+      },
+      workspaceId,
+      standardObjectMetadataRelatedEntityIds,
+      twentyStandardApplicationId,
+      now,
+    }),
+  linkedinConnection: ({
+    now,
+    workspaceId,
+    standardObjectMetadataRelatedEntityIds,
+    twentyStandardApplicationId,
+    dependencyFlatEntityMaps,
+  }: Omit<
+    CreateStandardObjectArgs<'linkedinConnection'>,
+    'context' | 'objectName'
+  >) =>
+    createStandardObjectFlatMetadata({
+      objectName: 'linkedinConnection',
+      dependencyFlatEntityMaps,
+      context: {
+        universalIdentifier:
+          STANDARD_OBJECTS.linkedinConnection.universalIdentifier,
+        nameSingular: 'linkedinConnection',
+        namePlural: 'linkedinConnections',
+        labelSingular: i18nLabel(msg`LinkedIn Connection`),
+        labelPlural: i18nLabel(msg`LinkedIn Connections`),
+        description: i18nLabel(msg`A harvested LinkedIn connection`),
+        icon: 'IconBrandLinkedin',
+        isSystem: true,
+        isAuditLogged: false,
+        isUICreatable: false,
+        labelIdentifierFieldMetadataName: 'name',
+      },
+      workspaceId,
+      standardObjectMetadataRelatedEntityIds,
+      twentyStandardApplicationId,
+      now,
+    }),
+  linkedinInvitation: ({
+    now,
+    workspaceId,
+    standardObjectMetadataRelatedEntityIds,
+    twentyStandardApplicationId,
+    dependencyFlatEntityMaps,
+  }: Omit<
+    CreateStandardObjectArgs<'linkedinInvitation'>,
+    'context' | 'objectName'
+  >) =>
+    createStandardObjectFlatMetadata({
+      objectName: 'linkedinInvitation',
+      dependencyFlatEntityMaps,
+      context: {
+        universalIdentifier:
+          STANDARD_OBJECTS.linkedinInvitation.universalIdentifier,
+        nameSingular: 'linkedinInvitation',
+        namePlural: 'linkedinInvitations',
+        labelSingular: i18nLabel(msg`LinkedIn Invitation`),
+        labelPlural: i18nLabel(msg`LinkedIn Invitations`),
+        description: i18nLabel(msg`A harvested LinkedIn invitation`),
+        icon: 'IconUserPlus',
+        isSystem: true,
+        isAuditLogged: false,
+        isUICreatable: false,
+        labelIdentifierFieldMetadataName: 'name',
       },
       workspaceId,
       standardObjectMetadataRelatedEntityIds,

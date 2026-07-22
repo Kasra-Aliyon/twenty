@@ -1,6 +1,12 @@
 <script lang="ts" setup>
 import { ref, onMounted, computed } from 'vue';
-import type { ExtensionResponse, LinkedInSyncTotals } from '../../types';
+import type {
+  ExtensionResponse,
+  LinkedInSafetySettings,
+  LinkedInSafetySnapshot,
+  LinkedInSyncTotals,
+} from '../../types';
+import { LINKEDIN_OUTBOUND_ATTEMPTS_PER_DAY } from '../../utils/linkedin-safety-policy';
 import {
   DEFAULT_TWENTY_API_URL,
   DEFAULT_TWENTY_APP_URL,
@@ -14,6 +20,8 @@ const isConnected = ref(false);
 const isLoading = ref(true);
 const isSaving = ref(false);
 const isTesting = ref(false);
+const isLinkedInSyncing = ref(false);
+const isSavingLinkedInLimit = ref(false);
 const error = ref<string | null>(null);
 const success = ref<string | null>(null);
 const linkedInSyncTotals = ref<LinkedInSyncTotals>({
@@ -22,6 +30,8 @@ const linkedInSyncTotals = ref<LinkedInSyncTotals>({
   threads: 0,
   messages: 0,
 });
+const linkedInSafetySnapshot = ref<LinkedInSafetySnapshot | null>(null);
+const linkedInDailyOutboundLimit = ref(LINKEDIN_OUTBOUND_ATTEMPTS_PER_DAY);
 const recentCaptures = ref<
   Array<{
     linkedinUrl: string;
@@ -74,6 +84,7 @@ onMounted(async () => {
   await loadSettings();
   await loadRecentCaptures();
   await loadLinkedInSyncTotals();
+  await loadLinkedInSafetySnapshot();
 });
 
 async function loadSettings() {
@@ -132,7 +143,84 @@ async function loadLinkedInSyncTotals() {
       linkedInSyncTotals.value = response.data;
     }
   } catch (err) {
-    console.error('Error loading LinkedIn harvest totals:', err);
+    console.error('Error loading LinkedIn sync totals:', err);
+  }
+}
+
+async function loadLinkedInSafetySnapshot() {
+  try {
+    const response = (await browser.runtime.sendMessage({
+      type: 'GET_LINKEDIN_SAFETY_SNAPSHOT',
+    })) as ExtensionResponse<LinkedInSafetySnapshot>;
+
+    if (response.success && response.data) {
+      linkedInSafetySnapshot.value = response.data;
+      linkedInDailyOutboundLimit.value = response.data.outboundDailyLimit;
+    }
+  } catch (err) {
+    console.error('Error loading LinkedIn safety status:', err);
+  }
+}
+
+async function saveLinkedInDailyOutboundLimit() {
+  const dailyOutboundLimit = Math.min(
+    LINKEDIN_OUTBOUND_ATTEMPTS_PER_DAY,
+    Math.max(1, Math.floor(Number(linkedInDailyOutboundLimit.value) || 1)),
+  );
+
+  linkedInDailyOutboundLimit.value = dailyOutboundLimit;
+  isSavingLinkedInLimit.value = true;
+  error.value = null;
+
+  try {
+    const response = (await browser.runtime.sendMessage({
+      type: 'SET_LINKEDIN_SAFETY_SETTINGS',
+      payload: { dailyOutboundLimit },
+    })) as ExtensionResponse<LinkedInSafetySettings>;
+
+    if (!response.success || !response.data) {
+      error.value = response.error || 'Could not save the LinkedIn limit';
+      return;
+    }
+
+    linkedInDailyOutboundLimit.value = response.data.dailyOutboundLimit;
+    await loadLinkedInSafetySnapshot();
+  } catch (err) {
+    console.error('Error saving LinkedIn safety settings:', err);
+    error.value = 'Could not save the LinkedIn limit';
+  } finally {
+    isSavingLinkedInLimit.value = false;
+  }
+}
+
+async function syncLinkedInNow() {
+  isLinkedInSyncing.value = true;
+  error.value = null;
+  success.value = null;
+
+  try {
+    const response = (await browser.runtime.sendMessage({
+      type: 'REQUEST_LINKEDIN_SYNC',
+    })) as ExtensionResponse<{ dispatched: boolean }>;
+
+    if (!response.success) {
+      error.value = response.error || 'Could not start LinkedIn sync';
+      return;
+    }
+
+    success.value =
+      'Sync started. Stored totals will update as incremental writes finish.';
+    window.setTimeout(() => {
+      void Promise.all([
+        loadLinkedInSyncTotals(),
+        loadLinkedInSafetySnapshot(),
+      ]);
+    }, 5_000);
+  } catch (err) {
+    console.error('Error starting LinkedIn sync:', err);
+    error.value = 'Could not start LinkedIn sync';
+  } finally {
+    isLinkedInSyncing.value = false;
   }
 }
 
@@ -360,7 +448,7 @@ function formatDate(timestamp: number): string {
       </section>
 
       <section v-if="hasToken" class="section">
-        <h2 class="section__title">LinkedIn Harvest</h2>
+        <h2 class="section__title">LinkedIn Sync</h2>
         <div class="harvest-stats">
           <div class="harvest-stat">
             <strong>{{ linkedInSyncTotals.connections }}</strong>
@@ -379,9 +467,37 @@ function formatDate(timestamp: number): string {
             <span>Messages</span>
           </div>
         </div>
-        <p class="hint">
-          Start or pause harvesting from the floating panel on LinkedIn.
+        <p class="hint">Sync every 30 mins</p>
+        <p v-if="linkedInSafetySnapshot" class="hint">
+          Safety: {{ linkedInSafetySnapshot.readRequestsLastHour }}/60 reads
+          this hour · {{ linkedInSafetySnapshot.outboundAttemptsToday }}/{{
+            linkedInSafetySnapshot.outboundDailyLimit
+          }}
+          outbound attempts today.
         </p>
+        <div class="safety-limit">
+          <label class="safety-limit__label" for="linkedinDailyOutboundLimit">
+            Daily automation limit
+          </label>
+          <input
+            id="linkedinDailyOutboundLimit"
+            v-model.number="linkedInDailyOutboundLimit"
+            class="safety-limit__input"
+            type="number"
+            min="1"
+            :max="LINKEDIN_OUTBOUND_ATTEMPTS_PER_DAY"
+            :disabled="isSavingLinkedInLimit"
+            @change="saveLinkedInDailyOutboundLimit"
+          />
+        </div>
+        <p class="hint">1–20 actions. The CRM sequence limit also applies.</p>
+        <button
+          class="btn btn--primary sync-button"
+          :disabled="isLinkedInSyncing"
+          @click="syncLinkedInNow"
+        >
+          {{ isLinkedInSyncing ? 'Starting sync…' : 'Sync now' }}
+        </button>
       </section>
 
       <!-- Recent Captures -->
@@ -686,6 +802,35 @@ function formatDate(timestamp: number): string {
 .harvest-stat strong,
 .harvest-stat span {
   display: block;
+}
+
+.sync-button {
+  margin-top: 12px;
+  width: 100%;
+}
+
+.safety-limit {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin-top: 10px;
+}
+
+.safety-limit__label {
+  color: #4b5563;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.safety-limit__input {
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  box-sizing: border-box;
+  font-size: 12px;
+  padding: 5px 6px;
+  text-align: right;
+  width: 58px;
 }
 
 .harvest-stat strong {

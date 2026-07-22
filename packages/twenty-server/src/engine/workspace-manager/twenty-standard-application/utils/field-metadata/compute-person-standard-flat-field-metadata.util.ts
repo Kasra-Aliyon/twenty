@@ -664,6 +664,60 @@ export const buildPersonStandardFlatFieldMetadatas = ({
     twentyStandardApplicationId,
     now,
   }),
+  linkedinThreadParticipants: {
+    ...createStandardRelationFieldFlatMetadata({
+      objectName,
+      workspaceId,
+      context: {
+        type: FieldMetadataType.RELATION,
+        morphId: null,
+        fieldName: 'linkedinThreadParticipants',
+        label: i18nLabel(msg`LinkedIn thread participants`),
+        description: i18nLabel(
+          msg`LinkedIn conversation participants matched to this person`,
+        ),
+        icon: 'IconBrandLinkedin',
+        isUIEditable: false,
+        isNullable: true,
+        targetObjectName: 'linkedinThreadParticipant',
+        targetFieldName: 'person',
+        settings: { relationType: RelationType.ONE_TO_MANY },
+      },
+      standardObjectMetadataRelatedEntityIds,
+      dependencyFlatEntityMaps,
+      twentyStandardApplicationId,
+      now,
+    }),
+    // Query hooks do not run for nested relation selections.
+    isActive: false,
+  },
+  linkedinConnections: {
+    ...createStandardRelationFieldFlatMetadata({
+      objectName,
+      workspaceId,
+      context: {
+        type: FieldMetadataType.RELATION,
+        morphId: null,
+        fieldName: 'linkedinConnections',
+        label: i18nLabel(msg`LinkedIn connections`),
+        description: i18nLabel(
+          msg`LinkedIn connections matched to this person`,
+        ),
+        icon: 'IconBrandLinkedin',
+        isUIEditable: false,
+        isNullable: true,
+        targetObjectName: 'linkedinConnection',
+        targetFieldName: 'person',
+        settings: { relationType: RelationType.ONE_TO_MANY },
+      },
+      standardObjectMetadataRelatedEntityIds,
+      dependencyFlatEntityMaps,
+      twentyStandardApplicationId,
+      now,
+    }),
+    // Query hooks do not run for nested relation selections.
+    isActive: false,
+  },
   searchVector: createStandardFieldFlatMetadata({
     objectName,
     workspaceId,

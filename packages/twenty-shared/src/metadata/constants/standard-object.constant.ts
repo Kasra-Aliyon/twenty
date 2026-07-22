@@ -1602,6 +1602,9 @@ export const STANDARD_OBJECTS = {
       messages: {
         universalIdentifier: '20202020-3115-404f-aade-e1154b28e35a',
       },
+      messageDrafts: {
+        universalIdentifier: '199a82b1-2d88-4b57-a379-4bd58b27c7d9',
+      },
       messageChannelMessageAssociations: {
         universalIdentifier: '20202020-314e-40a4-906d-a5d5d6c285f6',
       },
@@ -1641,6 +1644,69 @@ export const STANDARD_OBJECTS = {
         },
       },
     },
+  },
+  messageDraft: {
+    universalIdentifier: '4dd603c0-26b7-4d7a-b3cc-d5dfd361bbfe',
+    fields: {
+      id: { universalIdentifier: '1921bd41-10e9-41e7-a9af-16a2ba0551cb' },
+      createdAt: {
+        universalIdentifier: '2394531a-7b74-406f-abcc-6cfc99bdec17',
+      },
+      updatedAt: {
+        universalIdentifier: 'f97ae184-0613-4a9d-9662-5f912d47e500',
+      },
+      deletedAt: {
+        universalIdentifier: '16e55d0f-75db-4e56-bad8-3933a309cde2',
+      },
+      createdBy: {
+        universalIdentifier: 'f65b61d8-73ce-488c-97cb-02c187a93705',
+      },
+      updatedBy: {
+        universalIdentifier: '7efe6041-9af2-4b29-b923-5b11c9c11795',
+      },
+      position: {
+        universalIdentifier: 'd0d81d52-b9b3-41d2-8ca0-f018d8dc6194',
+      },
+      searchVector: {
+        universalIdentifier: '42689890-9fc3-43ea-943c-1840c612855d',
+      },
+      subject: {
+        universalIdentifier: '20650fdf-bfe0-4229-b010-de62a1a11b6d',
+      },
+      body: {
+        universalIdentifier: 'e387b8d2-abf8-4956-9933-798103f530a7',
+      },
+      to: {
+        universalIdentifier: '4f47b58b-f140-449b-badf-2ba41175d477',
+      },
+      cc: {
+        universalIdentifier: '953adb3e-9e29-426c-a40e-0a8f0a18735c',
+      },
+      bcc: {
+        universalIdentifier: '9ae8a1ee-02ca-4118-aede-9297dc2c2d41',
+      },
+      inReplyTo: {
+        universalIdentifier: 'b9f4afab-e261-42d5-8b16-d307d872f1b2',
+      },
+      connectedAccountId: {
+        universalIdentifier: '11077bdb-7698-44bf-98ae-0be72db9a541',
+      },
+      messageThread: {
+        universalIdentifier: '00bfe4ae-c56c-4cf1-984e-e23cc35c217a',
+      },
+      author: {
+        universalIdentifier: '6d1da7a5-9ba9-4364-80e4-cbadf04a03b7',
+      },
+      lastEditedAt: {
+        universalIdentifier: '78bc0880-a74c-4dbf-a936-4b3d63b0566b',
+      },
+    },
+    indexes: {
+      authorIdLastEditedAtIndex: {
+        universalIdentifier: '50a2a8de-8f2d-4ebb-ae09-414de369daa8',
+      },
+    },
+    views: {},
   },
   message: {
     universalIdentifier: '20202020-3f6b-4425-80ab-e468899ab4b2',
@@ -2167,6 +2233,12 @@ export const STANDARD_OBJECTS = {
       linkedinActions: {
         universalIdentifier: 'bb68d29e-e503-4bfa-919d-3d2cf806fc8b',
       },
+      linkedinThreadParticipants: {
+        universalIdentifier: '563feced-37cb-494e-8941-9b80756fbf6c',
+      },
+      linkedinConnections: {
+        universalIdentifier: 'ca0fa65b-8ac4-402b-8215-c71ace41195c',
+      },
       searchVector: {
         universalIdentifier: '57d1d7ad-fa10-44fc-82f3-ad0959ec2534',
       },
@@ -2466,6 +2538,327 @@ export const STANDARD_OBJECTS = {
       },
       statusNextActionAtIndex: {
         universalIdentifier: 'a47b18be-9ebc-4f37-9508-973dc5c41f2c',
+      },
+    },
+  },
+  linkedinMessageThread: {
+    universalIdentifier: '53fcf2b2-827c-45c6-9f49-d100d56c5c80',
+    fields: {
+      id: { universalIdentifier: 'bfff6cfb-fbe2-4ff3-b4c8-a0303cb7e849' },
+      createdAt: {
+        universalIdentifier: 'bd89748f-0053-4da3-aae5-72d4e1130175',
+      },
+      updatedAt: {
+        universalIdentifier: 'f64e7d3e-728d-4001-9e53-871644922327',
+      },
+      deletedAt: {
+        universalIdentifier: '3a89a206-f83d-42de-8a7b-9459afc9cfca',
+      },
+      createdBy: {
+        universalIdentifier: '633c6ce9-22ad-47a9-b54a-977fe85b5268',
+      },
+      updatedBy: {
+        universalIdentifier: '37767c80-c610-46d3-a105-3be76cdadf85',
+      },
+      position: {
+        universalIdentifier: '107f8a19-ab23-4a73-b037-34edd842f189',
+      },
+      searchVector: {
+        universalIdentifier: 'c4202040-618f-4402-b875-c0ce3fb94b3c',
+      },
+      externalId: {
+        universalIdentifier: 'f0f7df84-6b39-4b91-8eac-02c8d254d77f',
+      },
+      ownerWorkspaceMemberId: {
+        universalIdentifier: 'b0639562-b3d2-424e-9943-1cdffa078691',
+      },
+      name: { universalIdentifier: '52e65e02-91ff-4560-92a6-2cb1cc1bfa63' },
+      threadId: {
+        universalIdentifier: '498ccf1a-a1a7-4967-9eb9-e23c7f354961',
+      },
+      firstMessageTime: {
+        universalIdentifier: '51003b5f-dd33-4da5-96d1-c5af75dfdb2c',
+      },
+      lastMessageTime: {
+        universalIdentifier: '5922e35c-0283-47e7-a77f-71f62f2a3fbb',
+      },
+      labels: {
+        universalIdentifier: 'b380a3d0-552f-47a4-a907-7023ba373b4e',
+      },
+      ownerLinkedinId: {
+        universalIdentifier: 'ac0a7fa9-8b8f-478d-8c58-b79c791e154b',
+      },
+      lastMessagePreview: {
+        universalIdentifier: 'b6d5b06a-b02c-421e-b50a-2d1df2641bc9',
+      },
+      messageCount: {
+        universalIdentifier: '2fd78e71-7efc-4f4b-8cb6-e24948e0440d',
+      },
+      messages: {
+        universalIdentifier: 'a4557683-10b8-4df5-86d3-c5bf5adb7c28',
+      },
+      participants: {
+        universalIdentifier: '4ef6557d-5d23-4762-aba5-5a1f95cf792d',
+      },
+    },
+    indexes: {
+      externalIdUniqueIndex: {
+        universalIdentifier: '9d291a2f-e1f4-4ec1-8631-c5aa00877bb2',
+      },
+      ownerLinkedinIdLastMessageTimeIndex: {
+        universalIdentifier: 'fbe7c0b0-9617-4693-b803-0b644ce94150',
+      },
+    },
+  },
+  linkedinMessage: {
+    universalIdentifier: '3623a9d7-b356-4921-9583-46a9e0f56b72',
+    fields: {
+      id: { universalIdentifier: 'e3f7b882-fd92-4a4e-821d-c06b99a0c539' },
+      createdAt: {
+        universalIdentifier: 'e3d0394b-3ece-4719-8a42-7b304c1cc3d5',
+      },
+      updatedAt: {
+        universalIdentifier: 'a214b4d2-fb5a-438a-a2c5-871758794e10',
+      },
+      deletedAt: {
+        universalIdentifier: '9ff6a436-3b8d-4418-8dbd-537dd03013e9',
+      },
+      createdBy: {
+        universalIdentifier: '19095971-8254-4bc9-98e6-0431268e3793',
+      },
+      updatedBy: {
+        universalIdentifier: '8ec1e77a-b0ab-4ee8-9531-abb3814fedd9',
+      },
+      position: {
+        universalIdentifier: '4f6f53fd-44df-40a0-87b1-1011b95b8e44',
+      },
+      searchVector: {
+        universalIdentifier: '794bef82-b4cf-4e79-b861-6e983ad1aa43',
+      },
+      externalId: {
+        universalIdentifier: 'd5e19556-3980-4849-ad31-afa6233d8e11',
+      },
+      ownerWorkspaceMemberId: {
+        universalIdentifier: '286e9a2e-bda9-4d12-9e93-041905f01179',
+      },
+      messageId: {
+        universalIdentifier: '7906b4e8-fcce-4c7f-9e50-765c9967b0e6',
+      },
+      body: { universalIdentifier: '7d2ce768-f2ef-4e55-8d75-19d4f3264ddf' },
+      deliveredAt: {
+        universalIdentifier: 'd8993ed2-9497-4773-b4a3-021e89c13274',
+      },
+      direction: {
+        universalIdentifier: '42c10ed9-be5d-4ee4-8758-2cf6312da6d0',
+      },
+      senderName: {
+        universalIdentifier: 'cfbf467a-4924-4b0a-a883-8b89d8d174a8',
+      },
+      senderLinkedinUrn: {
+        universalIdentifier: '4896d30d-39f3-47f4-9163-aa8b31ccd443',
+      },
+      ownerLinkedinId: {
+        universalIdentifier: '4894658a-73de-4033-852f-dbb4af75de14',
+      },
+      thread: {
+        universalIdentifier: '378e0d89-5ad8-4c31-9f79-bded5468a4f8',
+      },
+    },
+    indexes: {
+      externalIdUniqueIndex: {
+        universalIdentifier: '621298a8-96e2-4578-af8a-faf00bd471f4',
+      },
+      threadIdDeliveredAtIndex: {
+        universalIdentifier: '18e23f16-df8e-4ce6-aa24-809a81f1e79e',
+      },
+    },
+  },
+  linkedinThreadParticipant: {
+    universalIdentifier: 'f7da5561-6080-4044-9c84-f2d15ef58cb6',
+    fields: {
+      id: { universalIdentifier: 'b3a241b9-5101-47de-81f8-15bbf0566f13' },
+      createdAt: {
+        universalIdentifier: 'a72865eb-cb79-4bed-8536-392f27ffc5c4',
+      },
+      updatedAt: {
+        universalIdentifier: 'e637c16d-9cfd-4434-8ebc-fd064877e0cd',
+      },
+      deletedAt: {
+        universalIdentifier: 'f1794c61-efc9-43c3-b062-73e5a0f02e91',
+      },
+      createdBy: {
+        universalIdentifier: '6f2135f4-f391-4b04-8886-774ececeb147',
+      },
+      updatedBy: {
+        universalIdentifier: 'da87c388-c693-4bdb-ae26-ffab3de2faeb',
+      },
+      position: {
+        universalIdentifier: '8a3fcf08-b204-4e96-84aa-2e3f8b8884bd',
+      },
+      searchVector: {
+        universalIdentifier: '42a1f277-9c89-4f49-9730-4b96754e27c8',
+      },
+      externalId: {
+        universalIdentifier: '8cb3d7e5-b378-46a5-a371-81a0f8833e4f',
+      },
+      ownerWorkspaceMemberId: {
+        universalIdentifier: '8b9f8ed0-e782-4898-ad8b-61ea03bea2cb',
+      },
+      linkedinUrn: {
+        universalIdentifier: '66854532-e57f-4fcd-b9ff-fe29ff0557d9',
+      },
+      linkedinMemberId: {
+        universalIdentifier: 'f604eb4d-f35d-4125-ba10-39188a8d07c3',
+      },
+      name: { universalIdentifier: 'c3c00c38-ce65-4d4a-99b3-1f2f4caeb22e' },
+      headline: {
+        universalIdentifier: 'fa46cdec-9d36-405e-bcaa-a01f3494f20b',
+      },
+      handle: {
+        universalIdentifier: '3c9b8d02-2f8d-4da2-b5d3-6fdbf7ed2e46',
+      },
+      profileUrl: {
+        universalIdentifier: '1a446933-4284-4317-b6b0-144d9592c86a',
+      },
+      isSelf: {
+        universalIdentifier: 'de574e1b-6812-4623-bf4b-73bd08e57f85',
+      },
+      thread: {
+        universalIdentifier: 'c97697db-213d-43db-afb6-13ba3819938d',
+      },
+      person: {
+        universalIdentifier: '03892c98-45b4-46da-a833-669c14c06347',
+      },
+    },
+    indexes: {
+      externalIdUniqueIndex: {
+        universalIdentifier: 'f205d102-c1b3-4a54-a23f-39b6aed75e5e',
+      },
+      threadIdIndex: {
+        universalIdentifier: '6e1dcd3d-6654-4c15-bb1e-8527efd919da',
+      },
+      personIdIndex: {
+        universalIdentifier: '31d2500c-2be3-4548-8e79-8790d3eec8fd',
+      },
+      linkedinUrnIndex: {
+        universalIdentifier: 'c82193ad-f02e-4aa0-89f2-4951e7410827',
+      },
+    },
+  },
+  linkedinConnection: {
+    universalIdentifier: 'edb1926f-f196-44f0-bd8c-658972081eee',
+    fields: {
+      id: { universalIdentifier: '289b20df-06e2-4431-bf6d-c734c4fc351c' },
+      createdAt: {
+        universalIdentifier: '4acf1764-7a36-484d-b476-6a5ff0631aa8',
+      },
+      updatedAt: {
+        universalIdentifier: '25377989-47d1-4e07-b5ab-ff82db7621d2',
+      },
+      deletedAt: {
+        universalIdentifier: '8c1035dc-e8bb-4bcb-9f4b-22d83e08336a',
+      },
+      createdBy: {
+        universalIdentifier: 'bc407a73-519c-4174-8d2e-988060f54431',
+      },
+      updatedBy: {
+        universalIdentifier: '4b621f92-c485-4d19-9913-329535cab372',
+      },
+      position: {
+        universalIdentifier: '383b23cd-eebe-4fda-a966-3ffb919761b2',
+      },
+      searchVector: {
+        universalIdentifier: 'f1128eb5-88b1-498b-af32-f640ade32548',
+      },
+      externalId: {
+        universalIdentifier: '5aa71199-c017-4729-a8c9-63afc105fcb4',
+      },
+      ownerWorkspaceMemberId: {
+        universalIdentifier: '5522e69c-165c-4cfd-908e-8186018d8bb8',
+      },
+      name: { universalIdentifier: 'f5c91c0d-80a3-4216-b802-8b061f3b5d86' },
+      handle: {
+        universalIdentifier: 'ac1198e9-5e32-4c35-882c-c5f14a2567e5',
+      },
+      headline: {
+        universalIdentifier: '2777f004-9991-498a-b149-bca8d1763062',
+      },
+      profileUrl: {
+        universalIdentifier: '3349d6d6-8bdb-4693-b50d-b6f48713dfc4',
+      },
+      linkedinUrn: {
+        universalIdentifier: '4be3cfe9-bdc0-4a52-bc66-b92360b58778',
+      },
+      connectedAt: {
+        universalIdentifier: 'a57461b2-b816-42fc-98be-b1e47125fcaf',
+      },
+      ownerLinkedinId: {
+        universalIdentifier: 'd1abba9c-8452-4512-85c0-a57bc635738d',
+      },
+      person: {
+        universalIdentifier: 'e440a3a0-e810-4030-9ca9-6f512cf12385',
+      },
+    },
+    indexes: {
+      externalIdUniqueIndex: {
+        universalIdentifier: '3dd3731d-f09c-49ad-9cb1-6f2ab46babdb',
+      },
+    },
+  },
+  linkedinInvitation: {
+    universalIdentifier: 'cb99b062-78bf-4ba0-9bbc-712f626615ae',
+    fields: {
+      id: { universalIdentifier: '721bd52c-5751-485b-aefe-e059d72871bb' },
+      createdAt: {
+        universalIdentifier: '0954034a-5c6f-4080-9faa-21aa2d0092ce',
+      },
+      updatedAt: {
+        universalIdentifier: '4c10e7fe-d2b8-4c32-a518-7f322f233e93',
+      },
+      deletedAt: {
+        universalIdentifier: '47f861d0-80ef-4b6c-940b-8e80ff2c954d',
+      },
+      createdBy: {
+        universalIdentifier: '9659560a-1a37-481d-8d73-51eab4590b72',
+      },
+      updatedBy: {
+        universalIdentifier: 'c03f4f72-3972-43d6-8cf3-0107f44893ca',
+      },
+      position: {
+        universalIdentifier: '5943572d-7a43-46f5-9cd1-1bf230b0594b',
+      },
+      searchVector: {
+        universalIdentifier: '73bf76fa-6cd5-4cba-9d2b-225a766998b3',
+      },
+      externalId: {
+        universalIdentifier: 'c6b551e4-7da3-4882-9fd5-0adcf118d32d',
+      },
+      ownerWorkspaceMemberId: {
+        universalIdentifier: '38ded100-20cc-4b40-8b92-edcedddd22f8',
+      },
+      name: { universalIdentifier: 'c68479fe-88b3-4a8c-bc07-c910fa761a75' },
+      direction: {
+        universalIdentifier: '35251d19-e93b-436b-8695-34583a254206',
+      },
+      handle: {
+        universalIdentifier: 'b26e3e45-04d9-4d91-aab7-6a8d6ad1ac09',
+      },
+      headline: {
+        universalIdentifier: 'd546955b-25f3-4c40-a1c8-682fb0015a0f',
+      },
+      message: {
+        universalIdentifier: '6cc3f40e-f914-4b00-bce4-315f1659d7b4',
+      },
+      sentAt: {
+        universalIdentifier: '7411d164-18c3-442b-a658-ce8f52ac8017',
+      },
+      ownerLinkedinId: {
+        universalIdentifier: 'e39ee139-e94d-40b7-98f4-1eea75194d5f',
+      },
+    },
+    indexes: {
+      externalIdUniqueIndex: {
+        universalIdentifier: '3ae801fa-49a6-4618-b3a5-e883164adeaa',
       },
     },
   },
@@ -3443,6 +3836,9 @@ export const STANDARD_OBJECTS = {
       },
       messageParticipants: {
         universalIdentifier: '20202020-8f99-48bc-a5eb-edd33dd54188',
+      },
+      messageDrafts: {
+        universalIdentifier: '8bf8cc17-fe2f-4adc-87e7-fef5463fe164',
       },
       blocklist: {
         universalIdentifier: '20202020-6cb2-4161-9f29-a4b7f1283859',

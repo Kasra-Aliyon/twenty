@@ -523,6 +523,46 @@ describe('SequenceExecutorService', () => {
     );
   });
 
+  it('renders and schedules a direct LinkedIn message', async () => {
+    const messageStep = {
+      id: 'message-step-id',
+      sequenceId: sequence.id,
+      position: 0,
+      type: SEQUENCE_STEP_TYPES.SEND_LINKEDIN_MESSAGE,
+      settings: {
+        type: SEQUENCE_STEP_TYPES.SEND_LINKEDIN_MESSAGE,
+        messageTemplate: 'Hi {{ firstName }}, thanks for connecting.',
+      },
+    } as SequenceStepWorkspaceEntity;
+    const person = {
+      ...buildPerson(),
+      linkedinLink: {
+        primaryLinkUrl: 'https://www.linkedin.com/in/ada-lovelace/',
+        primaryLinkLabel: 'LinkedIn',
+        secondaryLinks: null,
+      },
+    } as PersonWorkspaceEntity;
+    const { service, linkedinActionRepository, transactionManager } = setup({
+      currentEnrollment: {
+        ...enrollment,
+        waitingOn: SEQUENCE_WAITING_ON.DELAY,
+      },
+      person,
+      steps: [messageStep],
+    });
+
+    await service.process({ workspaceId, enrollmentId });
+
+    expect(linkedinActionRepository.insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'SEND_MESSAGE',
+        linkedinUrl: 'https://www.linkedin.com/in/ada-lovelace/',
+        noteText: 'Hi Ada, thanks for connecting.',
+      }),
+      transactionManager,
+    );
+  });
+
   it('floors a withdrawal slot at the configured custom delay', async () => {
     jest.useFakeTimers().setSystemTime(new Date('2026-07-20T09:00:00.000Z'));
     const withdrawStep = {

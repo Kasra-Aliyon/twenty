@@ -34,6 +34,7 @@ export const useNavigationMenuItemSectionItems = (): NavigationMenuItem[] => {
   const isRecordListsEnabled = useIsFeatureEnabled(
     FeatureFlagKey.IS_RECORD_LISTS_ENABLED,
   );
+  const isUniboxEnabled = useIsFeatureEnabled(FeatureFlagKey.IS_UNIBOX_ENABLED);
 
   const flatItems = getWorkspaceSidebarOrphanItemsInDisplayOrder({
     workspaceNavigationMenuItems,
@@ -47,7 +48,15 @@ export const useNavigationMenuItemSectionItems = (): NavigationMenuItem[] => {
   return flattenNavigationMenuItemsWithFolderChildren(
     flatItems,
     workspaceNavigationMenuItemsByFolder,
-  ).filter(
-    (item) => isRecordListsEnabled || item.link !== AppPath.RecordListsPage,
-  );
+  ).filter((item) => {
+    if (!isRecordListsEnabled && item.link === AppPath.RecordListsPage) {
+      return false;
+    }
+
+    if (!isUniboxEnabled && item.link === AppPath.UniboxPage) {
+      return false;
+    }
+
+    return true;
+  });
 };

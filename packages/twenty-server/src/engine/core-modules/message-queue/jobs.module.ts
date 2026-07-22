@@ -42,6 +42,7 @@ import { ApolloEnrichmentModule } from 'src/modules/apollo-enrichment/apollo-enr
 import { CalendarEventParticipantManagerModule } from 'src/modules/calendar/calendar-event-participant-manager/calendar-event-participant-manager.module';
 import { CalendarModule } from 'src/modules/calendar/calendar.module';
 import { AutoCompaniesAndContactsCreationJobModule } from 'src/modules/contact-creation-manager/jobs/auto-companies-and-contacts-creation-job.module';
+import { LinkedinModule } from 'src/modules/linkedin/linkedin.module';
 import { MessagingModule } from 'src/modules/messaging/messaging.module';
 import { SequenceModule } from 'src/modules/sequence/sequence.module';
 import { TimelineJobModule } from 'src/modules/timeline/jobs/timeline-job.module';
@@ -72,6 +73,7 @@ import { WorkflowModule } from 'src/modules/workflow/workflow.module';
     StripeModule,
     FeatureFlagModule,
     AutoCompaniesAndContactsCreationJobModule,
+    LinkedinModule,
     TimelineJobModule,
     WebhookJobModule,
     WorkflowModule,

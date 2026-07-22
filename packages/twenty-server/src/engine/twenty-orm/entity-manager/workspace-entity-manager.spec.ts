@@ -242,6 +242,7 @@ describe('WorkspaceEntityManager', () => {
         IS_CALL_RECORDING_ENABLED: false,
         IS_RECORD_LISTS_ENABLED: false,
         IS_OUTREACH_SEQUENCES_ENABLED: false,
+        IS_UNIBOX_ENABLED: false,
       },
       userWorkspaceRoleMap: {},
       eventEmitterService: {

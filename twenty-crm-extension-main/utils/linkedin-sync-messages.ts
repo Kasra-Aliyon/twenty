@@ -2,13 +2,16 @@ import type {
   LinkedInHarvestMessage,
   LinkedInHarvestParticipant,
   LinkedInHarvestThread,
+  LinkedInHarvestThreadParticipant,
   LinkedInIdentity,
   LinkedInSyncProgress,
 } from '../types';
 import {
   getLinkedInMessageSyncCandidates,
   getOldestLinkedInThread,
+  updateLinkedInThreadSummary,
   writeLinkedInMessages,
+  writeLinkedInThreadParticipants,
   writeLinkedInThreads,
 } from './linkedin-harvest-store';
 import {
@@ -82,24 +85,58 @@ const getCompositeUrnId = (value: string): string => {
   return separatorIndex === -1 ? value : value.slice(separatorIndex + 1, -1);
 };
 
-const toParticipant = (value: unknown): LinkedInHarvestParticipant => {
-  const member = getValue(value, ['participantType', 'member']);
-  const firstName = getString(member, ['firstName', 'text']) ?? '';
-  const lastName = getString(member, ['lastName', 'text']) ?? '';
+const normalizeHandle = (value: string): string => {
+  try {
+    const url = new URL(
+      value.startsWith('http') ? value : `https://www.linkedin.com/in/${value}`,
+    );
+
+    return decodeURIComponent(
+      url.pathname.match(/^\/in\/([^/]+)/)?.[1] ?? value,
+    );
+  } catch {
+    return decodeURIComponent(value);
+  }
+};
+
+const toParticipant = (
+  value: unknown,
+  identity: LinkedInIdentity,
+): LinkedInHarvestParticipant => {
+  const member =
+    getValue(value, ['participantType', 'member']) ??
+    getValue(value, ['miniProfile']) ??
+    value;
+  const firstName =
+    getFirstString(member, [['firstName', 'text'], ['firstName']]) ?? '';
+  const lastName =
+    getFirstString(member, [['lastName', 'text'], ['lastName']]) ?? '';
   const entityUrn = getString(value, ['entityUrn']);
   const currentLinkedinId = entityUrn ? getUrnId(entityUrn) : null;
+  const linkedinId =
+    getString(value, ['backendUrn'])?.replace('urn:li:member:', '') ??
+    currentLinkedinId;
+  const linkedinUrn =
+    getString(value, ['hostIdentityUrn'])?.replace('urn:li:fsd_profile:', '') ??
+    currentLinkedinId;
+  const rawHandle = getFirstString(member, [
+    ['publicIdentifier'],
+    ['publicIdentifier', 'text'],
+  ]);
+  const handle = rawHandle ? normalizeHandle(rawHandle) : null;
 
   return {
-    linkedinId:
-      getString(value, ['backendUrn'])?.replace('urn:li:member:', '') ??
-      currentLinkedinId,
-    linkedinUrn:
-      getString(value, ['hostIdentityUrn'])?.replace(
-        'urn:li:fsd_profile:',
-        '',
-      ) ?? currentLinkedinId,
+    linkedinId,
+    linkedinUrn,
     name: `${firstName} ${lastName}`.trim() || 'LinkedIn member',
-    headline: getString(member, ['headline', 'text']),
+    headline: getFirstString(member, [['headline', 'text'], ['headline']]),
+    handle,
+    profileUrl: handle
+      ? `https://www.linkedin.com/in/${encodeURIComponent(handle)}/`
+      : null,
+    isSelf:
+      linkedinId === identity.linkedinId ||
+      linkedinUrn === identity.linkedinUrn,
   };
 };
 
@@ -126,7 +163,7 @@ const isSyncableThread = (value: unknown): boolean =>
 
 const toThread = (
   value: unknown,
-  ownLinkedinId: string,
+  identity: LinkedInIdentity,
 ): LinkedInHarvestThread | null => {
   const threadId = getThreadId(value);
   const lastActivityAt = getNumber(value, ['lastActivityAt']);
@@ -137,10 +174,10 @@ const toThread = (
   }
 
   const participants = getArray(value, ['conversationParticipants']).map(
-    toParticipant,
+    (participant) => toParticipant(participant, identity),
   );
   const otherParticipantNames = participants
-    .filter((participant) => participant.linkedinId !== ownLinkedinId)
+    .filter((participant) => !participant.isSelf)
     .map((participant) => participant.name);
 
   return {
@@ -166,7 +203,7 @@ const writeThreadPage = async (
   const byThreadId = new Map<string, LinkedInHarvestThread>();
 
   for (const value of values) {
-    const thread = toThread(value, identity.linkedinId);
+    const thread = toThread(value, identity);
 
     if (thread) {
       byThreadId.set(thread.threadId, thread);
@@ -177,7 +214,31 @@ const writeThreadPage = async (
 
   if (threads.length > 0) {
     progress.threads += threads.length;
-    await writeLinkedInThreads(identity.linkedinId, threads);
+    const result = await writeLinkedInThreads(identity.linkedinId, threads);
+    const twentyThreadIdByExternalId = new Map(
+      result.writtenThreads.map((thread) => [thread.externalId, thread.id]),
+    );
+    const participants: LinkedInHarvestThreadParticipant[] = threads.flatMap(
+      (thread) => {
+        const twentyThreadId = twentyThreadIdByExternalId.get(
+          `${identity.linkedinId}:${thread.threadId}`,
+        );
+
+        if (!twentyThreadId) {
+          throw new Error(
+            `Twenty did not return the upserted LinkedIn thread ${thread.threadId}`,
+          );
+        }
+
+        return thread.participants.map((participant) => ({
+          ...participant,
+          sourceThreadId: thread.threadId,
+          threadId: twentyThreadId,
+        }));
+      },
+    );
+
+    await writeLinkedInThreadParticipants(identity.linkedinId, participants);
   }
 };
 
@@ -354,7 +415,7 @@ const syncHistoricalThreads = async (
 const toMessage = (
   value: unknown,
   identity: LinkedInIdentity,
-  threadExternalId: string,
+  threadId: string,
 ): LinkedInHarvestMessage | null => {
   const messageId = getFirstString(value, [['backendUrn'], ['entityUrn']])
     ?.replace('urn:li:messagingMessage:', '')
@@ -366,17 +427,16 @@ const toMessage = (
   }
 
   const actor = getValue(value, ['actor']) ?? getValue(value, ['sender']);
-  const sender = actor ? toParticipant(actor) : null;
+  const sender = actor ? toParticipant(actor, identity) : null;
 
   return {
     messageId: getCompositeUrnId(messageId),
-    threadExternalId,
+    threadId,
     body: getString(value, ['body', 'text']) ?? '',
     deliveredAt: new Date(deliveredAt).toISOString(),
-    direction:
-      sender?.linkedinId === identity.linkedinId ? 'OUTBOUND' : 'INBOUND',
+    direction: sender?.isSelf === true ? 'OUTBOUND' : 'INBOUND',
     senderName: sender?.name ?? 'LinkedIn member',
-    senderHandle: null,
+    senderLinkedinUrn: sender?.linkedinUrn ?? null,
   };
 };
 
@@ -409,9 +469,7 @@ const syncMessagesForCandidate = async (
     }
 
     const messages = page.elements
-      .map((element) =>
-        toMessage(element, identity, candidate.threadExternalId),
-      )
+      .map((element) => toMessage(element, identity, candidate.twentyThreadId))
       .filter((message): message is LinkedInHarvestMessage => message !== null)
       .filter(
         (message) =>
@@ -439,6 +497,8 @@ const syncMessagesForCandidate = async (
     anchor = nextAnchor;
     await randomDelay(500, 5_000);
   }
+
+  await updateLinkedInThreadSummary(candidate.twentyThreadId);
 };
 
 const syncMissingMessages = async (

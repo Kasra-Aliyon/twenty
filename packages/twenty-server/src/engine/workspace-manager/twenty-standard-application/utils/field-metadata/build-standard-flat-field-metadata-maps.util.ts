@@ -14,7 +14,13 @@ import { buildCallRecordingStandardFlatFieldMetadatas } from 'src/engine/workspa
 import { buildCompanyStandardFlatFieldMetadatas } from 'src/engine/workspace-manager/twenty-standard-application/utils/field-metadata/compute-company-standard-flat-field-metadata.util';
 import { buildDashboardStandardFlatFieldMetadatas } from 'src/engine/workspace-manager/twenty-standard-application/utils/field-metadata/compute-dashboard-standard-flat-field-metadata.util';
 import { buildLinkedinActionStandardFlatFieldMetadatas } from 'src/engine/workspace-manager/twenty-standard-application/utils/field-metadata/compute-linkedin-action-standard-flat-field-metadata.util';
+import { buildLinkedinConnectionStandardFlatFieldMetadatas } from 'src/engine/workspace-manager/twenty-standard-application/utils/field-metadata/compute-linkedin-connection-standard-flat-field-metadata.util';
+import { buildLinkedinInvitationStandardFlatFieldMetadatas } from 'src/engine/workspace-manager/twenty-standard-application/utils/field-metadata/compute-linkedin-invitation-standard-flat-field-metadata.util';
+import { buildLinkedinMessageThreadStandardFlatFieldMetadatas } from 'src/engine/workspace-manager/twenty-standard-application/utils/field-metadata/compute-linkedin-message-thread-standard-flat-field-metadata.util';
+import { buildLinkedinMessageStandardFlatFieldMetadatas } from 'src/engine/workspace-manager/twenty-standard-application/utils/field-metadata/compute-linkedin-message-standard-flat-field-metadata.util';
+import { buildLinkedinThreadParticipantStandardFlatFieldMetadatas } from 'src/engine/workspace-manager/twenty-standard-application/utils/field-metadata/compute-linkedin-thread-participant-standard-flat-field-metadata.util';
 import { buildMessageCampaignStandardFlatFieldMetadatas } from 'src/engine/workspace-manager/twenty-standard-application/utils/field-metadata/compute-message-campaign-standard-flat-field-metadata.util';
+import { buildMessageDraftStandardFlatFieldMetadatas } from 'src/engine/workspace-manager/twenty-standard-application/utils/field-metadata/compute-message-draft-standard-flat-field-metadata.util';
 import { buildMessageListStandardFlatFieldMetadatas } from 'src/engine/workspace-manager/twenty-standard-application/utils/field-metadata/compute-message-list-standard-flat-field-metadata.util';
 import { buildMessageListMemberStandardFlatFieldMetadatas } from 'src/engine/workspace-manager/twenty-standard-application/utils/field-metadata/compute-message-list-member-standard-flat-field-metadata.util';
 import { buildMessageChannelMessageAssociationMessageFolderStandardFlatFieldMetadatas } from 'src/engine/workspace-manager/twenty-standard-application/utils/field-metadata/compute-message-channel-message-association-message-folder-standard-flat-field-metadata.util';
@@ -58,7 +64,14 @@ const STANDARD_FLAT_FIELD_METADATA_BUILDERS_BY_OBJECT_NAME = {
   company: buildCompanyStandardFlatFieldMetadatas,
   dashboard: buildDashboardStandardFlatFieldMetadatas,
   linkedinAction: buildLinkedinActionStandardFlatFieldMetadatas,
+  linkedinConnection: buildLinkedinConnectionStandardFlatFieldMetadatas,
+  linkedinInvitation: buildLinkedinInvitationStandardFlatFieldMetadatas,
+  linkedinMessage: buildLinkedinMessageStandardFlatFieldMetadatas,
+  linkedinMessageThread: buildLinkedinMessageThreadStandardFlatFieldMetadatas,
+  linkedinThreadParticipant:
+    buildLinkedinThreadParticipantStandardFlatFieldMetadatas,
   messageCampaign: buildMessageCampaignStandardFlatFieldMetadatas,
+  messageDraft: buildMessageDraftStandardFlatFieldMetadatas,
   messageList: buildMessageListStandardFlatFieldMetadatas,
   messageListMember: buildMessageListMemberStandardFlatFieldMetadatas,
   message: buildMessageStandardFlatFieldMetadatas,

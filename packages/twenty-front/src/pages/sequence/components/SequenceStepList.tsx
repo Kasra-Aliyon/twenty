@@ -22,6 +22,7 @@ import {
   IconClock,
   IconListCheck,
   IconMail,
+  IconMessage,
   IconPlus,
   IconUserMinus,
 } from 'twenty-ui/icon';
@@ -82,6 +83,11 @@ const getDefaultStepSettings = (
         type,
         noteTemplate: '',
         skipIfAlreadyConnected: true,
+      };
+    case SEQUENCE_STEP_TYPES.SEND_LINKEDIN_MESSAGE:
+      return {
+        type,
+        messageTemplate: '',
       };
     case SEQUENCE_STEP_TYPES.WITHDRAW_CONNECTION_REQUEST:
       return {
@@ -228,6 +234,13 @@ export const SequenceStepList = ({
                   text={t`Send LinkedIn connection request`}
                   onClick={() =>
                     void addStep(SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST)
+                  }
+                />
+                <MenuItem
+                  LeftIcon={IconMessage}
+                  text={t`Send LinkedIn message`}
+                  onClick={() =>
+                    void addStep(SEQUENCE_STEP_TYPES.SEND_LINKEDIN_MESSAGE)
                   }
                 />
                 <MenuItem

@@ -33,6 +33,8 @@ A Chrome extension to capture LinkedIn profiles and companies directly into your
 | 🔄 **Update Existing**     | Refresh CRM records with latest LinkedIn data              |
 | 🔎 **Manual Linking**      | Search and link LinkedIn profiles to existing CRM contacts |
 | 🌍 **Multi-language**      | Extracts company names in EN, FR, DE, ES headlines         |
+| 🔄 **Incremental Sync**    | Syncs connections, invites, threads, and new messages      |
+| 🛡️ **Safety Guardrails**   | Durable read budgets, outbound caps, cooldowns, and locks  |
 
 ---
 
@@ -55,6 +57,52 @@ A Chrome extension to capture LinkedIn profiles and companies directly into your
 ### Capturing a Company
 
 Same process - visit any LinkedIn company page (`linkedin.com/company/name`)
+
+### Syncing LinkedIn data
+
+- Open LinkedIn and use **Sync now** in the Twenty runner or extension popup.
+- Sync every 30 mins while a LinkedIn tab is open.
+- Stored totals are scoped to the signed-in LinkedIn account. During a sync,
+  the runner separately shows how many records were processed in that run.
+- Messages use activity and per-thread message checkpoints. Connections use a
+  resumable historical cursor, and all records are upserted by stable external
+  IDs so interrupted syncs can safely resume.
+- Current releases write to Twenty's standard LinkedIn objects. If a workspace
+  used an older extension that created custom LinkedIn objects at runtime,
+  those legacy objects are intentionally left untouched. If the server upgrade
+  reports an object-name collision, a workspace administrator must export any
+  needed legacy data, remove or rename the conflicting custom objects under
+  **Settings → Data model**, rerun the upgrade, and then start a new sync.
+
+### Outbound actions
+
+Outbound sequence actions remain explicitly opt-in through **Start runner**.
+The extension applies a configurable browser-side cap of 1–20 attempts per
+local day and at least 15 minutes between attempts, in addition to the
+workspace-wide server schedule. Configure the local cap in the extension popup
+or choose a lower per-sequence limit in Twenty. An action is recorded before
+the final LinkedIn UI operation and is never silently replayed after an
+uncertain outcome.
+
+Sequences can also send direct LinkedIn messages through the visible LinkedIn
+composer. The runner sends only when it recognizes the profile as a
+first-degree connection. Direct messages share the same daily cap, minimum
+interval, restriction detection, and no-replay behavior as connection actions.
+
+### LinkedIn account-safety boundaries
+
+The connector uses LinkedIn's unofficial internal endpoints for read-only sync,
+so no implementation can guarantee that LinkedIn will never restrict an
+account. The extension minimizes activity instead of trying to conceal it:
+
+- one sync owner across tabs, persisted across service-worker restarts;
+- no more than 8 read requests per minute, 60 per hour, or 200 per local day;
+- 6–12 seconds between read requests;
+- a 24-hour fail-closed cooldown after rate-limit, challenge, or restriction
+  signals;
+- no automatic retries for outbound actions with an uncertain outcome;
+- direct messages are limited to recognized first-degree connections and use
+  the visible composer rather than a hidden bulk-send endpoint.
 
 ---
 

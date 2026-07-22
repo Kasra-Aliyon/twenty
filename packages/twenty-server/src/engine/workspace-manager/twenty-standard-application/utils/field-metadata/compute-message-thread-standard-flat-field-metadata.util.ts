@@ -234,6 +234,33 @@ export const buildMessageThreadStandardFlatFieldMetadatas = ({
     twentyStandardApplicationId,
     now,
   }),
+  messageDrafts: {
+    ...createStandardRelationFieldFlatMetadata({
+      objectName,
+      workspaceId,
+      context: {
+        type: FieldMetadataType.RELATION,
+        morphId: null,
+        fieldName: 'messageDrafts',
+        label: i18nLabel(msg`Message Drafts`),
+        description: i18nLabel(msg`Draft replies associated with the thread.`),
+        icon: 'IconMail',
+        isNullable: true,
+        isUIEditable: false,
+        targetObjectName: 'messageDraft',
+        targetFieldName: 'messageThread',
+        settings: {
+          relationType: RelationType.ONE_TO_MANY,
+        },
+      },
+      standardObjectMetadataRelatedEntityIds,
+      dependencyFlatEntityMaps,
+      twentyStandardApplicationId,
+      now,
+    }),
+    // Query hooks do not run for nested relation selections.
+    isActive: false,
+  },
   messageChannelMessageAssociations: createStandardRelationFieldFlatMetadata({
     objectName,
     workspaceId,

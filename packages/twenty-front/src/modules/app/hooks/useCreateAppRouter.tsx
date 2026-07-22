@@ -72,6 +72,12 @@ const TaskQueuePage = lazy(() =>
   })),
 );
 
+const UniboxPage = lazy(() =>
+  import('~/pages/unibox/UniboxPage').then((module) => ({
+    default: module.UniboxPage,
+  })),
+);
+
 const SignInUp = lazy(() =>
   import('~/pages/auth/SignInUp').then((module) => ({
     default: module.SignInUp,
@@ -324,6 +330,14 @@ export const useCreateAppRouter = (
               element={
                 <LazyRoute>
                   <TaskQueuePage />
+                </LazyRoute>
+              }
+            />
+            <Route
+              path={AppPath.UniboxPage}
+              element={
+                <LazyRoute>
+                  <UniboxPage />
                 </LazyRoute>
               }
             />

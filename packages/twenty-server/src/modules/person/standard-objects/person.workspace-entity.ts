@@ -18,6 +18,8 @@ import { type CompanyWorkspaceEntity } from 'src/modules/company/standard-object
 import { type MessageListMemberWorkspaceEntity } from 'src/modules/emailing/standard-objects/message-list-member.workspace-entity';
 import { type MessageParticipantWorkspaceEntity } from 'src/modules/messaging/common/standard-objects/message-participant.workspace-entity';
 import { type LinkedinActionWorkspaceEntity } from 'src/modules/linkedin/standard-objects/linkedin-action.workspace-entity';
+import { type LinkedinConnectionWorkspaceEntity } from 'src/modules/linkedin/standard-objects/linkedin-connection.workspace-entity';
+import { type LinkedinThreadParticipantWorkspaceEntity } from 'src/modules/linkedin/standard-objects/linkedin-thread-participant.workspace-entity';
 import { type NoteTargetWorkspaceEntity } from 'src/modules/note/standard-objects/note-target.workspace-entity';
 import { type OpportunityWorkspaceEntity } from 'src/modules/opportunity/standard-objects/opportunity.workspace-entity';
 import { type RecordListMemberWorkspaceEntity } from 'src/modules/record-list/standard-objects/record-list-member.workspace-entity';
@@ -68,5 +70,9 @@ export class PersonWorkspaceEntity extends BaseWorkspaceEntity {
   emailOptOut: boolean;
   sequenceEnrollments: EntityRelation<SequenceEnrollmentWorkspaceEntity[]>;
   linkedinActions: EntityRelation<LinkedinActionWorkspaceEntity[]>;
+  linkedinThreadParticipants: EntityRelation<
+    LinkedinThreadParticipantWorkspaceEntity[]
+  >;
+  linkedinConnections: EntityRelation<LinkedinConnectionWorkspaceEntity[]>;
   searchVector: string;
 }

@@ -12,6 +12,7 @@ export const SEQUENCE_STEP_TYPES = {
   DELAY: 'DELAY',
   CREATE_TASK: 'CREATE_TASK',
   SEND_CONNECTION_REQUEST: 'SEND_CONNECTION_REQUEST',
+  SEND_LINKEDIN_MESSAGE: 'SEND_LINKEDIN_MESSAGE',
   WITHDRAW_CONNECTION_REQUEST: 'WITHDRAW_CONNECTION_REQUEST',
 } as const;
 
@@ -115,9 +116,15 @@ export type SequenceWithdrawConnectionRequestStepSettings = {
   withdrawAfterHours: number;
 };
 
+export type SequenceLinkedInMessageStepSettings = {
+  type: typeof SEQUENCE_STEP_TYPES.SEND_LINKEDIN_MESSAGE;
+  messageTemplate: string;
+};
+
 export type SequenceStepSettings =
   | SequenceEmailStepSettings
   | SequenceDelayStepSettings
   | SequenceCreateTaskStepSettings
   | SequenceConnectionRequestStepSettings
+  | SequenceLinkedInMessageStepSettings
   | SequenceWithdrawConnectionRequestStepSettings;

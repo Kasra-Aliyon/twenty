@@ -1,19 +1,23 @@
 import type { LinkedInIdentity, LinkedInSyncState } from '../types';
 
-const LINKEDIN_HARVEST_ENABLED_KEY = 'twentyLinkedinHarvestEnabled';
 const LINKEDIN_SYNC_STATE_KEY_PREFIX = 'twentyLinkedinSyncState:';
-const LINKEDIN_IDENTITY_CACHE_KEY = 'twentyLinkedinIdentityCache';
+export const LINKEDIN_IDENTITY_CACHE_KEY = 'twentyLinkedinIdentityCache';
 
-export const LINKEDIN_MESSAGE_SYNC_REVISION = 3;
-export const LINKEDIN_INVITATION_SYNC_REVISION = 1;
+export const LINKEDIN_CONNECTION_SYNC_REVISION = 1;
+export const LINKEDIN_MESSAGE_SYNC_REVISION = 4;
+export const LINKEDIN_INVITATION_SYNC_REVISION = 2;
 
 const defaultLinkedInSyncState = (): LinkedInSyncState => ({
   safeSyncedThroughLastActivityAt: null,
   historicalBackfillComplete: false,
+  connectionBackfillComplete: false,
+  connectionBackfillStart: 0,
+  connectionSyncRevision: 0,
   invitationSyncRevision: 0,
   messageSyncRevision: 0,
   lastConnectionSyncAt: null,
   lastMessageSyncAt: null,
+  lastAttemptAt: null,
   lastRunAt: null,
   syncStartedAt: null,
   lastError: null,
@@ -22,28 +26,9 @@ const defaultLinkedInSyncState = (): LinkedInSyncState => ({
 const getStateKey = (linkedinId: string) =>
   `${LINKEDIN_SYNC_STATE_KEY_PREFIX}${linkedinId}`;
 
-export const getLinkedInHarvestEnabled = async (): Promise<boolean> => {
-  const storedValue = await browser.storage.local.get(
-    LINKEDIN_HARVEST_ENABLED_KEY,
-  );
-
-  return storedValue[LINKEDIN_HARVEST_ENABLED_KEY] === true;
-};
-
-export const setLinkedInHarvestEnabled = async (
-  enabled: boolean,
-): Promise<void> => {
-  await browser.storage.local.set({ [LINKEDIN_HARVEST_ENABLED_KEY]: enabled });
-};
-
 export const getCachedLinkedInIdentity =
   async (): Promise<LinkedInIdentity | null> => {
-    const storedValue = await browser.storage.local.get(
-      LINKEDIN_IDENTITY_CACHE_KEY,
-    );
-    const identity = storedValue[LINKEDIN_IDENTITY_CACHE_KEY] as
-      | LinkedInIdentity
-      | undefined;
+    const identity = await getStoredLinkedInIdentity();
     const pageMemberId = document
       .querySelector<HTMLMetaElement>('meta[name="__init"]')
       ?.content.match(/urn:li:member:(\d+)/)?.[1];
@@ -53,6 +38,19 @@ export const getCachedLinkedInIdentity =
     }
 
     return identity;
+  };
+
+export const getStoredLinkedInIdentity =
+  async (): Promise<LinkedInIdentity | null> => {
+    const storedValue = await browser.storage.local.get(
+      LINKEDIN_IDENTITY_CACHE_KEY,
+    );
+
+    return (
+      (storedValue[LINKEDIN_IDENTITY_CACHE_KEY] as
+        | LinkedInIdentity
+        | undefined) ?? null
+    );
   };
 
 export const setCachedLinkedInIdentity = async (
@@ -66,11 +64,15 @@ export const getLinkedInSyncState = async (
 ): Promise<LinkedInSyncState> => {
   const key = getStateKey(linkedinId);
   const storedValue = await browser.storage.local.get(key);
-
-  return {
+  const storedState = storedValue[key] as
+    | Partial<LinkedInSyncState>
+    | undefined;
+  const state = {
     ...defaultLinkedInSyncState(),
-    ...(storedValue[key] as Partial<LinkedInSyncState> | undefined),
+    ...storedState,
   };
+
+  return state;
 };
 
 export const updateLinkedInSyncState = async (

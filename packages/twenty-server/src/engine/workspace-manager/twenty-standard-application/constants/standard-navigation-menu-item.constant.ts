@@ -4,6 +4,14 @@ import { AppPath } from 'twenty-shared/types';
 import { NavigationMenuItemType } from 'src/engine/metadata-modules/navigation-menu-item/enums/navigation-menu-item-type.enum';
 
 export const STANDARD_NAVIGATION_MENU_ITEMS = {
+  unibox: {
+    universalIdentifier: '755a54a3-51e1-4e5f-8fb4-f8ca496d49ed',
+    type: NavigationMenuItemType.LINK,
+    name: 'Unibox',
+    link: AppPath.UniboxPage,
+    icon: 'IconInbox',
+    position: -1,
+  },
   allCompanies: {
     universalIdentifier: '20202020-b001-4b01-8b01-c0aba11c0001',
     type: NavigationMenuItemType.OBJECT,
@@ -107,6 +115,7 @@ export const STANDARD_NAVIGATION_MENU_ITEMS = {
 export const STANDARD_NAVIGATION_MENU_ITEM_DEFAULT_COLORS: Partial<
   Record<keyof typeof STANDARD_NAVIGATION_MENU_ITEMS, string>
 > = {
+  unibox: 'blue',
   allCompanies: 'blue',
   allPeople: 'blue',
   allTasks: 'turquoise',
