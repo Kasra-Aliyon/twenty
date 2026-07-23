@@ -1,0 +1,77 @@
+{
+  "$schema": "https://raw.githubusercontent.com/modelcontextprotocol/mcpb/main/schemas/mcpb-manifest-v0.3.schema.json",
+  "manifest_version": "0.3",
+  "name": "twenty-mcp-server",
+  "display_name": "Twenty CRM",
+  "version": "0.1.0",
+  "description": "Discover, read, and manage Twenty CRM records and workflows through MCP.",
+  "long_description": "A metadata-driven MCP server for Twenty CRM. It supports standard and custom objects, CRM search and aggregation, people, companies, opportunities, tasks, notes, lists, outreach sequences, LinkedIn action queues, and Unibox reads. Risky, bulk, and outbound operations require explicit confirmation, while irreversible and high-volume tools are opt-in.",
+  "author": {
+    "name": "Twenty.com, PBC",
+    "url": "https://twenty.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/twentyhq/twenty"
+  },
+  "homepage": "https://twenty.com",
+  "documentation": "https://docs.twenty.com",
+  "support": "https://github.com/twentyhq/twenty/issues",
+  "server": {
+    "type": "node",
+    "entry_point": "server/index.cjs",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/server/index.cjs"],
+      "env": {
+        "TWENTY_BASE_URL": "${user_config.base_url}",
+        "TWENTY_API_KEY": "${user_config.api_key}",
+        "TWENTY_USER_TOKEN": "${user_config.user_token}",
+        "TWENTY_ENABLE_ADVANCED": "${user_config.enable_advanced}",
+        "TRANSPORT": "stdio"
+      }
+    }
+  },
+  "tools_generated": true,
+  "keywords": ["twenty", "crm", "sales", "contacts", "mcp", "automation"],
+  "license": "AGPL-3.0",
+  "privacy_policies": ["https://twenty.com/privacy-policy"],
+  "compatibility": {
+    "claude_desktop": ">=1.0.0",
+    "platforms": ["darwin", "win32", "linux"],
+    "runtimes": {
+      "node": ">=24.5.0"
+    }
+  },
+  "user_config": {
+    "base_url": {
+      "type": "string",
+      "title": "Twenty base URL",
+      "description": "Twenty Cloud uses https://api.twenty.com. For self-hosted Twenty, enter the origin without /rest or /graphql.",
+      "default": "https://api.twenty.com",
+      "required": true
+    },
+    "api_key": {
+      "type": "string",
+      "title": "Twenty API key",
+      "description": "A role-scoped API key created under Settings > API & Webhooks.",
+      "sensitive": true,
+      "required": true
+    },
+    "user_token": {
+      "type": "string",
+      "title": "Twenty user token",
+      "description": "Optional user-scoped token for Unibox and user-owned LinkedIn records. Leave blank for API-key-only use.",
+      "sensitive": true,
+      "default": "",
+      "required": false
+    },
+    "enable_advanced": {
+      "type": "boolean",
+      "title": "Enable advanced tools",
+      "description": "Expose permanent record destruction and high-volume attachment/message read tools.",
+      "default": false,
+      "required": false
+    }
+  }
+}

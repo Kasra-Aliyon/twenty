@@ -17,6 +17,16 @@
       "command": "npx",
       "args": ["-y", "@upstash/context7-mcp"],
       "env": {}
+    },
+    "twenty": {
+      "type": "stdio",
+      "command": "/opt/homebrew/bin/node",
+      "args": ["packages/twenty-mcp/dist/index.js"],
+      "env": {
+        "TWENTY_BASE_URL": "http://localhost:3000",
+        "TWENTY_API_KEY": "${TWENTY_API_KEY}",
+        "TWENTY_ENABLE_ADVANCED": "false"
+      }
     }
   }
 }

@@ -1,0 +1,67 @@
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+
+import { createMcpServer } from '../server.js';
+import type { MetadataService } from '../services/metadata.service.js';
+import type { TwentyClient } from '../services/twenty-client.js';
+
+const listToolNames = async (enableAdvanced: boolean): Promise<string[]> => {
+  const server = createMcpServer({
+    client: {} as TwentyClient,
+    metadata: {} as MetadataService,
+    enableAdvanced,
+  });
+  const client = new Client({
+    name: 'twenty-mcp-test-client',
+    version: '1.0.0',
+  });
+  const [clientTransport, serverTransport] =
+    InMemoryTransport.createLinkedPair();
+
+  await Promise.all([
+    server.connect(serverTransport),
+    client.connect(clientTransport),
+  ]);
+
+  try {
+    const result = await client.listTools();
+
+    return result.tools.map((tool) => tool.name);
+  } finally {
+    await Promise.all([client.close(), server.close()]);
+  }
+};
+
+describe('MCP server registration', () => {
+  it('publishes the complete default tool catalog with schemas', async () => {
+    const names = await listToolNames(false);
+
+    expect(names).toHaveLength(72);
+    expect(new Set(names).size).toBe(names.length);
+    expect(names).toEqual(
+      expect.arrayContaining([
+        'twenty_list_objects',
+        'twenty_create_record',
+        'twenty_get_pipeline',
+        'twenty_enroll_person_in_sequence',
+        'twenty_send_linkedin_message',
+        'twenty_unibox_list_threads',
+      ]),
+    );
+    expect(names).not.toContain('twenty_destroy_record');
+  });
+
+  it('adds opt-in advanced read and permanent-destroy tools', async () => {
+    const names = await listToolNames(true);
+
+    expect(names).toHaveLength(76);
+    expect(names).toEqual(
+      expect.arrayContaining([
+        'twenty_destroy_record',
+        'twenty_list_attachments',
+        'twenty_list_messages',
+        'twenty_list_message_threads',
+      ]),
+    );
+  });
+});

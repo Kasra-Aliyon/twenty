@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<evaluation>
+  <qa_pair>
+    <question>Discover the opportunity schema, find the standard opportunity named "Platform Migration", resolve its company and point-of-contact relations, and return only the contact's full name.</question>
+    <answer>Patrick Collison</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Find the standard opportunities named "Platform Migration" and "API Integration Deal", verify that they belong to the same company, add their USD amounts, and return only the total as a whole number of dollars.</question>
+    <answer>135000</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Inspect the live opportunity stage options, then compare the six standard opportunities "Platform Migration", "AI Model Training", "Workspace Expansion", "API Integration Deal", "Enterprise Plan Upgrade", and "Design Partnership". Return only the stage whose opportunities have the largest total USD amount.</question>
+    <answer>CUSTOMER</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Compare the close dates of the six named standard opportunities and return only the name of the opportunity with the earliest close date.</question>
+    <answer>Design Partnership</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Find the standard company associated with "Workspace Expansion", then find its standard person and verify the person's primary email domain matches the company domain. Return only the person's full name.</question>
+    <answer>Ivan Zhao</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Find "AI Model Training", resolve its company, and inspect that company's address. Return only the address postcode.</question>
+    <answer>94104</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Find the two standard opportunities in the NEW stage, resolve both companies, and return only the company name whose opportunity has the larger USD amount.</question>
+    <answer>Airbnb</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Find the standard opportunity whose amount is 75000 USD, verify its stage and point of contact, and return only the opportunity name.</question>
+    <answer>API Integration Deal</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Find Dylan Field through the people tools, resolve his company, then find that company's named standard opportunity. Return only the opportunity's stage.</question>
+    <answer>NEW</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Compare the six named standard opportunities by amount, resolve the company of the largest one, and return only that company's primary domain URL.</question>
+    <answer>https://anthropic.com</answer>
+  </qa_pair>
+</evaluation>
