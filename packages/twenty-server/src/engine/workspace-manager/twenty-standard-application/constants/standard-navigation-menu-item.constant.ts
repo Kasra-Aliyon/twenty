@@ -73,7 +73,7 @@ export const STANDARD_NAVIGATION_MENU_ITEMS = {
   taskQueue: {
     universalIdentifier: '6034d18c-307b-4384-968d-e480809df1fa',
     type: NavigationMenuItemType.LINK,
-    name: 'Tasks',
+    name: 'Sequence Tasks',
     link: AppPath.TaskQueuePage,
     icon: 'IconCheckbox',
     position: 9,

@@ -1,4 +1,8 @@
 import {
+  LINKEDIN_CONNECTION_STATES,
+  SEQUENCE_ACTION_EXECUTION_MODES,
+  SEQUENCE_CONDITION_BRANCHES,
+  SEQUENCE_CONDITION_TYPES,
   SEQUENCE_ENROLLMENT_STATUSES,
   SEQUENCE_STATUSES,
   SEQUENCE_STEP_TYPES,
@@ -7,6 +11,7 @@ import {
   TASK_PRIORITIES,
 } from 'twenty-shared/types';
 
+import { type ApolloEnrichmentService } from 'src/modules/apollo-enrichment/services/apollo-enrichment.service';
 import { type GlobalWorkspaceOrmManager } from 'src/engine/twenty-orm/global-workspace-datasource/global-workspace-orm.manager';
 import { type WorkspaceEntityManager } from 'src/engine/twenty-orm/entity-manager/workspace-entity-manager';
 import { PersonWorkspaceEntity } from 'src/modules/person/standard-objects/person.workspace-entity';
@@ -79,8 +84,16 @@ describe('SequenceExecutorService', () => {
         additionalEmails: null,
       },
       emailOptOut,
+      linkedinConnectionState: LINKEDIN_CONNECTION_STATES.NOT_CONNECTED,
+      linkedinLink: null,
+      phones: {
+        primaryPhoneNumber: '',
+        primaryPhoneCountryCode: '',
+        primaryPhoneCallingCode: '',
+        additionalPhones: null,
+      },
       company: null,
-    }) as PersonWorkspaceEntity;
+    }) as unknown as PersonWorkspaceEntity;
 
   const setup = ({
     currentEnrollment = enrollment,
@@ -165,6 +178,10 @@ describe('SequenceExecutorService', () => {
     const sequenceVariableService = {
       buildVariables,
     } as unknown as SequenceVariableService;
+    const enrichPerson = jest.fn().mockResolvedValue('updated');
+    const apolloEnrichmentService = {
+      enrichPerson,
+    } as unknown as ApolloEnrichmentService;
     const service = new SequenceExecutorService(
       globalWorkspaceOrmManager,
       sequenceEmailSenderService,
@@ -172,11 +189,13 @@ describe('SequenceExecutorService', () => {
       sequenceMailboxThrottleService,
       sequenceLinkedinThrottleService,
       sequenceVariableService,
+      apolloEnrichmentService,
     );
 
     return {
       service,
       enrollmentRepository,
+      personRepository,
       send,
       createTask,
       transaction,
@@ -188,6 +207,7 @@ describe('SequenceExecutorService', () => {
       linkedinActionRepository,
       reserveSlot,
       buildVariables,
+      enrichPerson,
     };
   };
 
@@ -446,6 +466,188 @@ describe('SequenceExecutorService', () => {
       expect.objectContaining({
         step: taskStep,
         entityManager: transactionManager,
+      }),
+    );
+  });
+
+  it('turns a manual email step into a sequence task', async () => {
+    const manualEmailStep = {
+      ...step,
+      settings: {
+        ...step.settings,
+        executionMode: SEQUENCE_ACTION_EXECUTION_MODES.MANUAL,
+        manualTaskTitle: 'Write a personal note to {{ fullName }}',
+        manualTaskDescription: 'Use the research in the contact record.',
+      },
+    } as SequenceStepWorkspaceEntity;
+    const { service, createTask, send } = setup({
+      currentEnrollment: {
+        ...enrollment,
+        waitingOn: SEQUENCE_WAITING_ON.DELAY,
+      },
+      steps: [manualEmailStep],
+    });
+
+    await service.process({ workspaceId, enrollmentId });
+
+    expect(send).not.toHaveBeenCalled();
+    expect(createTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        settings: expect.objectContaining({
+          taskType: SEQUENCE_TASK_TYPES.EMAIL,
+          titleTemplate: 'Write a personal note to {{ fullName }}',
+          notesTemplate: 'Use the research in the contact record.',
+          continueMode: 'ON_DONE',
+        }),
+      }),
+    );
+  });
+
+  it('advances a condition so its branch can be evaluated next', async () => {
+    const conditionStep = {
+      id: 'condition-step-id',
+      sequenceId: sequence.id,
+      position: 0,
+      type: SEQUENCE_STEP_TYPES.CREATE_TASK,
+      settings: {
+        type: SEQUENCE_STEP_TYPES.CONDITION,
+        condition: SEQUENCE_CONDITION_TYPES.HAS_EMAIL_ADDRESS,
+      },
+    } as SequenceStepWorkspaceEntity;
+    const { service, enrollmentRepository } = setup({
+      currentEnrollment: {
+        ...enrollment,
+        waitingOn: SEQUENCE_WAITING_ON.DELAY,
+      },
+      steps: [conditionStep],
+    });
+
+    await service.process({ workspaceId, enrollmentId });
+
+    expect(enrollmentRepository.update).toHaveBeenCalledWith(
+      expect.objectContaining({ id: enrollmentId }),
+      expect.objectContaining({
+        currentStepId: conditionStep.id,
+        currentStepPosition: conditionStep.position,
+        waitingOn: SEQUENCE_WAITING_ON.DELAY,
+        nextActionAt: expect.any(Date),
+      }),
+    );
+  });
+
+  it('executes only the branch selected by the contact condition', async () => {
+    const conditionStep = {
+      id: 'condition-step-id',
+      sequenceId: sequence.id,
+      position: 0,
+      type: SEQUENCE_STEP_TYPES.CONDITION,
+      settings: {
+        type: SEQUENCE_STEP_TYPES.CONDITION,
+        condition: SEQUENCE_CONDITION_TYPES.HAS_PHONE_NUMBER,
+      },
+    } as SequenceStepWorkspaceEntity;
+    const yesStep = {
+      id: 'yes-step-id',
+      sequenceId: sequence.id,
+      position: 1,
+      type: SEQUENCE_STEP_TYPES.CREATE_TASK,
+      settings: {
+        type: SEQUENCE_STEP_TYPES.CREATE_TASK,
+        branch: {
+          conditionStepId: conditionStep.id,
+          outcome: SEQUENCE_CONDITION_BRANCHES.YES,
+        },
+        taskType: SEQUENCE_TASK_TYPES.CUSTOM,
+        titleTemplate: 'Phone available',
+        notesTemplate: '',
+        priority: TASK_PRIORITIES.MEDIUM,
+        assigneeWorkspaceMemberId: null,
+        continueMode: 'ON_DONE',
+        deadlineDays: null,
+      },
+    } as SequenceStepWorkspaceEntity;
+    const noStep = {
+      ...yesStep,
+      id: 'no-step-id',
+      position: 2,
+      settings: {
+        ...yesStep.settings,
+        branch: {
+          conditionStepId: conditionStep.id,
+          outcome: SEQUENCE_CONDITION_BRANCHES.NO,
+        },
+        titleTemplate: 'Phone missing',
+      },
+    } as SequenceStepWorkspaceEntity;
+    const { service, createTask } = setup({
+      currentEnrollment: {
+        ...enrollment,
+        currentStepId: conditionStep.id,
+        currentStepPosition: conditionStep.position,
+        waitingOn: SEQUENCE_WAITING_ON.DELAY,
+      },
+      steps: [conditionStep, yesStep, noStep],
+    });
+
+    await service.process({ workspaceId, enrollmentId });
+
+    expect(createTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        step: noStep,
+        settings: expect.objectContaining({
+          titleTemplate: 'Phone missing',
+        }),
+      }),
+    );
+    expect(createTask).not.toHaveBeenCalledWith(
+      expect.objectContaining({ step: yesStep }),
+    );
+  });
+
+  it('enriches a missing phone number through Apollo before continuing', async () => {
+    const enrichStep = {
+      id: 'enrich-step-id',
+      sequenceId: sequence.id,
+      position: 0,
+      type: SEQUENCE_STEP_TYPES.CREATE_TASK,
+      settings: {
+        type: SEQUENCE_STEP_TYPES.ENRICH_PHONE_NUMBER,
+        executionMode: SEQUENCE_ACTION_EXECUTION_MODES.AUTOMATED,
+      },
+    } as SequenceStepWorkspaceEntity;
+    const person = buildPerson();
+    const { service, enrollmentRepository, enrichPerson, personRepository } =
+      setup({
+        currentEnrollment: {
+          ...enrollment,
+          waitingOn: SEQUENCE_WAITING_ON.DELAY,
+        },
+        person,
+        steps: [enrichStep],
+      });
+
+    personRepository.findOne
+      .mockResolvedValueOnce(person)
+      .mockResolvedValueOnce({
+        ...person,
+        phones: {
+          ...person.phones,
+          primaryPhoneNumber: '+358401234567',
+        },
+      });
+
+    await service.process({ workspaceId, enrollmentId });
+
+    expect(enrichPerson).toHaveBeenCalledWith({
+      workspaceId,
+      personId: person.id,
+    });
+    expect(enrollmentRepository.update).toHaveBeenCalledWith(
+      expect.objectContaining({ id: enrollmentId }),
+      expect.objectContaining({
+        currentStepId: enrichStep.id,
+        currentStepPosition: enrichStep.position,
+        waitingOn: SEQUENCE_WAITING_ON.DELAY,
       }),
     );
   });

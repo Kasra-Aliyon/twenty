@@ -6,6 +6,7 @@ import { ToolModule } from 'src/engine/core-modules/tool/tool.module';
 import { WorkspaceEntity } from 'src/engine/core-modules/workspace/workspace.entity';
 import { ConnectedAccountEntity } from 'src/engine/metadata-modules/connected-account/entities/connected-account.entity';
 import { WorkspaceDataSourceModule } from 'src/engine/workspace-datasource/workspace-datasource.module';
+import { ApolloEnrichmentModule } from 'src/modules/apollo-enrichment/apollo-enrichment.module';
 import { MessagingSendManagerModule } from 'src/modules/messaging/message-outbound-manager/messaging-send-manager.module';
 import { SequenceTickCronCommand } from 'src/modules/sequence/crons/commands/sequence-tick.cron.command';
 import { SequenceTickCronJob } from 'src/modules/sequence/crons/jobs/sequence-tick.cron.job';
@@ -26,6 +27,7 @@ import { SequenceVariableService } from 'src/modules/sequence/services/sequence-
 
 @Module({
   imports: [
+    ApolloEnrichmentModule,
     FeatureFlagModule,
     MessagingSendManagerModule,
     ToolModule,

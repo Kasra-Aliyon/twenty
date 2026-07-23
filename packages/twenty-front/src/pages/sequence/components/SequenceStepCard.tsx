@@ -2,109 +2,165 @@ import { useDeleteOneRecord } from '@/object-record/hooks/useDeleteOneRecord';
 import { useSnackBar } from '@/ui/feedback/snack-bar-manager/hooks/useSnackBar';
 import { styled } from '@linaria/react';
 import { t } from '@lingui/core/macro';
-import { useState } from 'react';
-import { SEQUENCE_STEP_TYPES } from 'twenty-shared/types';
+import { type KeyboardEvent, type MouseEvent, useState } from 'react';
+import {
+  SEQUENCE_ACTION_EXECUTION_MODES,
+  SEQUENCE_STEP_TYPES,
+} from 'twenty-shared/types';
 import {
   IconArrowDown,
   IconArrowUp,
-  IconBrandLinkedin,
-  IconClock,
-  IconListCheck,
-  IconMail,
-  IconMessage,
+  IconChevronRight,
   IconTrash,
-  IconUserMinus,
 } from 'twenty-ui/icon';
 import { LightIconButton } from 'twenty-ui/input';
 import { themeCssVariables } from 'twenty-ui/theme-constants';
 
 import { type SequenceStepRecord } from '../types/SequenceRecords';
-import { SequenceDelayStepEditor } from './SequenceDelayStepEditor';
-import { SequenceEmailStepEditor } from './SequenceEmailStepEditor';
-import { SequenceConnectionRequestStepEditor } from './SequenceConnectionRequestStepEditor';
-import { SequenceLinkedInMessageStepEditor } from './SequenceLinkedInMessageStepEditor';
-import { SequenceTaskStepEditor } from './SequenceTaskStepEditor';
-import { SequenceWithdrawConnectionRequestStepEditor } from './SequenceWithdrawConnectionRequestStepEditor';
+import { getSequenceStepPresentation } from '../utils/get-sequence-step-presentation';
 
-const StyledCard = styled.article`
+const StyledCard = styled.article<{ isSelected: boolean }>`
   background: ${themeCssVariables.background.secondary};
-  border: 1px solid ${themeCssVariables.border.color.medium};
+  border: 1px solid
+    ${({ isSelected }) =>
+      isSelected
+        ? themeCssVariables.color.blue
+        : themeCssVariables.border.color.medium};
   border-radius: ${themeCssVariables.border.radius.md};
+  box-shadow: ${({ isSelected }) =>
+    isSelected
+      ? themeCssVariables.boxShadow.strong
+      : themeCssVariables.boxShadow.light};
+  cursor: pointer;
   display: flex;
-  flex-direction: column;
+  max-width: 420px;
+  min-height: 78px;
+  overflow: hidden;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease,
+    transform 120ms ease;
+  width: 100%;
+
+  &:hover {
+    border-color: ${themeCssVariables.border.color.strong};
+    transform: translateY(-1px);
+  }
+
+  &:focus-visible {
+    outline: 2px solid ${themeCssVariables.color.blue};
+    outline-offset: 2px;
+  }
 `;
 
-const StyledHeader = styled.div`
+const StyledAccent = styled.div`
+  background: ${themeCssVariables.color.blue};
+  width: 3px;
+`;
+
+const StyledContent = styled.div`
   align-items: center;
-  border-bottom: 1px solid ${themeCssVariables.border.color.light};
   display: flex;
-  gap: ${themeCssVariables.spacing[2]};
+  flex: 1;
+  gap: ${themeCssVariables.spacing[3]};
+  min-width: 0;
   padding: ${themeCssVariables.spacing[3]};
 `;
 
-const StyledStepNumber = styled.span`
+const StyledIcon = styled.div`
   align-items: center;
   background: ${themeCssVariables.background.transparent.light};
-  border-radius: ${themeCssVariables.border.radius.rounded};
+  border-radius: ${themeCssVariables.border.radius.sm};
   color: ${themeCssVariables.font.color.secondary};
-  display: inline-flex;
-  font-size: ${themeCssVariables.font.size.sm};
-  height: 24px;
+  display: flex;
+  height: 36px;
   justify-content: center;
-  width: 24px;
+  width: 36px;
 `;
 
-const StyledTitle = styled.div`
-  color: ${themeCssVariables.font.color.primary};
+const StyledText = styled.div`
   display: flex;
   flex: 1;
-  font-weight: ${themeCssVariables.font.weight.medium};
-  gap: ${themeCssVariables.spacing[2]};
-`;
-
-const StyledHeaderActions = styled.div`
-  display: flex;
-  gap: ${themeCssVariables.spacing[1]};
-`;
-
-const StyledEditor = styled.div`
-  display: flex;
   flex-direction: column;
-  gap: ${themeCssVariables.spacing[3]};
-  padding: ${themeCssVariables.spacing[4]};
+  gap: ${themeCssVariables.spacing['0.5']};
+  min-width: 0;
 `;
 
-const STEP_PRESENTATION = {
-  [SEQUENCE_STEP_TYPES.SEND_EMAIL]: {
-    label: t`Send email`,
-    Icon: IconMail,
-  },
-  [SEQUENCE_STEP_TYPES.DELAY]: { label: t`Wait`, Icon: IconClock },
-  [SEQUENCE_STEP_TYPES.CREATE_TASK]: {
-    label: t`Create task`,
-    Icon: IconListCheck,
-  },
-  [SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST]: {
-    label: t`Send LinkedIn connection request`,
-    Icon: IconBrandLinkedin,
-  },
-  [SEQUENCE_STEP_TYPES.SEND_LINKEDIN_MESSAGE]: {
-    label: t`Send LinkedIn message`,
-    Icon: IconMessage,
-  },
-  [SEQUENCE_STEP_TYPES.WITHDRAW_CONNECTION_REQUEST]: {
-    label: t`Withdraw LinkedIn connection request`,
-    Icon: IconUserMinus,
-  },
+const StyledEyebrow = styled.span`
+  color: ${themeCssVariables.font.color.tertiary};
+  font-size: ${themeCssVariables.font.size.xs};
+  text-transform: uppercase;
+`;
+
+const StyledTitle = styled.span`
+  color: ${themeCssVariables.font.color.primary};
+  font-weight: ${themeCssVariables.font.weight.medium};
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`;
+
+const StyledSummary = styled.span`
+  color: ${themeCssVariables.font.color.tertiary};
+  font-size: ${themeCssVariables.font.size.sm};
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`;
+
+const StyledActions = styled.div`
+  align-items: center;
+  display: flex;
+  gap: ${themeCssVariables.spacing['0.5']};
+`;
+
+const getStepSummary = (step: SequenceStepRecord): string => {
+  switch (step.settings.type) {
+    case SEQUENCE_STEP_TYPES.SEND_EMAIL:
+      return step.settings.subject || t`Click to configure the email`;
+    case SEQUENCE_STEP_TYPES.DELAY:
+      return t`${step.settings.days}d ${step.settings.hours}h ${step.settings.minutes}m`;
+    case SEQUENCE_STEP_TYPES.CREATE_TASK:
+      return step.settings.titleTemplate || t`Click to configure the task`;
+    case SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST:
+      return step.settings.noteTemplate || t`Invitation without a note`;
+    case SEQUENCE_STEP_TYPES.SEND_LINKEDIN_MESSAGE:
+      return step.settings.messageTemplate || t`Click to configure the message`;
+    case SEQUENCE_STEP_TYPES.WITHDRAW_CONNECTION_REQUEST:
+      return t`After ${step.settings.withdrawAfterDays}d ${step.settings.withdrawAfterHours}h`;
+    case SEQUENCE_STEP_TYPES.CONDITION:
+      return t`Splits into Yes and No paths`;
+    case SEQUENCE_STEP_TYPES.ENRICH_PHONE_NUMBER:
+      return t`Powered by Apollo`;
+  }
+};
+
+const getExecutionLabel = (step: SequenceStepRecord): string => {
+  if (step.settings.type === SEQUENCE_STEP_TYPES.CREATE_TASK) {
+    return t`Manual`;
+  }
+
+  if (step.settings.type === SEQUENCE_STEP_TYPES.CONDITION) {
+    return t`Condition`;
+  }
+
+  if (step.settings.type === SEQUENCE_STEP_TYPES.DELAY) {
+    return t`Timing`;
+  }
+
+  return step.settings.executionMode === SEQUENCE_ACTION_EXECUTION_MODES.MANUAL
+    ? t`Manual`
+    : t`Automated`;
 };
 
 type SequenceStepCardProps = {
   step: SequenceStepRecord;
   stepNumber: number;
+  isSelected: boolean;
   canMoveUp: boolean;
   canMoveDown: boolean;
   canDelete: boolean;
-  isEditable: boolean;
+  onSelect: () => void;
   onMoveUp: () => Promise<void>;
   onMoveDown: () => Promise<void>;
   onDeleted: () => Promise<void>;
@@ -113,10 +169,11 @@ type SequenceStepCardProps = {
 export const SequenceStepCard = ({
   step,
   stepNumber,
+  isSelected,
   canMoveUp,
   canMoveDown,
   canDelete,
-  isEditable,
+  onSelect,
   onMoveUp,
   onMoveDown,
   onDeleted,
@@ -126,7 +183,7 @@ export const SequenceStepCard = ({
     objectNameSingular: 'sequenceStep',
   });
   const { enqueueErrorSnackBar } = useSnackBar();
-  const presentation = STEP_PRESENTATION[step.type];
+  const presentation = getSequenceStepPresentation(step);
   const StepIcon = presentation.Icon;
 
   const deleteStep = async () => {
@@ -144,83 +201,69 @@ export const SequenceStepCard = ({
     }
   };
 
+  const stopAndRun =
+    (callback: () => Promise<void>) =>
+    (event: MouseEvent<HTMLButtonElement>) => {
+      event.stopPropagation();
+      void callback();
+    };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      onSelect();
+    }
+  };
+
   return (
-    <StyledCard>
-      <StyledHeader>
-        <StyledStepNumber>{stepNumber}</StyledStepNumber>
-        <StyledTitle>
-          <StepIcon size={16} />
-          {step.name || presentation.label}
-        </StyledTitle>
-        <StyledHeaderActions>
+    <StyledCard
+      role="button"
+      tabIndex={0}
+      isSelected={isSelected}
+      onClick={onSelect}
+      onKeyDown={handleKeyDown}
+      aria-label={t`Configure step ${stepNumber}: ${presentation.label}`}
+    >
+      <StyledAccent />
+      <StyledContent>
+        <StyledIcon>
+          <StepIcon size={18} />
+        </StyledIcon>
+        <StyledText>
+          <StyledEyebrow>
+            {t`Step ${stepNumber}`} · {getExecutionLabel(step)}
+          </StyledEyebrow>
+          <StyledTitle>{presentation.label}</StyledTitle>
+          <StyledSummary>{getStepSummary(step)}</StyledSummary>
+        </StyledText>
+        <StyledActions>
           <LightIconButton
             Icon={IconArrowUp}
             title={t`Move step up`}
             disabled={!canMoveUp}
-            onClick={() => void onMoveUp()}
+            onClick={stopAndRun(onMoveUp)}
             accent="tertiary"
           />
           <LightIconButton
             Icon={IconArrowDown}
             title={t`Move step down`}
             disabled={!canMoveDown}
-            onClick={() => void onMoveDown()}
+            onClick={stopAndRun(onMoveDown)}
             accent="tertiary"
           />
           <LightIconButton
             Icon={IconTrash}
             title={t`Delete step`}
             disabled={isDeleting || !canDelete}
-            onClick={() => void deleteStep()}
+            onClick={stopAndRun(deleteStep)}
             accent="tertiary"
           />
-        </StyledHeaderActions>
-      </StyledHeader>
-      <StyledEditor>
-        {step.settings.type === SEQUENCE_STEP_TYPES.SEND_EMAIL && (
-          <SequenceEmailStepEditor
-            step={step}
-            settings={step.settings}
-            disabled={!isEditable}
+          <IconChevronRight
+            size={16}
+            color={themeCssVariables.font.color.tertiary}
           />
-        )}
-        {step.settings.type === SEQUENCE_STEP_TYPES.DELAY && (
-          <SequenceDelayStepEditor
-            step={step}
-            settings={step.settings}
-            disabled={!isEditable}
-          />
-        )}
-        {step.settings.type === SEQUENCE_STEP_TYPES.CREATE_TASK && (
-          <SequenceTaskStepEditor
-            step={step}
-            settings={step.settings}
-            disabled={!isEditable}
-          />
-        )}
-        {step.settings.type === SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST && (
-          <SequenceConnectionRequestStepEditor
-            step={step}
-            settings={step.settings}
-            disabled={!isEditable}
-          />
-        )}
-        {step.settings.type === SEQUENCE_STEP_TYPES.SEND_LINKEDIN_MESSAGE && (
-          <SequenceLinkedInMessageStepEditor
-            step={step}
-            settings={step.settings}
-            disabled={!isEditable}
-          />
-        )}
-        {step.settings.type ===
-          SEQUENCE_STEP_TYPES.WITHDRAW_CONNECTION_REQUEST && (
-          <SequenceWithdrawConnectionRequestStepEditor
-            step={step}
-            settings={step.settings}
-            disabled={!isEditable}
-          />
-        )}
-      </StyledEditor>
+        </StyledActions>
+      </StyledContent>
     </StyledCard>
   );
 };

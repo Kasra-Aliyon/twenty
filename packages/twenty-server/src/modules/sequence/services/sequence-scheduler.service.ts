@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 
 import {
   LINKEDIN_ACTION_STATUSES,
+  SEQUENCE_ACTION_EXECUTION_MODES,
   SEQUENCE_ENROLLMENT_STATUSES,
   SEQUENCE_STATUSES,
   SEQUENCE_STEP_TYPES,
@@ -35,6 +36,7 @@ import {
 import { SequenceEnrollmentWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence-enrollment.workspace-entity';
 import { SequenceStepWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence-step.workspace-entity';
 import { SequenceWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence.workspace-entity';
+import { findNextSequenceStep } from 'src/modules/sequence/utils/find-next-sequence-step.util';
 import { parseSequenceSettings } from 'src/modules/sequence/utils/parse-sequence-settings.util';
 import {
   isWithinSendingWindow,
@@ -144,14 +146,18 @@ export class SequenceSchedulerService {
       const dueEmailsByMailboxId = new Map<string, DueEmail[]>();
 
       for (const enrollment of dueEnrollments) {
-        const nextStep = stepsBySequenceId
-          .get(enrollment.sequenceId)
-          ?.find((step) => step.position > enrollment.currentStepPosition);
+        const nextStep = findNextSequenceStep({
+          steps: stepsBySequenceId.get(enrollment.sequenceId) ?? [],
+          currentStepId: enrollment.currentStepId,
+          currentStepPosition: enrollment.currentStepPosition,
+        });
         const settings = settingsBySequenceId.get(enrollment.sequenceId);
 
         if (
           !isDefined(nextStep) ||
-          nextStep.type !== SEQUENCE_STEP_TYPES.SEND_EMAIL ||
+          nextStep.settings.type !== SEQUENCE_STEP_TYPES.SEND_EMAIL ||
+          nextStep.settings.executionMode ===
+            SEQUENCE_ACTION_EXECUTION_MODES.MANUAL ||
           !isDefined(settings)
         ) {
           await this.sequenceQueueService.enqueueProcess({

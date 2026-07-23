@@ -78,6 +78,7 @@ export const SequenceTaskStepEditor = ({
   const [isSaving, setIsSaving] = useState(false);
   const { updateOneRecord } = useUpdateOneRecord();
   const { enqueueSuccessSnackBar, enqueueErrorSnackBar } = useSnackBar();
+  const isSimpleManualTask = settings.taskType === SEQUENCE_TASK_TYPES.CUSTOM;
 
   const assigneeOptions: SelectOption<string>[] = [
     { value: '', label: t`Enrollment owner` },
@@ -99,6 +100,7 @@ export const SequenceTaskStepEditor = ({
         updateOneRecordInput: {
           settings: {
             type: 'CREATE_TASK',
+            branch: settings.branch,
             taskType,
             titleTemplate,
             notesTemplate,
@@ -119,40 +121,42 @@ export const SequenceTaskStepEditor = ({
 
   return (
     <>
-      <StyledFieldsGrid>
-        <Select
-          dropdownId={`sequence-task-type-${step.id}`}
-          label={t`Task type`}
-          fullWidth
-          value={taskType}
-          options={TASK_TYPE_OPTIONS}
-          onChange={setTaskType}
-        />
-        <Select
-          dropdownId={`sequence-task-priority-${step.id}`}
-          label={t`Priority`}
-          fullWidth
-          value={priority}
-          options={PRIORITY_OPTIONS}
-          onChange={setPriority}
-        />
-        <Select
-          dropdownId={`sequence-task-assignee-${step.id}`}
-          label={t`Assignee`}
-          fullWidth
-          value={assigneeWorkspaceMemberId}
-          options={assigneeOptions}
-          onChange={setAssigneeWorkspaceMemberId}
-        />
-        <Select
-          dropdownId={`sequence-task-continue-${step.id}`}
-          label={t`Continue sequence`}
-          fullWidth
-          value={continueMode}
-          options={CONTINUE_MODE_OPTIONS}
-          onChange={setContinueMode}
-        />
-      </StyledFieldsGrid>
+      {!isSimpleManualTask && (
+        <StyledFieldsGrid>
+          <Select
+            dropdownId={`sequence-task-type-${step.id}`}
+            label={t`Task type`}
+            fullWidth
+            value={taskType}
+            options={TASK_TYPE_OPTIONS}
+            onChange={setTaskType}
+          />
+          <Select
+            dropdownId={`sequence-task-priority-${step.id}`}
+            label={t`Priority`}
+            fullWidth
+            value={priority}
+            options={PRIORITY_OPTIONS}
+            onChange={setPriority}
+          />
+          <Select
+            dropdownId={`sequence-task-assignee-${step.id}`}
+            label={t`Assignee`}
+            fullWidth
+            value={assigneeWorkspaceMemberId}
+            options={assigneeOptions}
+            onChange={setAssigneeWorkspaceMemberId}
+          />
+          <Select
+            dropdownId={`sequence-task-continue-${step.id}`}
+            label={t`Continue sequence`}
+            fullWidth
+            value={continueMode}
+            options={CONTINUE_MODE_OPTIONS}
+            onChange={setContinueMode}
+          />
+        </StyledFieldsGrid>
+      )}
 
       <StyledField>
         <span>{t`Task title`}</span>
@@ -164,7 +168,7 @@ export const SequenceTaskStepEditor = ({
       </StyledField>
 
       <StyledField>
-        <span>{t`Notes`}</span>
+        <span>{isSimpleManualTask ? t`Description` : t`Notes`}</span>
         <StyledTextarea
           value={notesTemplate}
           onChange={(event) => setNotesTemplate(event.target.value)}
@@ -172,7 +176,7 @@ export const SequenceTaskStepEditor = ({
         />
       </StyledField>
 
-      {continueMode === 'ON_DEADLINE' && (
+      {!isSimpleManualTask && continueMode === 'ON_DEADLINE' && (
         <StyledField>
           <span>{t`Deadline in days`}</span>
           <StyledInput
@@ -192,7 +196,7 @@ export const SequenceTaskStepEditor = ({
           size="small"
           onClick={() => void save()}
           isLoading={isSaving}
-          disabled={disabled}
+          disabled={disabled || titleTemplate.trim().length === 0}
         />
       </StyledActions>
     </>

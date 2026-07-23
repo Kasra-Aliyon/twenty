@@ -14,10 +14,49 @@ export const SEQUENCE_STEP_TYPES = {
   SEND_CONNECTION_REQUEST: 'SEND_CONNECTION_REQUEST',
   SEND_LINKEDIN_MESSAGE: 'SEND_LINKEDIN_MESSAGE',
   WITHDRAW_CONNECTION_REQUEST: 'WITHDRAW_CONNECTION_REQUEST',
+  CONDITION: 'CONDITION',
+  ENRICH_PHONE_NUMBER: 'ENRICH_PHONE_NUMBER',
 } as const;
 
 export type SequenceStepType =
   (typeof SEQUENCE_STEP_TYPES)[keyof typeof SEQUENCE_STEP_TYPES];
+
+export const SEQUENCE_ACTION_EXECUTION_MODES = {
+  AUTOMATED: 'AUTOMATED',
+  MANUAL: 'MANUAL',
+} as const;
+
+export type SequenceActionExecutionMode =
+  (typeof SEQUENCE_ACTION_EXECUTION_MODES)[keyof typeof SEQUENCE_ACTION_EXECUTION_MODES];
+
+export const SEQUENCE_CONDITION_TYPES = {
+  IS_IN_LINKEDIN_NETWORK: 'IS_IN_LINKEDIN_NETWORK',
+  HAS_EMAIL_ADDRESS: 'HAS_EMAIL_ADDRESS',
+  HAS_LINKEDIN_URL: 'HAS_LINKEDIN_URL',
+  ACCEPTED_LINKEDIN_INVITE: 'ACCEPTED_LINKEDIN_INVITE',
+  OPENED_LINKEDIN_MESSAGE: 'OPENED_LINKEDIN_MESSAGE',
+  HAS_PHONE_NUMBER: 'HAS_PHONE_NUMBER',
+} as const;
+
+export type SequenceConditionType =
+  (typeof SEQUENCE_CONDITION_TYPES)[keyof typeof SEQUENCE_CONDITION_TYPES];
+
+export const SEQUENCE_CONDITION_BRANCHES = {
+  YES: 'YES',
+  NO: 'NO',
+} as const;
+
+export type SequenceConditionBranch =
+  (typeof SEQUENCE_CONDITION_BRANCHES)[keyof typeof SEQUENCE_CONDITION_BRANCHES];
+
+export type SequenceStepBranch = {
+  conditionStepId: string;
+  outcome: SequenceConditionBranch;
+};
+
+export type SequenceStepPlacementSettings = {
+  branch?: SequenceStepBranch;
+};
 
 export const SEQUENCE_ENROLLMENT_STATUSES = {
   PENDING: 'PENDING',
@@ -76,7 +115,15 @@ export type SequenceSettings = {
   stopOnReply: boolean;
 };
 
-export type SequenceEmailStepSettings = {
+export type SequenceActionExecutionSettings = SequenceStepPlacementSettings & {
+  // Optional so sequences created before manual execution was introduced
+  // continue to run in automated mode.
+  executionMode?: SequenceActionExecutionMode;
+  manualTaskTitle?: string;
+  manualTaskDescription?: string;
+};
+
+export type SequenceEmailStepSettings = SequenceActionExecutionSettings & {
   type: typeof SEQUENCE_STEP_TYPES.SEND_EMAIL;
   subject: string;
   bodyHtml: string;
@@ -85,6 +132,7 @@ export type SequenceEmailStepSettings = {
 };
 
 export type SequenceDelayStepSettings = {
+  branch?: SequenceStepBranch;
   type: typeof SEQUENCE_STEP_TYPES.DELAY;
   days: number;
   hours: number;
@@ -94,6 +142,7 @@ export type SequenceDelayStepSettings = {
 export type SequenceTaskContinueMode = 'IMMEDIATE' | 'ON_DONE' | 'ON_DEADLINE';
 
 export type SequenceCreateTaskStepSettings = {
+  branch?: SequenceStepBranch;
   type: typeof SEQUENCE_STEP_TYPES.CREATE_TASK;
   taskType: SequenceTaskType;
   titleTemplate: string;
@@ -104,22 +153,37 @@ export type SequenceCreateTaskStepSettings = {
   deadlineDays: number | null;
 };
 
-export type SequenceConnectionRequestStepSettings = {
-  type: typeof SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST;
-  noteTemplate: string;
-  skipIfAlreadyConnected: boolean;
+export type SequenceConnectionRequestStepSettings =
+  SequenceActionExecutionSettings & {
+    type: typeof SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST;
+    noteTemplate: string;
+    skipIfAlreadyConnected: boolean;
+  };
+
+export type SequenceWithdrawConnectionRequestStepSettings =
+  SequenceActionExecutionSettings & {
+    type: typeof SEQUENCE_STEP_TYPES.WITHDRAW_CONNECTION_REQUEST;
+    withdrawAfterDays: number;
+    withdrawAfterHours: number;
+  };
+
+export type SequenceLinkedInMessageStepSettings =
+  SequenceActionExecutionSettings & {
+    type: typeof SEQUENCE_STEP_TYPES.SEND_LINKEDIN_MESSAGE;
+    messageTemplate: string;
+  };
+
+export type SequenceConditionStepSettings = {
+  branch?: SequenceStepBranch;
+  type: typeof SEQUENCE_STEP_TYPES.CONDITION;
+  condition: SequenceConditionType;
+  expected?: boolean;
 };
 
-export type SequenceWithdrawConnectionRequestStepSettings = {
-  type: typeof SEQUENCE_STEP_TYPES.WITHDRAW_CONNECTION_REQUEST;
-  withdrawAfterDays: number;
-  withdrawAfterHours: number;
-};
-
-export type SequenceLinkedInMessageStepSettings = {
-  type: typeof SEQUENCE_STEP_TYPES.SEND_LINKEDIN_MESSAGE;
-  messageTemplate: string;
-};
+export type SequenceEnrichPhoneNumberStepSettings =
+  SequenceActionExecutionSettings & {
+    type: typeof SEQUENCE_STEP_TYPES.ENRICH_PHONE_NUMBER;
+  };
 
 export type SequenceStepSettings =
   | SequenceEmailStepSettings
@@ -127,4 +191,6 @@ export type SequenceStepSettings =
   | SequenceCreateTaskStepSettings
   | SequenceConnectionRequestStepSettings
   | SequenceLinkedInMessageStepSettings
-  | SequenceWithdrawConnectionRequestStepSettings;
+  | SequenceWithdrawConnectionRequestStepSettings
+  | SequenceConditionStepSettings
+  | SequenceEnrichPhoneNumberStepSettings;

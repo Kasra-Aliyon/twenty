@@ -3,7 +3,10 @@ import { useSnackBar } from '@/ui/feedback/snack-bar-manager/hooks/useSnackBar';
 import { styled } from '@linaria/react';
 import { t } from '@lingui/core/macro';
 import { useState } from 'react';
-import { type SequenceLinkedInMessageStepSettings } from 'twenty-shared/types';
+import {
+  SEQUENCE_ACTION_EXECUTION_MODES,
+  type SequenceLinkedInMessageStepSettings,
+} from 'twenty-shared/types';
 import { Button } from 'twenty-ui/input';
 import { themeCssVariables } from 'twenty-ui/theme-constants';
 
@@ -13,6 +16,7 @@ import {
   StyledField,
   StyledTextarea,
 } from './SequencePageStyles';
+import { SequenceExecutionModeFields } from './SequenceExecutionModeFields';
 import { SequenceVariablePicker } from './SequenceVariablePicker';
 
 const LINKEDIN_MESSAGE_CHARACTER_LIMIT = 2000;
@@ -51,6 +55,15 @@ export const SequenceLinkedInMessageStepEditor = ({
   const [messageTemplate, setMessageTemplate] = useState(
     settings.messageTemplate,
   );
+  const [executionMode, setExecutionMode] = useState(
+    settings.executionMode ?? SEQUENCE_ACTION_EXECUTION_MODES.AUTOMATED,
+  );
+  const [manualTaskTitle, setManualTaskTitle] = useState(
+    settings.manualTaskTitle ?? '',
+  );
+  const [manualTaskDescription, setManualTaskDescription] = useState(
+    settings.manualTaskDescription ?? '',
+  );
   const [isSaving, setIsSaving] = useState(false);
   const { updateOneRecord } = useUpdateOneRecord();
   const { enqueueSuccessSnackBar, enqueueErrorSnackBar } = useSnackBar();
@@ -75,7 +88,11 @@ export const SequenceLinkedInMessageStepEditor = ({
         updateOneRecordInput: {
           settings: {
             type: 'SEND_LINKEDIN_MESSAGE',
+            branch: settings.branch,
             messageTemplate,
+            executionMode,
+            manualTaskTitle,
+            manualTaskDescription,
           },
         },
       });
@@ -91,6 +108,15 @@ export const SequenceLinkedInMessageStepEditor = ({
 
   return (
     <>
+      <SequenceExecutionModeFields
+        executionMode={executionMode}
+        manualTaskTitle={manualTaskTitle}
+        manualTaskDescription={manualTaskDescription}
+        onExecutionModeChange={setExecutionMode}
+        onManualTaskTitleChange={setManualTaskTitle}
+        onManualTaskDescriptionChange={setManualTaskDescription}
+      />
+
       <StyledField>
         <StyledFieldHeader>
           <span>{t`Direct message`}</span>
@@ -126,7 +152,12 @@ export const SequenceLinkedInMessageStepEditor = ({
           size="small"
           onClick={() => void save()}
           isLoading={isSaving}
-          disabled={disabled || isInvalid}
+          disabled={
+            disabled ||
+            isInvalid ||
+            (executionMode === SEQUENCE_ACTION_EXECUTION_MODES.MANUAL &&
+              manualTaskTitle.trim().length === 0)
+          }
         />
       </StyledActions>
     </>

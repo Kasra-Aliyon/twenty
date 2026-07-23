@@ -2,8 +2,10 @@ import { Injectable } from '@nestjs/common';
 
 import { msg } from '@lingui/core/macro';
 import {
+  SEQUENCE_ACTION_EXECUTION_MODES,
   SEQUENCE_ENROLLMENT_STATUSES,
   SEQUENCE_STATUSES,
+  SEQUENCE_STEP_TYPES,
   SEQUENCE_WAITING_ON,
   type SequenceEnrollmentStatus,
 } from 'twenty-shared/types';
@@ -245,16 +247,23 @@ export class SequenceInvariantService {
     }
 
     if (data.status === SEQUENCE_STATUSES.ACTIVE) {
+      const steps = await this.getSequenceSteps({
+        authContext,
+        sequenceId,
+      });
       const senderConnectedAccountId =
         data.senderConnectedAccountId ?? sequence.senderConnectedAccountId;
+      const hasAutomatedEmail = steps.some(
+        ({ settings }) =>
+          settings.type === SEQUENCE_STEP_TYPES.SEND_EMAIL &&
+          settings.executionMode !== SEQUENCE_ACTION_EXECUTION_MODES.MANUAL,
+      );
 
-      if (!senderConnectedAccountId) {
+      if (hasAutomatedEmail && !senderConnectedAccountId) {
         this.throwBadRequest('Choose a sender before activating the sequence');
       }
 
-      const stepCount = await this.countSteps({ authContext, sequenceId });
-
-      if (stepCount === 0) {
+      if (steps.length === 0) {
         this.throwBadRequest('Add a step before activating the sequence');
       }
     }
@@ -396,13 +405,13 @@ export class SequenceInvariantService {
     );
   }
 
-  private async countSteps({
+  private async getSequenceSteps({
     authContext,
     sequenceId,
   }: {
     authContext: WorkspaceAuthContext;
     sequenceId: string;
-  }): Promise<number> {
+  }): Promise<SequenceStepWorkspaceEntity[]> {
     return this.globalWorkspaceOrmManager.executeInWorkspaceContext(
       async () => {
         const repository = await this.globalWorkspaceOrmManager.getRepository(
@@ -411,7 +420,7 @@ export class SequenceInvariantService {
           { shouldBypassPermissionChecks: true },
         );
 
-        return repository.count({ where: { sequenceId } });
+        return repository.find({ where: { sequenceId } });
       },
       authContext,
       { lite: true },

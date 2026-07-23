@@ -36,6 +36,7 @@ import { ApolloEnrichmentService } from 'src/modules/apollo-enrichment/services/
   exports: [
     ApolloEnrichmentBackfillCronCommand,
     ApolloEnrichmentBackfillCommand,
+    ApolloEnrichmentService,
   ],
 })
 export class ApolloEnrichmentModule {}

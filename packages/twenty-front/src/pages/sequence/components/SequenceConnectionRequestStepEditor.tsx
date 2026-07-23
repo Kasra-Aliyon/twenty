@@ -3,7 +3,10 @@ import { useSnackBar } from '@/ui/feedback/snack-bar-manager/hooks/useSnackBar';
 import { styled } from '@linaria/react';
 import { t } from '@lingui/core/macro';
 import { useState } from 'react';
-import { type SequenceConnectionRequestStepSettings } from 'twenty-shared/types';
+import {
+  SEQUENCE_ACTION_EXECUTION_MODES,
+  type SequenceConnectionRequestStepSettings,
+} from 'twenty-shared/types';
 import { Button, Toggle } from 'twenty-ui/input';
 import { themeCssVariables } from 'twenty-ui/theme-constants';
 
@@ -13,6 +16,7 @@ import {
   StyledField,
   StyledTextarea,
 } from './SequencePageStyles';
+import { SequenceExecutionModeFields } from './SequenceExecutionModeFields';
 import { SequenceVariablePicker } from './SequenceVariablePicker';
 
 const LINKEDIN_NOTE_CHARACTER_LIMIT = 200;
@@ -61,6 +65,15 @@ export const SequenceConnectionRequestStepEditor = ({
   const [skipIfAlreadyConnected, setSkipIfAlreadyConnected] = useState(
     settings.skipIfAlreadyConnected,
   );
+  const [executionMode, setExecutionMode] = useState(
+    settings.executionMode ?? SEQUENCE_ACTION_EXECUTION_MODES.AUTOMATED,
+  );
+  const [manualTaskTitle, setManualTaskTitle] = useState(
+    settings.manualTaskTitle ?? '',
+  );
+  const [manualTaskDescription, setManualTaskDescription] = useState(
+    settings.manualTaskDescription ?? '',
+  );
   const [isSaving, setIsSaving] = useState(false);
   const { updateOneRecord } = useUpdateOneRecord();
   const { enqueueSuccessSnackBar, enqueueErrorSnackBar } = useSnackBar();
@@ -75,8 +88,12 @@ export const SequenceConnectionRequestStepEditor = ({
         updateOneRecordInput: {
           settings: {
             type: 'SEND_CONNECTION_REQUEST',
+            branch: settings.branch,
             noteTemplate,
             skipIfAlreadyConnected,
+            executionMode,
+            manualTaskTitle,
+            manualTaskDescription,
           },
         },
       });
@@ -92,6 +109,15 @@ export const SequenceConnectionRequestStepEditor = ({
 
   return (
     <>
+      <SequenceExecutionModeFields
+        executionMode={executionMode}
+        manualTaskTitle={manualTaskTitle}
+        manualTaskDescription={manualTaskDescription}
+        onExecutionModeChange={setExecutionMode}
+        onManualTaskTitleChange={setManualTaskTitle}
+        onManualTaskDescriptionChange={setManualTaskDescription}
+      />
+
       <StyledField>
         <StyledFieldHeader>
           <span>{t`Invitation note`}</span>
@@ -136,7 +162,11 @@ export const SequenceConnectionRequestStepEditor = ({
           size="small"
           onClick={() => void save()}
           isLoading={isSaving}
-          disabled={disabled}
+          disabled={
+            disabled ||
+            (executionMode === SEQUENCE_ACTION_EXECUTION_MODES.MANUAL &&
+              manualTaskTitle.trim().length === 0)
+          }
         />
       </StyledActions>
     </>

@@ -12,6 +12,7 @@ import {
   TASK_PRIORITIES,
 } from 'twenty-shared/types';
 
+import { STANDARD_NAVIGATION_MENU_ITEMS } from 'src/engine/workspace-manager/twenty-standard-application/constants/standard-navigation-menu-item.constant';
 import { computeTwentyStandardApplicationAllFlatEntityMaps } from 'src/engine/workspace-manager/twenty-standard-application/utils/twenty-standard-application-all-flat-entity-maps.constant';
 
 const WORKSPACE_ID = '20202020-1111-4111-8111-111111111111';
@@ -25,6 +26,18 @@ describe('Sequence standard metadata build', () => {
       workspaceId: WORKSPACE_ID,
       twentyStandardApplicationId: TWENTY_STANDARD_APPLICATION_ID,
     });
+
+  it('builds the Sequence Tasks navigation item', () => {
+    expect(
+      allFlatEntityMaps.flatNavigationMenuItemMaps.byUniversalIdentifier[
+        STANDARD_NAVIGATION_MENU_ITEMS.taskQueue.universalIdentifier
+      ],
+    ).toMatchObject({
+      name: 'Sequence Tasks',
+      link: '/tasks',
+      icon: 'IconCheckbox',
+    });
+  });
 
   it('builds the sequence, step, and enrollment system objects', () => {
     for (const objectDefinition of [

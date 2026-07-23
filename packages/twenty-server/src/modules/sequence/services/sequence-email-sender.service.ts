@@ -120,7 +120,7 @@ export class SequenceEmailSenderService {
       .filter(
         (step) =>
           step.position < currentStep.position &&
-          step.type === SEQUENCE_STEP_TYPES.SEND_EMAIL,
+          step.settings.type === SEQUENCE_STEP_TYPES.SEND_EMAIL,
       )
       .sort((left, right) => right.position - left.position);
 

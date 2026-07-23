@@ -42,7 +42,13 @@ export const SequenceDelayStepEditor = ({
         objectNameSingular: 'sequenceStep',
         idToUpdate: step.id,
         updateOneRecordInput: {
-          settings: { type: 'DELAY', days, hours, minutes },
+          settings: {
+            type: 'DELAY',
+            branch: settings.branch,
+            days,
+            hours,
+            minutes,
+          },
         },
       });
       enqueueSuccessSnackBar({ message: t`Delay step saved.` });

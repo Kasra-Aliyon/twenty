@@ -189,7 +189,7 @@ const SequencePageContent = () => {
               isActive={activeTab === 'steps'}
               onClick={() => setActiveTab('steps')}
             >
-              {t`Steps`}
+              {t`Builder`}
             </StyledTab>
             <StyledTab
               type="button"

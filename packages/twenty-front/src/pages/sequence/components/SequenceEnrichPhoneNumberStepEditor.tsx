@@ -1,42 +1,37 @@
 import { useUpdateOneRecord } from '@/object-record/hooks/useUpdateOneRecord';
 import { useSnackBar } from '@/ui/feedback/snack-bar-manager/hooks/useSnackBar';
+import { styled } from '@linaria/react';
 import { t } from '@lingui/core/macro';
 import { useState } from 'react';
 import {
   SEQUENCE_ACTION_EXECUTION_MODES,
-  type SequenceWithdrawConnectionRequestStepSettings,
+  type SequenceEnrichPhoneNumberStepSettings,
 } from 'twenty-shared/types';
 import { Button } from 'twenty-ui/input';
+import { themeCssVariables } from 'twenty-ui/theme-constants';
 
 import { type SequenceStepRecord } from '../types/SequenceRecords';
-import {
-  StyledActions,
-  StyledFieldsGrid,
-  StyledField,
-  StyledInput,
-} from './SequencePageStyles';
 import { SequenceExecutionModeFields } from './SequenceExecutionModeFields';
+import { StyledActions } from './SequencePageStyles';
 
-type SequenceWithdrawConnectionRequestStepEditorProps = {
+const StyledDescription = styled.p`
+  color: ${themeCssVariables.font.color.tertiary};
+  font-size: ${themeCssVariables.font.size.sm};
+  line-height: 1.5;
+  margin: 0;
+`;
+
+type SequenceEnrichPhoneNumberStepEditorProps = {
   step: SequenceStepRecord;
-  settings: SequenceWithdrawConnectionRequestStepSettings;
+  settings: SequenceEnrichPhoneNumberStepSettings;
   disabled: boolean;
 };
 
-const toNonNegativeNumber = (value: string) =>
-  Math.max(0, Number.isFinite(Number(value)) ? Number(value) : 0);
-
-export const SequenceWithdrawConnectionRequestStepEditor = ({
+export const SequenceEnrichPhoneNumberStepEditor = ({
   step,
   settings,
   disabled,
-}: SequenceWithdrawConnectionRequestStepEditorProps) => {
-  const [withdrawAfterDays, setWithdrawAfterDays] = useState(
-    settings.withdrawAfterDays,
-  );
-  const [withdrawAfterHours, setWithdrawAfterHours] = useState(
-    settings.withdrawAfterHours,
-  );
+}: SequenceEnrichPhoneNumberStepEditorProps) => {
   const [executionMode, setExecutionMode] = useState(
     settings.executionMode ?? SEQUENCE_ACTION_EXECUTION_MODES.AUTOMATED,
   );
@@ -59,20 +54,18 @@ export const SequenceWithdrawConnectionRequestStepEditor = ({
         idToUpdate: step.id,
         updateOneRecordInput: {
           settings: {
-            type: 'WITHDRAW_CONNECTION_REQUEST',
+            type: 'ENRICH_PHONE_NUMBER',
             branch: settings.branch,
-            withdrawAfterDays,
-            withdrawAfterHours,
             executionMode,
             manualTaskTitle,
             manualTaskDescription,
           },
         },
       });
-      enqueueSuccessSnackBar({ message: t`Withdrawal step saved.` });
+      enqueueSuccessSnackBar({ message: t`Phone enrichment step saved.` });
     } catch {
       enqueueErrorSnackBar({
-        message: t`The withdrawal step could not be saved.`,
+        message: t`The phone enrichment step could not be saved.`,
       });
     } finally {
       setIsSaving(false);
@@ -89,34 +82,14 @@ export const SequenceWithdrawConnectionRequestStepEditor = ({
         onManualTaskTitleChange={setManualTaskTitle}
         onManualTaskDescriptionChange={setManualTaskDescription}
       />
-
-      <StyledFieldsGrid>
-        <StyledField>
-          <span>{t`Withdraw after days`}</span>
-          <StyledInput
-            type="number"
-            min={0}
-            value={withdrawAfterDays}
-            onChange={(event) =>
-              setWithdrawAfterDays(toNonNegativeNumber(event.target.value))
-            }
-          />
-        </StyledField>
-        <StyledField>
-          <span>{t`Additional hours`}</span>
-          <StyledInput
-            type="number"
-            min={0}
-            value={withdrawAfterHours}
-            onChange={(event) =>
-              setWithdrawAfterHours(toNonNegativeNumber(event.target.value))
-            }
-          />
-        </StyledField>
-      </StyledFieldsGrid>
+      <StyledDescription>
+        {executionMode === SEQUENCE_ACTION_EXECUTION_MODES.AUTOMATED
+          ? t`Apollo enriches contacts that do not already have a phone number. The sequence records an error when enrichment is disabled or no number is found.`
+          : t`A task is created for the sequence assignee to find and add the phone number.`}
+      </StyledDescription>
       <StyledActions>
         <Button
-          title={t`Save withdrawal step`}
+          title={t`Save phone enrichment step`}
           size="small"
           onClick={() => void save()}
           isLoading={isSaving}

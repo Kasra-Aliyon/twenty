@@ -1,103 +1,163 @@
 import { useCreateOneRecord } from '@/object-record/hooks/useCreateOneRecord';
+import { useDeleteOneRecord } from '@/object-record/hooks/useDeleteOneRecord';
 import { useFindManyRecords } from '@/object-record/hooks/useFindManyRecords';
 import { useUpdateOneRecord } from '@/object-record/hooks/useUpdateOneRecord';
 import { useSnackBar } from '@/ui/feedback/snack-bar-manager/hooks/useSnackBar';
-import { Dropdown } from '@/ui/layout/dropdown/components/Dropdown';
-import { DropdownContent } from '@/ui/layout/dropdown/components/DropdownContent';
-import { DropdownMenuItemsContainer } from '@/ui/layout/dropdown/components/DropdownMenuItemsContainer';
-import { GenericDropdownContentWidth } from '@/ui/layout/dropdown/constants/GenericDropdownContentWidth';
-import { useCloseDropdown } from '@/ui/layout/dropdown/hooks/useCloseDropdown';
 import { styled } from '@linaria/react';
 import { t } from '@lingui/core/macro';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import {
   SEQUENCE_STEP_TYPES,
-  SEQUENCE_TASK_TYPES,
-  TASK_PRIORITIES,
-  type SequenceStepSettings,
+  type SequenceConditionType,
+  type SequenceStepBranch,
   type SequenceStepType,
+  type SequenceTaskType,
 } from 'twenty-shared/types';
-import {
-  IconBrandLinkedin,
-  IconClock,
-  IconListCheck,
-  IconMail,
-  IconMessage,
-  IconPlus,
-  IconUserMinus,
-} from 'twenty-ui/icon';
+import { IconPlayerPlay, IconPlus } from 'twenty-ui/icon';
 import { Button } from 'twenty-ui/input';
-import { MenuItem } from 'twenty-ui/navigation';
 import { themeCssVariables } from 'twenty-ui/theme-constants';
 
 import { type SequenceStepRecord } from '../types/SequenceRecords';
-import { StyledEmptyState } from './SequencePageStyles';
+import { getDefaultSequenceStepSettings } from '../utils/get-default-sequence-step-settings';
+import { getSequenceStepStorageType } from '../utils/get-sequence-step-storage-type';
+import { SequenceConditionBranches } from './SequenceConditionBranches';
 import { SequenceStepCard } from './SequenceStepCard';
+import { SequenceStepEditorPanel } from './SequenceStepEditorPanel';
+import {
+  SequenceStepPalette,
+  type SequenceStepPaletteOption,
+} from './SequenceStepPalette';
 
-const ADD_STEP_DROPDOWN_ID = 'sequence-add-step';
 const SEQUENCE_STEPS_PAGE_SIZE = 50;
 
-const StyledContainer = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: ${themeCssVariables.spacing[3]};
+const StyledBuilder = styled.div<{ hasOpenPanel: boolean }>`
+  border: 1px solid ${themeCssVariables.border.color.medium};
+  border-radius: ${themeCssVariables.border.radius.md};
+  display: grid;
+  flex: 1;
+  grid-template-columns: ${({ hasOpenPanel }) =>
+    hasOpenPanel ? 'minmax(0, 1fr) minmax(360px, 440px)' : 'minmax(0, 1fr)'};
+  min-height: min(720px, calc(100vh - 230px));
+  overflow: hidden;
 `;
 
-const StyledListHeader = styled.div`
+const StyledCanvas = styled.div`
+  background-color: ${themeCssVariables.background.primary};
+  background-image: radial-gradient(
+    ${themeCssVariables.border.color.medium} 0.8px,
+    transparent 0.8px
+  );
+  background-size: 18px 18px;
+  min-width: 0;
+  overflow: auto;
+  position: relative;
+`;
+
+const StyledCanvasToolbar = styled.div`
   align-items: center;
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
+  left: 0;
+  padding: ${themeCssVariables.spacing[3]};
+  position: sticky;
+  right: 0;
+  top: 0;
+  z-index: 1;
+`;
+
+const StyledBuilderLabel = styled.div`
+  background: ${themeCssVariables.background.secondary};
+  border: 1px solid ${themeCssVariables.border.color.light};
+  border-radius: ${themeCssVariables.border.radius.pill};
+  color: ${themeCssVariables.font.color.tertiary};
+  font-size: ${themeCssVariables.font.size.xs};
+  padding: ${themeCssVariables.spacing[1]} ${themeCssVariables.spacing[2]};
 `;
 
 const StyledStructureNotice = styled.div`
+  background: ${themeCssVariables.background.secondary};
+  border: 1px solid ${themeCssVariables.border.color.light};
+  border-radius: ${themeCssVariables.border.radius.sm};
+  color: ${themeCssVariables.font.color.tertiary};
+  font-size: ${themeCssVariables.font.size.xs};
+  max-width: 420px;
+  padding: ${themeCssVariables.spacing[2]};
+`;
+
+const StyledFlow = styled.div`
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  min-width: 640px;
+  padding: ${themeCssVariables.spacing[4]} ${themeCssVariables.spacing[6]}
+    ${themeCssVariables.spacing[8]};
+`;
+
+const StyledStartNode = styled.div`
+  align-items: center;
+  background: ${themeCssVariables.background.secondary};
+  border: 1px solid ${themeCssVariables.border.color.medium};
+  border-radius: ${themeCssVariables.border.radius.md};
+  display: flex;
+  gap: ${themeCssVariables.spacing[3]};
+  padding: ${themeCssVariables.spacing[3]};
+  width: min(420px, calc(100vw - 80px));
+`;
+
+const StyledStartIcon = styled.div`
+  align-items: center;
+  background: ${themeCssVariables.tag.background.green};
+  border-radius: ${themeCssVariables.border.radius.sm};
+  color: ${themeCssVariables.tag.text.green};
+  display: flex;
+  height: 36px;
+  justify-content: center;
+  width: 36px;
+`;
+
+const StyledStartText = styled.div`
+  display: flex;
+  flex-direction: column;
+`;
+
+const StyledStartTitle = styled.span`
+  color: ${themeCssVariables.font.color.primary};
+  font-weight: ${themeCssVariables.font.weight.medium};
+`;
+
+const StyledStartSubtitle = styled.span`
   color: ${themeCssVariables.font.color.tertiary};
   font-size: ${themeCssVariables.font.size.sm};
 `;
 
-const getDefaultStepSettings = (
-  type: SequenceStepType,
-): SequenceStepSettings => {
-  switch (type) {
-    case SEQUENCE_STEP_TYPES.SEND_EMAIL:
-      return {
-        type,
-        subject: '',
-        bodyHtml: '',
-        threadAsReplyToPreviousEmail: false,
-        stopOnReply: null,
-      };
-    case SEQUENCE_STEP_TYPES.DELAY:
-      return { type, days: 1, hours: 0, minutes: 0 };
-    case SEQUENCE_STEP_TYPES.CREATE_TASK:
-      return {
-        type,
-        taskType: SEQUENCE_TASK_TYPES.TODO,
-        titleTemplate: 'Follow up with {{ fullName }}',
-        notesTemplate: '',
-        priority: TASK_PRIORITIES.MEDIUM,
-        assigneeWorkspaceMemberId: null,
-        continueMode: 'ON_DONE',
-        deadlineDays: null,
-      };
-    case SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST:
-      return {
-        type,
-        noteTemplate: '',
-        skipIfAlreadyConnected: true,
-      };
-    case SEQUENCE_STEP_TYPES.SEND_LINKEDIN_MESSAGE:
-      return {
-        type,
-        messageTemplate: '',
-      };
-    case SEQUENCE_STEP_TYPES.WITHDRAW_CONNECTION_REQUEST:
-      return {
-        type,
-        withdrawAfterDays: 7,
-        withdrawAfterHours: 0,
-      };
-  }
-};
+const StyledConnector = styled.div`
+  background: ${themeCssVariables.border.color.strong};
+  height: 28px;
+  width: 1px;
+`;
+
+const StyledStepNumber = styled.div`
+  align-items: center;
+  background: ${themeCssVariables.background.secondary};
+  border: 1px solid ${themeCssVariables.border.color.medium};
+  border-radius: ${themeCssVariables.border.radius.rounded};
+  color: ${themeCssVariables.font.color.tertiary};
+  display: flex;
+  font-size: ${themeCssVariables.font.size.xs};
+  height: 20px;
+  justify-content: center;
+  margin: -4px 0;
+  position: relative;
+  width: 20px;
+  z-index: 1;
+`;
+
+const StyledStepGroup = styled.div`
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+`;
 
 type SequenceStepListProps = {
   sequenceId: string;
@@ -114,14 +174,20 @@ export const SequenceStepList = ({
   canUpdateSteps,
   canDeleteSteps,
 }: SequenceStepListProps) => {
-  const { closeDropdown } = useCloseDropdown();
+  const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
+  const [isRootPaletteOpen, setIsRootPaletteOpen] = useState(false);
+  const [openPaletteBranch, setOpenPaletteBranch] =
+    useState<SequenceStepBranch | null>(null);
+  const [isAddingStep, setIsAddingStep] = useState(false);
   const { enqueueErrorSnackBar } = useSnackBar();
   const { updateOneRecord } = useUpdateOneRecord();
-  const { createOneRecord, loading: isCreating } =
-    useCreateOneRecord<SequenceStepRecord>({
-      objectNameSingular: 'sequenceStep',
-      skipPostOptimisticEffect: true,
-    });
+  const { createOneRecord } = useCreateOneRecord<SequenceStepRecord>({
+    objectNameSingular: 'sequenceStep',
+    skipPostOptimisticEffect: true,
+  });
+  const { deleteOneRecord } = useDeleteOneRecord({
+    objectNameSingular: 'sequenceStep',
+  });
   const {
     records: steps,
     refetch,
@@ -152,33 +218,108 @@ export const SequenceStepList = ({
   const sortedSteps = steps
     .slice()
     .sort((first, second) => first.position - second.position);
+  const rootSteps = sortedSteps.filter(({ settings }) => !settings.branch);
+  const selectedStep =
+    sortedSteps.find(({ id }) => id === selectedStepId) ?? null;
 
-  const addStep = async (type: SequenceStepType) => {
+  const addStep = async (
+    {
+      type,
+      condition,
+      taskType,
+    }: {
+      type: SequenceStepType;
+      condition?: SequenceConditionType;
+      taskType?: SequenceTaskType;
+    },
+    branch?: SequenceStepBranch,
+  ) => {
     if (!canAddOrReorder) {
       return;
     }
 
-    closeDropdown(ADD_STEP_DROPDOWN_ID);
+    setIsAddingStep(true);
 
     try {
       const nextPosition = sortedSteps.reduce(
         (position, step) => Math.max(position, step.position + 1),
         0,
       );
-      await createOneRecord({
+      const defaultSettings = getDefaultSequenceStepSettings(type, {
+        condition,
+        taskType,
+      });
+      const createdStep = await createOneRecord({
         sequenceId,
         name: null,
-        type,
+        type: getSequenceStepStorageType(type),
         position: nextPosition,
-        settings: getDefaultStepSettings(type),
+        settings: branch
+          ? {
+              ...defaultSettings,
+              branch,
+            }
+          : defaultSettings,
       });
+
+      setSelectedStepId(createdStep.id);
+      setIsRootPaletteOpen(false);
+      setOpenPaletteBranch(null);
       await refetch();
     } catch {
       enqueueErrorSnackBar({
         message: t`The sequence step could not be added.`,
       });
+    } finally {
+      setIsAddingStep(false);
     }
   };
+
+  const selectStep = (stepId: string) => {
+    setSelectedStepId(stepId);
+    setIsRootPaletteOpen(false);
+    setOpenPaletteBranch(null);
+  };
+
+  const handleStepDeleted = async (stepId: string) => {
+    if (selectedStepId === stepId) {
+      setSelectedStepId(null);
+    }
+
+    const descendantStepIds = new Set<string>();
+    let parentStepIds = new Set([stepId]);
+
+    while (parentStepIds.size > 0) {
+      const childStepIds = sortedSteps
+        .filter(({ settings }) =>
+          parentStepIds.has(settings.branch?.conditionStepId ?? ''),
+        )
+        .map(({ id }) => id)
+        .filter((id) => !descendantStepIds.has(id));
+
+      childStepIds.forEach((id) => descendantStepIds.add(id));
+      parentStepIds = new Set(childStepIds);
+    }
+
+    try {
+      await Promise.all(
+        [...descendantStepIds].map((descendantStepId) =>
+          deleteOneRecord(descendantStepId),
+        ),
+      );
+    } catch {
+      enqueueErrorSnackBar({
+        message: t`Some condition branch steps could not be deleted.`,
+      });
+    } finally {
+      await refetch();
+    }
+  };
+
+  const addBranchStep = (
+    option: SequenceStepPaletteOption,
+    branch: SequenceStepBranch,
+  ) => addStep(option, branch);
 
   const swapSteps = async (
     firstStep: SequenceStepRecord,
@@ -210,95 +351,105 @@ export const SequenceStepList = ({
   };
 
   return (
-    <StyledContainer>
-      <StyledListHeader>
-        <Dropdown
-          dropdownId={ADD_STEP_DROPDOWN_ID}
-          dropdownPlacement="bottom-end"
-          clickableComponent={
+    <StyledBuilder hasOpenPanel={selectedStep !== null}>
+      <StyledCanvas>
+        <StyledCanvasToolbar>
+          <StyledBuilderLabel>{t`Sequence builder`}</StyledBuilderLabel>
+          {isStructureLocked && (
+            <StyledStructureNotice>
+              {t`Finish or remove active enrollments before changing the sequence structure.`}
+            </StyledStructureNotice>
+          )}
+        </StyledCanvasToolbar>
+        <StyledFlow>
+          <StyledStartNode>
+            <StyledStartIcon>
+              <IconPlayerPlay size={18} />
+            </StyledStartIcon>
+            <StyledStartText>
+              <StyledStartTitle>{t`Start sequence`}</StyledStartTitle>
+              <StyledStartSubtitle>
+                {t`Contacts enter using the shared schedule`}
+              </StyledStartSubtitle>
+            </StyledStartText>
+          </StyledStartNode>
+
+          {rootSteps.map((step, index) => (
+            <StyledStepGroup key={step.id}>
+              <StyledConnector />
+              <StyledStepNumber>
+                {sortedSteps.findIndex(({ id }) => id === step.id) + 1}
+              </StyledStepNumber>
+              <StyledConnector />
+              <SequenceStepCard
+                step={step}
+                stepNumber={
+                  sortedSteps.findIndex(({ id }) => id === step.id) + 1
+                }
+                isSelected={step.id === selectedStepId}
+                canMoveUp={canAddOrReorder && index > 0}
+                canMoveDown={canAddOrReorder && index < rootSteps.length - 1}
+                canDelete={canDeleteSteps}
+                onSelect={() => selectStep(step.id)}
+                onMoveUp={() => swapSteps(step, rootSteps[index - 1])}
+                onMoveDown={() => swapSteps(step, rootSteps[index + 1])}
+                onDeleted={() => handleStepDeleted(step.id)}
+              />
+              {step.settings.type === SEQUENCE_STEP_TYPES.CONDITION && (
+                <SequenceConditionBranches
+                  conditionStepId={step.id}
+                  steps={sortedSteps}
+                  selectedStepId={selectedStepId}
+                  openPaletteBranch={openPaletteBranch}
+                  isAddingStep={isAddingStep}
+                  canAddOrReorder={canAddOrReorder}
+                  canDeleteSteps={canDeleteSteps}
+                  onSelectStep={selectStep}
+                  onOpenPalette={(branch) => {
+                    setSelectedStepId(null);
+                    setIsRootPaletteOpen(false);
+                    setOpenPaletteBranch(branch);
+                  }}
+                  onClosePalette={() => setOpenPaletteBranch(null)}
+                  onAddStep={addBranchStep}
+                  onSwapSteps={swapSteps}
+                  onDeleted={handleStepDeleted}
+                />
+              )}
+            </StyledStepGroup>
+          ))}
+
+          <StyledConnector />
+          {isRootPaletteOpen ? (
+            <SequenceStepPalette
+              isCreating={isAddingStep}
+              onAdd={addStep}
+              onClose={() => setIsRootPaletteOpen(false)}
+            />
+          ) : (
             <Button
               title={t`Add step`}
               Icon={IconPlus}
               size="small"
-              isLoading={isCreating}
+              variant="secondary"
               disabled={!canAddOrReorder}
+              onClick={() => {
+                setSelectedStepId(null);
+                setOpenPaletteBranch(null);
+                setIsRootPaletteOpen(true);
+              }}
             />
-          }
-          dropdownComponents={
-            <DropdownContent widthInPixels={GenericDropdownContentWidth.Large}>
-              <DropdownMenuItemsContainer>
-                <MenuItem
-                  LeftIcon={IconMail}
-                  text={t`Send email`}
-                  onClick={() => void addStep(SEQUENCE_STEP_TYPES.SEND_EMAIL)}
-                />
-                <MenuItem
-                  LeftIcon={IconClock}
-                  text={t`Wait`}
-                  onClick={() => void addStep(SEQUENCE_STEP_TYPES.DELAY)}
-                />
-                <MenuItem
-                  LeftIcon={IconListCheck}
-                  text={t`Create task`}
-                  onClick={() => void addStep(SEQUENCE_STEP_TYPES.CREATE_TASK)}
-                />
-                <MenuItem
-                  LeftIcon={IconBrandLinkedin}
-                  text={t`Send LinkedIn connection request`}
-                  onClick={() =>
-                    void addStep(SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST)
-                  }
-                />
-                <MenuItem
-                  LeftIcon={IconMessage}
-                  text={t`Send LinkedIn message`}
-                  onClick={() =>
-                    void addStep(SEQUENCE_STEP_TYPES.SEND_LINKEDIN_MESSAGE)
-                  }
-                />
-                <MenuItem
-                  LeftIcon={IconUserMinus}
-                  text={t`Withdraw LinkedIn connection request`}
-                  onClick={() =>
-                    void addStep(
-                      SEQUENCE_STEP_TYPES.WITHDRAW_CONNECTION_REQUEST,
-                    )
-                  }
-                />
-              </DropdownMenuItemsContainer>
-            </DropdownContent>
-          }
+          )}
+        </StyledFlow>
+      </StyledCanvas>
+
+      {selectedStep && (
+        <SequenceStepEditorPanel
+          step={selectedStep}
+          isEditable={canUpdateSteps}
+          onClose={() => setSelectedStepId(null)}
         />
-      </StyledListHeader>
-
-      {isStructureLocked && (
-        <StyledStructureNotice>
-          {t`Finish or remove active enrollments before adding, deleting, or reordering steps.`}
-        </StyledStructureNotice>
       )}
-
-      {sortedSteps.length === 0 ? (
-        <StyledEmptyState>
-          {t`Add an email, wait, task, or LinkedIn step to build this sequence.`}
-        </StyledEmptyState>
-      ) : (
-        sortedSteps.map((step, index) => (
-          <SequenceStepCard
-            key={step.id}
-            step={step}
-            stepNumber={index + 1}
-            canMoveUp={canAddOrReorder && index > 0}
-            canMoveDown={canAddOrReorder && index < sortedSteps.length - 1}
-            canDelete={canDeleteSteps}
-            isEditable={canUpdateSteps}
-            onMoveUp={() => swapSteps(step, sortedSteps[index - 1])}
-            onMoveDown={() => swapSteps(step, sortedSteps[index + 1])}
-            onDeleted={async () => {
-              await refetch();
-            }}
-          />
-        ))
-      )}
-    </StyledContainer>
+    </StyledBuilder>
   );
 };
