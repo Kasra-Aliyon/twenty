@@ -4361,6 +4361,7 @@ export type Query = {
   objects: ObjectConnection;
   pieChartData: PieChartData;
   previewMessageCampaignAudience: CampaignAudiencePreviewDto;
+  resolveViewToQueryParams: Scalars['JSON']['output'];
   skill?: Maybe<Skill>;
   skills: Array<Skill>;
   unsubscribePagePreviewUrl: Scalars['String']['output'];
@@ -4735,6 +4736,11 @@ export type QueryPieChartDataArgs = {
 
 export type QueryPreviewMessageCampaignAudienceArgs = {
   input: PreviewMessageCampaignAudienceInput;
+};
+
+
+export type QueryResolveViewToQueryParamsArgs = {
+  id: Scalars['String']['input'];
 };
 
 

@@ -38,6 +38,22 @@ const personObject: MetadataObject = {
   ],
 };
 
+const sequenceStepObject: MetadataObject = {
+  id: 'sequence-step-object-id',
+  nameSingular: 'sequenceStep',
+  namePlural: 'sequenceSteps',
+  labelSingular: 'Sequence Step',
+  labelPlural: 'Sequence Steps',
+  fields: [
+    field('type', 'SELECT', {
+      options: [
+        { value: 'SEND_EMAIL', label: 'Send email' },
+        { value: 'DELAY', label: 'Delay' },
+      ],
+    }),
+  ],
+};
+
 describe('dynamic record schema', () => {
   it('validates composite fields, live enums, and relation IDs', () => {
     expect(
@@ -67,6 +83,14 @@ describe('dynamic record schema', () => {
     expect(() =>
       validateRecordInput(personObject, { status: 'ARCHIVED' }),
     ).toThrow('Allowed values: ACTIVE, INACTIVE');
+  });
+
+  it('accepts current sequence step types when live metadata is stale', () => {
+    expect(
+      validateRecordInput(sequenceStepObject, {
+        type: 'SEND_LINKEDIN_MESSAGE',
+      }),
+    ).toEqual({ type: 'SEND_LINKEDIN_MESSAGE' });
   });
 
   it('suggests the closest live field for a typo', () => {

@@ -53,8 +53,6 @@ export const useAdvancedTextEditor = (
   }: UseAdvancedTextEditorProps,
   dependencies?: DependencyList,
 ) => {
-  const isMarkdownMode = contentType === 'markdown';
-
   const extensions = useMemo(
     () => [
       Document,
@@ -101,12 +99,12 @@ export const useAdvancedTextEditor = (
       return undefined;
     }
 
-    if (isMarkdownMode) {
+    if (contentType === 'markdown') {
       // Convert markdown to HTML, then TipTap will parse the HTML
       return marked.parse(defaultValue, { async: false }) as string;
     }
 
-    return getInitialAdvancedTextEditorContent(defaultValue);
+    return getInitialAdvancedTextEditorContent(defaultValue, contentType);
   };
 
   const editor = useEditor(

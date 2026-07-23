@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { SEQUENCE_STEP_TYPES } from '../constants.js';
 import type { MetadataField, MetadataObject } from '../types.js';
 import { TwentyApiError } from '../services/errors.js';
 
@@ -79,8 +80,26 @@ const richTextSchema = z.object({
   markdown: nullableString,
 });
 
-const schemaForField = (field: MetadataField): z.ZodType => {
-  const optionValues = field.options?.map((option) => option.value) ?? [];
+const compatibilityOptionValues = (
+  object: MetadataObject,
+  field: MetadataField,
+): string[] => {
+  if (object.namePlural === 'sequenceSteps' && field.name === 'type') {
+    return [
+      ...new Set([
+        ...(field.options?.map((option) => option.value) ?? []),
+        ...SEQUENCE_STEP_TYPES,
+      ]),
+    ];
+  }
+
+  return field.options?.map((option) => option.value) ?? [];
+};
+
+const schemaForField = (
+  field: MetadataField,
+  optionValues = field.options?.map((option) => option.value) ?? [],
+): z.ZodType => {
   let schema: z.ZodType;
 
   switch (field.type) {
@@ -224,7 +243,10 @@ export const buildObjectInputSchema = (
 
   for (const field of object.fields) {
     if (!SYSTEM_MANAGED_FIELDS.has(field.name)) {
-      shape[field.name] = schemaForField(field).optional();
+      shape[field.name] = schemaForField(
+        field,
+        compatibilityOptionValues(object, field),
+      ).optional();
 
       if (field.type === 'RELATION' || field.type === 'MORPH_RELATION') {
         shape[`${field.name}Id`] = z.string().nullable().optional();

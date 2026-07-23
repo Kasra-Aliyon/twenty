@@ -5,6 +5,7 @@ import {
   IsEnum,
   IsInt,
   IsNotEmpty,
+  IsNumber,
   IsOptional,
   IsString,
   IsUUID,
@@ -49,7 +50,7 @@ export class UpdateViewInput {
   icon?: string;
 
   @IsOptional()
-  @IsBoolean()
+  @IsNumber()
   @Field({ nullable: true })
   position?: number;
 

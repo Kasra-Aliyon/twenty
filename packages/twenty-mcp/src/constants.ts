@@ -17,6 +17,7 @@ export const METADATA_GRAPHQL_PATH = '/metadata';
 export const STANDARD_OBJECTS = {
   attachments: 'attachments',
   companies: 'companies',
+  dashboards: 'dashboards',
   linkedinActions: 'linkedinActions',
   linkedinConnections: 'linkedinConnections',
   linkedinInvitations: 'linkedinInvitations',
@@ -24,6 +25,7 @@ export const STANDARD_OBJECTS = {
   linkedinMessageThreads: 'linkedinMessageThreads',
   linkedinThreadParticipants: 'linkedinThreadParticipants',
   messageThreads: 'messageThreads',
+  messageDrafts: 'messageDrafts',
   notes: 'notes',
   noteTargets: 'noteTargets',
   opportunities: 'opportunities',
@@ -62,6 +64,49 @@ export const SEQUENCE_STEP_TYPES = [
   'SEND_CONNECTION_REQUEST',
   'SEND_LINKEDIN_MESSAGE',
   'WITHDRAW_CONNECTION_REQUEST',
+] as const;
+
+export const SEQUENCE_TEMPLATE_VARIABLES = [
+  {
+    key: 'firstName',
+    token: '{{firstName}}',
+    description: "Recipient's first name",
+  },
+  {
+    key: 'lastName',
+    token: '{{lastName}}',
+    description: "Recipient's last name",
+  },
+  {
+    key: 'fullName',
+    token: '{{fullName}}',
+    description: "Recipient's full name",
+  },
+  {
+    key: 'email',
+    token: '{{email}}',
+    description: "Recipient's primary email",
+  },
+  {
+    key: 'jobTitle',
+    token: '{{jobTitle}}',
+    description: "Recipient's job title",
+  },
+  {
+    key: 'companyName',
+    token: '{{companyName}}',
+    description: "Recipient's company name",
+  },
+  {
+    key: 'senderName',
+    token: '{{senderName}}',
+    description: "Sender's display name",
+  },
+  {
+    key: 'senderEmail',
+    token: '{{senderEmail}}',
+    description: "Sender's email address",
+  },
 ] as const;
 
 export const DEFAULT_SEQUENCE_SETTINGS = {

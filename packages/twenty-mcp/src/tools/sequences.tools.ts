@@ -6,6 +6,7 @@ import {
   SEQUENCE_ENROLLMENT_STATUSES,
   SEQUENCE_STATUSES,
   SEQUENCE_STEP_TYPES,
+  SEQUENCE_TEMPLATE_VARIABLES,
   STANDARD_OBJECTS,
 } from '../constants.js';
 import { runTool } from '../formatting/format-tool-result.js';
@@ -19,6 +20,7 @@ import {
 } from '../schemas/common.schemas.js';
 import { combineFilters, filterCondition } from '../services/filter-builder.js';
 import { RecordsService } from '../services/records.service.js';
+import { requireUserToken } from '../services/user-auth.js';
 import type { ToolDependencies } from '../types.js';
 import { compactRecord } from './tool-data-builders.js';
 
@@ -40,6 +42,50 @@ const sequenceSettingsSchema = z.object({
   linkedinDelayPatternMinutes: z.array(z.number().positive()).min(1),
   stopOnReply: z.boolean(),
 });
+
+const CONNECTED_ACCOUNTS_QUERY = `
+  query TwentyMcpConnectedAccounts {
+    myConnectedAccounts {
+      id
+      handle
+      provider
+      name
+      visibility
+      scopes
+      handleAliases
+      connectionProviderId
+      authFailedAt
+      archivedAt
+      lastSignedInAt
+      lastCredentialsRefreshedAt
+      createdAt
+      updatedAt
+    }
+  }
+`;
+
+type ConnectedAccount = {
+  provider?: unknown;
+  authFailedAt?: unknown;
+  archivedAt?: unknown;
+};
+
+const filterConnectedAccounts = (
+  accounts: ConnectedAccount[],
+  {
+    activeOnly,
+    provider,
+  }: {
+    activeOnly: boolean;
+    provider?: string;
+  },
+): ConnectedAccount[] =>
+  accounts.filter(
+    (account) =>
+      (!activeOnly ||
+        (account.archivedAt == null && account.authFailedAt == null)) &&
+      (provider === undefined || account.provider === provider),
+  );
 
 const emailSettingsSchema = z.object({
   subject: z.string(),
@@ -160,6 +206,66 @@ export const registerSequenceTools = (
   const records = new RecordsService(
     dependencies.client,
     dependencies.metadata,
+  );
+
+  server.registerTool(
+    'twenty_list_connected_accounts',
+    {
+      title: 'List connected sender accounts',
+      description:
+        'Lists user-owned connected accounts that can be selected as sequence or one-off email senders. Requires TWENTY_USER_TOKEN.',
+      inputSchema: z.object({
+        provider: z.string().min(1).optional(),
+        active_only: z.boolean().default(true),
+        response_format: responseFormatSchema,
+      }),
+      outputSchema: TOOL_OUTPUT_SCHEMA,
+      annotations: {
+        readOnlyHint: true,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+    },
+    async ({ provider, active_only, response_format }) =>
+      runTool(async () => {
+        const result = await dependencies.client.graphql<{
+          myConnectedAccounts: ConnectedAccount[];
+        }>(
+          CONNECTED_ACCOUNTS_QUERY,
+          {},
+          {
+            endpoint: 'metadata',
+            token: requireUserToken(dependencies.client),
+          },
+        );
+
+        return filterConnectedAccounts(result.myConnectedAccounts, {
+          activeOnly: active_only,
+          provider,
+        });
+      }, response_format),
+  );
+
+  server.registerTool(
+    'twenty_list_sequence_variables',
+    {
+      title: 'List sequence personalization variables',
+      description:
+        'Lists the template variables accepted in sequence email, task, and LinkedIn step content.',
+      inputSchema: z.object({
+        response_format: responseFormatSchema,
+      }),
+      outputSchema: TOOL_OUTPUT_SCHEMA,
+      annotations: { readOnlyHint: true, idempotentHint: true },
+    },
+    async ({ response_format }) =>
+      runTool(
+        async () => ({
+          syntax: 'Use the token exactly as shown in sequence step templates.',
+          variables: SEQUENCE_TEMPLATE_VARIABLES,
+        }),
+        response_format,
+      ),
   );
 
   server.registerTool(
@@ -645,5 +751,6 @@ export const registerSequenceTools = (
 
 export const sequencesToolsTesting = {
   createSequenceData,
+  filterConnectedAccounts,
   stepData,
 };

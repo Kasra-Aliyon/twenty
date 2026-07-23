@@ -7,6 +7,7 @@ import {
   Query,
   ResolveField,
 } from '@nestjs/graphql';
+import GraphQLJSON from 'graphql-type-json';
 
 import { PermissionFlagType } from 'twenty-shared/constants';
 import { ViewType, ViewVisibility } from 'twenty-shared/types';
@@ -20,6 +21,7 @@ import { WorkspaceEntity } from 'src/engine/core-modules/workspace/workspace.ent
 import { type IDataloaders } from 'src/engine/dataloaders/dataloader.interface';
 import { AuthUserWorkspaceId } from 'src/engine/decorators/auth/auth-user-workspace-id.decorator';
 import { AuthWorkspace } from 'src/engine/decorators/auth/auth-workspace.decorator';
+import { AuthWorkspaceMemberId } from 'src/engine/decorators/auth/auth-workspace-member-id.decorator';
 import { CustomPermissionGuard } from 'src/engine/guards/custom-permission.guard';
 import { NoPermissionGuard } from 'src/engine/guards/no-permission.guard';
 import { SettingsPermissionGuard } from 'src/engine/guards/settings-permission.guard';
@@ -41,6 +43,7 @@ import { UpsertViewWidgetInput } from 'src/engine/metadata-modules/view/dtos/inp
 import { ViewDTO } from 'src/engine/metadata-modules/view/dtos/view.dto';
 import { type ViewEntity } from 'src/engine/metadata-modules/view/entities/view.entity';
 import { ViewWidgetUpsertService } from 'src/engine/metadata-modules/view/services/view-widget-upsert.service';
+import { ViewQueryParamsService } from 'src/engine/metadata-modules/view/services/view-query-params.service';
 import { ViewService } from 'src/engine/metadata-modules/view/services/view.service';
 import { ViewGraphqlApiExceptionFilter } from 'src/engine/metadata-modules/view/utils/view-graphql-api-exception.filter';
 
@@ -51,6 +54,7 @@ export class ViewResolver {
   constructor(
     private readonly viewService: ViewService,
     private readonly viewWidgetUpsertService: ViewWidgetUpsertService,
+    private readonly viewQueryParamsService: ViewQueryParamsService,
     private readonly i18nService: I18nService,
   ) {}
 
@@ -143,6 +147,20 @@ export class ViewResolver {
     }
 
     return view;
+  }
+
+  @Query(() => GraphQLJSON)
+  @UseGuards(NoPermissionGuard)
+  async resolveViewToQueryParams(
+    @Args('id', { type: () => String }) id: string,
+    @AuthWorkspace() workspace: WorkspaceEntity,
+    @AuthWorkspaceMemberId() workspaceMemberId: string | undefined,
+  ) {
+    return this.viewQueryParamsService.resolveViewToQueryParams(
+      id,
+      workspace.id,
+      workspaceMemberId,
+    );
   }
 
   @Mutation(() => ViewDTO)

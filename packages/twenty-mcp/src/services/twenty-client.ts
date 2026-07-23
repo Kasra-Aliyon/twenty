@@ -152,7 +152,7 @@ export class TwentyClient {
     if (this.userToken === undefined) {
       throw new TwentyApiError({
         message:
-          'This operation requires TWENTY_USER_TOKEN because it uses a user-scoped Unibox resolver.',
+          'This operation requires TWENTY_USER_TOKEN because it uses a user-scoped Twenty resolver.',
         code: 'USER_TOKEN_REQUIRED',
       });
     }

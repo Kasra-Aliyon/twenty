@@ -2,12 +2,16 @@ import { getInitialEditorContent } from '@/workflow/workflow-variables/utils/get
 import type { JSONContent } from '@tiptap/react';
 import { logError } from '~/utils/logError';
 
-// Previous format of the email body was plain text,
-// but from now on we will save it as JSON.
-// So it will fail to parse the content, that's why we have this fallback.
+// JSON-backed editor fields used to contain plain text, so parsing may fail.
+// HTML-backed fields remain raw HTML and bypass that migration fallback.
 export const getInitialAdvancedTextEditorContent = (
   rawContent: string,
-): JSONContent => {
+  contentType: 'json' | 'html' = 'json',
+): JSONContent | string => {
+  if (contentType === 'html') {
+    return rawContent;
+  }
+
   // Handle empty or null content
   if (!rawContent || rawContent.trim() === '') {
     return {

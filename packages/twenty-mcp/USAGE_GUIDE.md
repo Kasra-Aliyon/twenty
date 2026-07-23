@@ -11,14 +11,14 @@ long-running operation for:
 
 The important distinction is transport:
 
-| Client | Recommended connection | Must stay running separately? |
-|---|---|---|
-| Codex CLI / IDE / desktop | Local stdio | No. The client starts it. |
-| Claude Code | Local stdio | No. Claude Code starts it. |
-| Claude Desktop | Install the MCPB desktop extension | No. Claude starts it. |
-| ChatGPT web / mobile | OpenAI Secure MCP Tunnel to local stdio | Yes. Keep `tunnel-client` running. |
-| Claude web / mobile | Public HTTPS remote MCP with OAuth | Yes. Not turnkey with the server's current static bearer authentication. |
-| Codex or Claude Code using a shared server | Streamable HTTP | Yes. Keep the HTTP service running. |
+| Client                                     | Recommended connection                  | Must stay running separately?                                            |
+| ------------------------------------------ | --------------------------------------- | ------------------------------------------------------------------------ |
+| Codex CLI / IDE / desktop                  | Local stdio                             | No. The client starts it.                                                |
+| Claude Code                                | Local stdio                             | No. Claude Code starts it.                                               |
+| Claude Desktop                             | Install the MCPB desktop extension      | No. Claude starts it.                                                    |
+| ChatGPT web / mobile                       | OpenAI Secure MCP Tunnel to local stdio | Yes. Keep `tunnel-client` running.                                       |
+| Claude web / mobile                        | Public HTTPS remote MCP with OAuth      | Yes. Not turnkey with the server's current static bearer authentication. |
+| Codex or Claude Code using a shared server | Streamable HTTP                         | Yes. Keep the HTTP service running.                                      |
 
 For one person using local clients, stdio is the simplest and safest setup.
 Do not run the MCP server as a daemon unless a remote client actually needs it.
@@ -145,10 +145,11 @@ export TWENTY_REQUEST_TIMEOUT_MS="15000"
 export TWENTY_MAX_RETRIES="2"
 ```
 
-`TWENTY_USER_TOKEN` is needed only for user-scoped Unibox operations and some
-user-owned LinkedIn data. Do not copy a browser session token into a shared
-configuration. If you do not have an intentionally issued user token, leave it
-unset and use the API-key-compatible tools.
+`TWENTY_USER_TOKEN` is needed for connected-account discovery, one-off email,
+drafts, record email/calendar timelines, user-scoped Unibox operations, and
+some user-owned LinkedIn data. Do not copy a browser session token into a
+shared configuration. If you do not have an intentionally issued user token,
+leave it unset and use the API-key-compatible tools.
 
 Keep advanced mode off initially. It exposes permanent record destruction and
 high-volume attachment/message reads.
@@ -326,7 +327,7 @@ From the terminal:
 codex mcp list
 ```
 
-Inside Codex, run `/mcp` and confirm that `twenty` is connected and exposes 72
+Inside Codex, run `/mcp` and confirm that `twenty` is connected and exposes 106
 tools. Then ask:
 
 ```text
@@ -798,14 +799,15 @@ two-day delay. Do not activate or enroll anyone. Show me the final draft.
 Outbound example:
 
 ```text
-Prepare a LinkedIn invitation for this person, but do not queue it until you
-show me the resolved person, message, and exact action and I explicitly
-confirm.
+Preview the audience for this campaign, then show me the list, sender,
+unsubscribe topic, subject, body, and sendable/skipped counts. Do not send
+until I explicitly confirm.
 ```
 
 The server itself requires `confirm=true` for destructive, bulk, sequence
-activation/enrollment, Unibox import, and LinkedIn actions. Keep the host's own
-write-approval policy enabled as a second layer.
+activation/enrollment, email/campaign sending, draft sending, Unibox import,
+and LinkedIn actions. Keep the host's own write-approval policy enabled as a
+second layer.
 
 ## 12. Safety and operational policy
 
@@ -814,7 +816,7 @@ write-approval policy enabled as a second layer.
 - Keep advanced mode disabled unless permanent deletion or high-volume reads
   are explicitly required.
 - Review the exact targets before merges, deletion, bulk enrollment, sequence
-  activation, or outbound LinkedIn actions.
+  activation, email/campaign sending, or outbound LinkedIn actions.
 - Start merge operations with `dry_run=true`.
 - Prefer `twenty_delete_record`, which moves records to trash, over the advanced
   permanent destroy tool.
@@ -826,8 +828,10 @@ write-approval policy enabled as a second layer.
   rules to agent conversations.
 - Keep the server and Twenty API on trusted, patched hosts.
 
-Direct one-off email sending and attachment upload are intentionally not
-exposed. Use Twenty's UI or a reviewed sequence workflow for those actions.
+Attachment upload remains intentionally unavailable until the MCP has a
+configured local-path allow-list and file-size policy. One-off email and
+campaign sending are available, require a user token, and require explicit
+confirmation.
 
 ## 13. Updating the server
 
@@ -909,13 +913,14 @@ settings.
 Grant Data Model read access. Use `twenty_refresh_metadata` after changing
 fields, options, roles, or workspace schema.
 
-### Unibox tools report that a user token is required
+### User-scoped tools report that a user token is required
 
 The configured API key does not provide a user context. Configure an
-intentionally issued `TWENTY_USER_TOKEN`, or leave Unibox unavailable. Other
-tool families continue working.
+intentionally issued `TWENTY_USER_TOKEN`, or leave connected accounts, email,
+drafts, record timelines, and Unibox unavailable. API-key-compatible tool
+families continue working.
 
-### Only 72 tools appear
+### Only 106 tools appear
 
 That is the normal safe configuration. Set `TWENTY_ENABLE_ADVANCED=true` and
 restart the server to expose the four advanced tools.

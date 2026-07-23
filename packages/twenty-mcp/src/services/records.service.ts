@@ -79,6 +79,7 @@ export class RecordsService {
     startingAfter,
     endingBefore,
     fields,
+    token,
   }: {
     object: string;
     filter?: string;
@@ -88,6 +89,7 @@ export class RecordsService {
     startingAfter?: string;
     endingBefore?: string;
     fields?: string[];
+    token?: 'api' | 'user';
   }) {
     const objectMetadata = await this.metadata.getObject(object);
     const normalizedLimit = Math.min(Math.max(limit, 1), MAX_LIST_LIMIT);
@@ -102,7 +104,7 @@ export class RecordsService {
     const response = await this.client.rest(
       'GET',
       `${REST_PATH}/${objectMetadata.namePlural}`,
-      { query },
+      { query, token },
     );
     const normalized = normalizeListResponse(
       response,
@@ -120,17 +122,19 @@ export class RecordsService {
     id,
     depth = 0,
     fields,
+    token,
   }: {
     object: string;
     id: string;
     depth?: number;
     fields?: string[];
+    token?: 'api' | 'user';
   }): Promise<unknown> {
     const objectMetadata = await this.metadata.getObject(object);
     const response = await this.client.rest(
       'GET',
       `${REST_PATH}/${objectMetadata.namePlural}/${encodeURIComponent(id)}`,
-      { query: { depth } },
+      { query: { depth }, token },
     );
 
     return projectFields(unwrapRestResponse(response), fields);
@@ -140,10 +144,12 @@ export class RecordsService {
     object,
     data,
     depth = 0,
+    token,
   }: {
     object: string;
     data: Record<string, unknown>;
     depth?: number;
+    token?: 'api' | 'user';
   }): Promise<unknown> {
     const objectMetadata = await this.metadata.getObject(object);
     const validated = validateRecordInput(objectMetadata, data);
@@ -151,7 +157,7 @@ export class RecordsService {
     const response = await this.client.rest(
       'POST',
       `${REST_PATH}/${objectMetadata.namePlural}`,
-      { query: { depth }, body: validated },
+      { query: { depth }, body: validated, token },
     );
 
     return unwrapRestResponse(response);
@@ -162,11 +168,13 @@ export class RecordsService {
     id,
     data,
     depth = 0,
+    token,
   }: {
     object: string;
     id: string;
     data: Record<string, unknown>;
     depth?: number;
+    token?: 'api' | 'user';
   }): Promise<unknown> {
     const objectMetadata = await this.metadata.getObject(object);
     const validated = validateRecordInput(objectMetadata, data);
@@ -174,19 +182,23 @@ export class RecordsService {
     const response = await this.client.rest(
       'PATCH',
       `${REST_PATH}/${objectMetadata.namePlural}/${encodeURIComponent(id)}`,
-      { query: { depth }, body: validated },
+      { query: { depth }, body: validated, token },
     );
 
     return unwrapRestResponse(response);
   }
 
-  async softDelete(object: string, id: string): Promise<unknown> {
+  async softDelete(
+    object: string,
+    id: string,
+    token?: 'api' | 'user',
+  ): Promise<unknown> {
     const objectMetadata = await this.metadata.getObject(object);
 
     const response = await this.client.rest(
       'DELETE',
       `${REST_PATH}/${objectMetadata.namePlural}/${encodeURIComponent(id)}`,
-      { query: { soft_delete: true } },
+      { query: { soft_delete: true }, token },
     );
 
     return unwrapRestResponse(response);
