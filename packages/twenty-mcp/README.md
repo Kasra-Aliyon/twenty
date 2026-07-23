@@ -4,7 +4,7 @@ A standalone Model Context Protocol server for Twenty CRM. It gives local coding
 agents a metadata-aware interface to standard objects, custom objects, and common
 CRM workflows without coupling the MCP process to the Twenty server runtime.
 
-The server exposes 106 tools by default and four additional tools when advanced
+The server exposes 110 tools by default and four additional tools when advanced
 mode is enabled. It uses stdio by default and also supports stateless Streamable
 HTTP.
 
@@ -19,9 +19,10 @@ web/mobile clients, including long-running service examples, see the
   group, and aggregate records.
 - Work with people, companies, opportunities, tasks, notes, activities, lists,
   and folders through task-specific tools.
-- Build outreach sequences, manage ordered steps, activate or pause sequences,
-  enroll people, stop enrollments, read sequence metrics, and discover eligible
-  senders and template variables.
+- Build outreach sequences with conditions and merging Yes/No branches,
+  automated or manual email/LinkedIn/enrichment actions, delays and tasks;
+  activate or pause sequences, manage enrollment execution, read metrics, and
+  discover eligible senders and template variables.
 - Compose, reply to, draft, and send email; preview and queue list campaigns
   with unsubscribe-topic support.
 - Create and edit complete dashboards, tabs, widgets, chart configuration, and
@@ -171,21 +172,21 @@ default_tools_approval_mode = "writes"
 
 ## Tool families
 
-| Family               | Representative tools                                                                                                                                                                                                                            |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Discovery            | `twenty_health_check`, `twenty_list_objects`, `twenty_describe_object`, `twenty_refresh_metadata`, `twenty_global_search`                                                                                                                       |
-| Generic records      | `twenty_list_records`, `twenty_get_record`, `twenty_create_record`, `twenty_update_record`, `twenty_delete_record`, `twenty_restore_record`, `twenty_batch_create_records`, `twenty_find_duplicates`, `twenty_merge_records`, `twenty_group_by` |
-| People and companies | `twenty_find_people`, `twenty_create_person`, `twenty_set_person_company`, `twenty_find_companies`, `twenty_set_company_owner`                                                                                                                  |
-| Opportunities        | `twenty_find_opportunities`, `twenty_set_opportunity_stage`, `twenty_get_pipeline`                                                                                                                                                              |
-| Work and activity    | `twenty_create_task`, `twenty_complete_task`, `twenty_create_note`, `twenty_attach_task`, `twenty_attach_note`, `twenty_list_activities`                                                                                                        |
-| Lists                | `twenty_list_lists`, `twenty_create_list`, `twenty_add_record_to_list`, `twenty_remove_record_from_list`, `twenty_create_folder`                                                                                                                |
-| Sequences            | `twenty_create_sequence`, `twenty_add_sequence_step`, `twenty_set_sequence_status`, `twenty_enroll_person_in_sequence`, `twenty_bulk_enroll_people`, `twenty_stop_enrollment`, `twenty_get_sequence_metrics`                                    |
-| Email and campaigns  | `twenty_list_connected_accounts`, `twenty_send_email`, `twenty_reply_to_email`, `twenty_create_email_draft`, `twenty_send_email_draft`, `twenty_preview_email_campaign`, `twenty_send_email_campaign`                                           |
-| Dashboards           | `twenty_list_dashboards`, `twenty_get_dashboard`, `twenty_create_dashboard`, `twenty_duplicate_dashboard`, `twenty_add_dashboard_tab`, `twenty_add_dashboard_widget`, `twenty_update_dashboard_widget`                                          |
-| Saved views          | `twenty_list_views`, `twenty_create_view`, `twenty_update_view`, `twenty_create_view_component`, `twenty_update_view_component`, `twenty_resolve_view_query`                                                                                    |
-| Record timelines     | `twenty_get_record_email_timeline`, `twenty_get_record_calendar_timeline`                                                                                                                                                                       |
-| LinkedIn             | `twenty_list_linkedin_connections`, `twenty_list_linkedin_threads`, `twenty_send_linkedin_message`, `twenty_send_linkedin_invitation`, `twenty_withdraw_linkedin_invitation`, `twenty_list_linkedin_actions`                                    |
-| Unibox               | `twenty_unibox_list_threads`, `twenty_unibox_get_thread`, `twenty_unibox_list_contacts`, `twenty_unibox_add_contacts_to_crm`                                                                                                                    |
+| Family               | Representative tools                                                                                                                                                                                                                                                                        |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Discovery            | `twenty_health_check`, `twenty_list_objects`, `twenty_describe_object`, `twenty_refresh_metadata`, `twenty_global_search`                                                                                                                                                                   |
+| Generic records      | `twenty_list_records`, `twenty_get_record`, `twenty_create_record`, `twenty_update_record`, `twenty_delete_record`, `twenty_restore_record`, `twenty_batch_create_records`, `twenty_find_duplicates`, `twenty_merge_records`, `twenty_group_by`                                             |
+| People and companies | `twenty_find_people`, `twenty_create_person`, `twenty_set_person_company`, `twenty_find_companies`, `twenty_set_company_owner`                                                                                                                                                              |
+| Opportunities        | `twenty_find_opportunities`, `twenty_set_opportunity_stage`, `twenty_get_pipeline`                                                                                                                                                                                                          |
+| Work and activity    | `twenty_create_task`, `twenty_complete_task`, `twenty_create_note`, `twenty_attach_task`, `twenty_attach_note`, `twenty_list_activities`                                                                                                                                                    |
+| Lists                | `twenty_list_lists`, `twenty_create_list`, `twenty_add_record_to_list`, `twenty_remove_record_from_list`, `twenty_create_folder`                                                                                                                                                            |
+| Sequences            | `twenty_get_sequence_capabilities`, `twenty_create_sequence`, `twenty_list_sequence_steps`, `twenty_add_sequence_step`, `twenty_set_sequence_status`, `twenty_enroll_person_in_sequence`, `twenty_mark_enrollment_replied`, `twenty_skip_enrollment_to_next_step`, `twenty_stop_enrollment` |
+| Email and campaigns  | `twenty_list_connected_accounts`, `twenty_send_email`, `twenty_reply_to_email`, `twenty_create_email_draft`, `twenty_send_email_draft`, `twenty_preview_email_campaign`, `twenty_send_email_campaign`                                                                                       |
+| Dashboards           | `twenty_list_dashboards`, `twenty_get_dashboard`, `twenty_create_dashboard`, `twenty_duplicate_dashboard`, `twenty_add_dashboard_tab`, `twenty_add_dashboard_widget`, `twenty_update_dashboard_widget`                                                                                      |
+| Saved views          | `twenty_list_views`, `twenty_create_view`, `twenty_update_view`, `twenty_create_view_component`, `twenty_update_view_component`, `twenty_resolve_view_query`                                                                                                                                |
+| Record timelines     | `twenty_get_record_email_timeline`, `twenty_get_record_calendar_timeline`                                                                                                                                                                                                                   |
+| LinkedIn             | `twenty_list_linkedin_connections`, `twenty_list_linkedin_threads`, `twenty_send_linkedin_message`, `twenty_send_linkedin_invitation`, `twenty_withdraw_linkedin_invitation`, `twenty_list_linkedin_actions`                                                                                |
+| Unibox               | `twenty_unibox_list_threads`, `twenty_unibox_get_thread`, `twenty_unibox_list_contacts`, `twenty_unibox_add_contacts_to_crm`                                                                                                                                                                |
 
 Advanced mode additionally exposes:
 
@@ -227,6 +228,33 @@ and(stage[eq]:"PROPOSAL",amount.amountMicros[gte]:50000000000)
 createdAt[DescNullsLast]
 ```
 
+For sequence work, call `twenty_get_sequence_capabilities` first. The canonical
+step discriminator is `step.settings.type`; the compatibility `type` field
+stored on a record may be `CREATE_TASK` for newer step types in older
+workspaces. Current sequence steps are:
+
+- `SEND_EMAIL`, `DELAY`, and `CREATE_TASK`
+- `SEND_CONNECTION_REQUEST`, `SEND_LINKEDIN_MESSAGE`, and
+  `WITHDRAW_CONNECTION_REQUEST`
+- `CONDITION` and `ENRICH_PHONE_NUMBER`
+
+Action-capable steps accept `executionMode: "AUTOMATED" | "MANUAL"`. Manual
+execution creates a linked task from `manualTaskTitle` and
+`manualTaskDescription`, then waits for completion. Place a step in a condition
+lane with:
+
+```json
+{
+  "branch": {
+    "conditionStepId": "the-condition-step-id",
+    "outcome": "YES"
+  }
+}
+```
+
+Both lanes merge into the next root step. Deleting a condition through
+`twenty_delete_sequence_step` also soft-deletes its branch descendants.
+
 ## Safety behavior
 
 - `twenty_delete_record` always sends `soft_delete=true`; restore it with
@@ -241,8 +269,11 @@ createdAt[DescNullsLast]
   send.
 - Merge defaults to `dry_run=true`.
 - LinkedIn actions are queued asynchronously; a browser runner performs them.
-- A sequence must have a sender and at least one step before activation.
+- A sequence needs at least one step before activation. A sender is required
+  only when an automated email step exists.
 - Sequence settings and steps cannot be changed while active. Pause first.
+- Marking an enrollment replied, skipping it to the next step, and removing it
+  require confirmation; skipping can accelerate external outreach.
 - Twenty has no paused enrollment state. `twenty_stop_enrollment` preserves
   history by transitioning a pending or active enrollment to `REMOVED`.
 

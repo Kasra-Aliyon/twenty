@@ -13,7 +13,7 @@ packaging, and the intentionally deferred upload/direct-email surfaces.
 ## 0. TL;DR / Key Decisions
 
 1. **Build a standalone Node/TypeScript MCP server** in `packages/twenty-mcp` named
-   `twenty-mcp-server`. It talks to a running Twenty instance over HTTP — it is *not*
+   `twenty-mcp-server`. It talks to a running Twenty instance over HTTP — it is _not_
    compiled into the server.
 2. **Three back-end channels**, chosen per operation:
    - **REST API** (`/rest/*`) → generic record CRUD for every object (standard + custom).
@@ -25,9 +25,9 @@ packaging, and the intentionally deferred upload/direct-email surfaces.
    REST + core GraphQL + the built-in MCP endpoint. **One caveat:** a few user-scoped
    resolvers (Unibox) are guarded by `UserAuthGuard` and may require a user access token
    instead of / in addition to an API key — see §7.
-4. **Two-layer tool design:** a small set of *generic, metadata-driven* CRUD tools that
-   mechanically cover 100% of objects, **plus** a curated set of *specialized workflow
-   tools* for the high-value surfaces the user named (opportunities pipeline, sequences,
+4. **Two-layer tool design:** a small set of _generic, metadata-driven_ CRUD tools that
+   mechanically cover 100% of objects, **plus** a curated set of _specialized workflow
+   tools_ for the high-value surfaces the user named (opportunities pipeline, sequences,
    enrollment, LinkedIn, Unibox, lists). Comprehensive coverage first, ergonomics second.
 5. **Transport:** **`stdio` first** — the goal is to drive this from local coding agents
    (**Claude Code** and **Codex**), both of which speak MCP over stdio natively. Also ship
@@ -60,7 +60,7 @@ packaging, and the intentionally deferred upload/direct-email surfaces.
 **Out of scope (explicitly):** Settings & admin — data model editing (creating
 objects/fields), members & roles, API keys, integrations, billing, workspace config,
 security, and the workflow/automation builder. (These map to Twenty's Settings area and
-the metadata-*write* API. We still *read* metadata for discovery.)
+the metadata-_write_ API. We still _read_ metadata for discovery.)
 
 ---
 
@@ -74,7 +74,7 @@ instance with an API key and exposes first-class MCP tools.
 **Why standalone (vs. extending the in-server MCP):**
 
 - Twenty **already ships an in-server MCP endpoint** at `POST /mcp`
-  (`packages/twenty-server/src/engine/api/mcp`). But it is built for Twenty's *internal*
+  (`packages/twenty-server/src/engine/api/mcp`). But it is built for Twenty's _internal_
   AI agent: it exposes meta-tools (`get_tool_catalog`, `execute_tool`, `load_skill`,
   `list_object_metadata_names`, `learn_tools`) that funnel all real work through a single
   `execute_tool` indirection over a `ToolRegistryService`. External clients get a poor
@@ -89,7 +89,7 @@ instance with an API key and exposes first-class MCP tools.
   for exactly this shape.
 
 **Alternative (secondary option, documented for completeness):** register the same
-capabilities as tools inside Twenty's `ToolRegistryService`. Then *both* the internal agent
+capabilities as tools inside Twenty's `ToolRegistryService`. Then _both_ the internal agent
 and the in-server MCP's `execute_tool` gain them "for free," and an external client could
 reach them via `execute_tool`. Downside: everything stays behind `execute_tool`, coupling
 to server internals, and no clean per-tool schemas for third-party MCP clients. **We keep
@@ -125,18 +125,18 @@ possible future backend, not the interface.**
 
 REST core (`packages/twenty-server/src/engine/api/rest/core`), base path `/rest`:
 
-| Operation | Method + path |
-|---|---|
-| List / find many | `GET /rest/{objectPlural}` (filter, order_by, limit, depth, cursors) |
-| Find one | `GET /rest/{objectPlural}/{id}` |
-| Group by | `GET /rest/{objectPlural}/groupBy` |
-| Find duplicates | `POST /rest/{objectPlural}/duplicates` |
-| Create one | `POST /rest/{objectPlural}` |
-| Create many (batch) | `POST /rest/batch/{objectPlural}` |
-| Update (partial) | `PATCH /rest/{objectPlural}/{id}` (PUT also accepted) |
-| Merge | `PATCH /rest/{objectPlural}/merge` |
-| Delete (soft) | `DELETE /rest/{objectPlural}/{id}` |
-| Restore | `PATCH /rest/restore/{objectPlural}/{id}` |
+| Operation           | Method + path                                                        |
+| ------------------- | -------------------------------------------------------------------- |
+| List / find many    | `GET /rest/{objectPlural}` (filter, order_by, limit, depth, cursors) |
+| Find one            | `GET /rest/{objectPlural}/{id}`                                      |
+| Group by            | `GET /rest/{objectPlural}/groupBy`                                   |
+| Find duplicates     | `POST /rest/{objectPlural}/duplicates`                               |
+| Create one          | `POST /rest/{objectPlural}`                                          |
+| Create many (batch) | `POST /rest/batch/{objectPlural}`                                    |
+| Update (partial)    | `PATCH /rest/{objectPlural}/{id}` (PUT also accepted)                |
+| Merge               | `PATCH /rest/{objectPlural}/merge`                                   |
+| Delete (soft)       | `DELETE /rest/{objectPlural}/{id}`                                   |
+| Restore             | `PATCH /rest/restore/{objectPlural}/{id}`                            |
 
 - Auth guard: `JwtAuthGuard` + `WorkspaceAuthGuard` + `CustomPermissionGuard`. API keys are
   JWTs (`ApiKeyTokenJwtPayload`, `jti` = key id) → `Authorization: Bearer <api-key>`.
@@ -206,18 +206,25 @@ still reach them.
   `completedCount`, `repliedCount`, `failedCount`, `position`; relations `steps`,
   `enrollments`.
   - `settings: SequenceSettings` = `{ activeDays[], windowStart, windowEnd, timezone,
-    dailyStarts, staggerMinutes, linkedinDailyActions, linkedinDelayPatternMinutes[],
-    stopOnReply }`.
+dailyStarts, staggerMinutes, linkedinDailyActions, linkedinDelayPatternMinutes[],
+stopOnReply }`.
 - **sequenceStep** — `name`, `type`, `settings` (discriminated union), `position`,
-  `sequence(Id)`. Step `type` ∈ `SEND_EMAIL | DELAY | CREATE_TASK | SEND_CONNECTION_REQUEST |
-  SEND_LINKEDIN_MESSAGE | WITHDRAW_CONNECTION_REQUEST`. Per-type `settings`:
-    - `SEND_EMAIL`: `{ subject, bodyHtml, threadAsReplyToPreviousEmail, stopOnReply }`
-    - `DELAY`: `{ days, hours, minutes }`
-    - `CREATE_TASK`: `{ taskType, titleTemplate, notesTemplate, priority,
-      assigneeWorkspaceMemberId, continueMode, deadlineDays }`
-    - `SEND_CONNECTION_REQUEST`: `{ noteTemplate, skipIfAlreadyConnected }`
-    - `SEND_LINKEDIN_MESSAGE`: `{ messageTemplate }`
-    - `WITHDRAW_CONNECTION_REQUEST`: `{ withdrawAfterDays, withdrawAfterHours }`
+  `sequence(Id)`. The canonical `settings.type` ∈ `SEND_EMAIL | DELAY | CREATE_TASK |
+SEND_CONNECTION_REQUEST | SEND_LINKEDIN_MESSAGE | WITHDRAW_CONNECTION_REQUEST |
+CONDITION | ENRICH_PHONE_NUMBER`. Every step may include
+  `branch: { conditionStepId, outcome: YES | NO }`; action steps may include
+  `{ executionMode: AUTOMATED | MANUAL, manualTaskTitle, manualTaskDescription }`.
+  Per-type settings:
+  - `SEND_EMAIL`: `{ subject, bodyHtml, threadAsReplyToPreviousEmail, stopOnReply, ...execution }`
+  - `DELAY`: `{ days, hours, minutes, branch? }`
+  - `CREATE_TASK`: `{ taskType, titleTemplate, notesTemplate, priority,
+assigneeWorkspaceMemberId, continueMode, deadlineDays, branch? }`
+  - `SEND_CONNECTION_REQUEST`: `{ noteTemplate, skipIfAlreadyConnected, ...execution }`
+  - `SEND_LINKEDIN_MESSAGE`: `{ messageTemplate, ...execution }`
+  - `WITHDRAW_CONNECTION_REQUEST`: `{ withdrawAfterDays, withdrawAfterHours, ...execution }`
+  - `CONDITION`: `{ condition, branch? }`; supported conditions cover LinkedIn network/
+    invite/message state and the presence of email, LinkedIn URL, or phone.
+  - `ENRICH_PHONE_NUMBER`: `{ ...execution }`; automated execution uses Apollo.
 - **sequenceEnrollment** — `person(Id)`, `sequence(Id)`, `status`
   (`PENDING | ACTIVE | COMPLETED | REPLIED | FAILED | REMOVED`), `currentStepId/Position`,
   `waitingOn` (`DELAY | EMAIL_SCHEDULED | TASK_DONE | TASK_DEADLINE | LINKEDIN_ACTION`),
@@ -264,39 +271,40 @@ Zod `inputSchema`, an `outputSchema`, and MCP `annotations`.
 Legend — **P0** = must-have foundation, **P1** = core UI parity, **P2** = polish/advanced.
 Annotations shown as (read-only? / destructive? / idempotent?).
 
-### 4.1 Discovery & metadata  (P0)
+### 4.1 Discovery & metadata (P0)
 
-| Tool | Purpose | Annotations |
-|---|---|---|
-| `twenty_list_objects` | List all objects (standard + custom): name, plural slug, icon, description, whether system. | ro / no / yes |
+| Tool                     | Purpose                                                                                                              | Annotations   |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------- | ------------- |
+| `twenty_list_objects`    | List all objects (standard + custom): name, plural slug, icon, description, whether system.                          | ro / no / yes |
 | `twenty_describe_object` | Full field list for one object: field name, type, required, enum options, relations, default. Powers input building. | ro / no / yes |
-| `twenty_global_search` | Cross-object search (via `SearchResolver`): query → matched records with object + label + id. | ro / no / yes |
+| `twenty_global_search`   | Cross-object search (via `SearchResolver`): query → matched records with object + label + id.                        | ro / no / yes |
 
-### 4.2 Generic record CRUD — works for **every** object  (P0)
+### 4.2 Generic record CRUD — works for **every** object (P0)
 
 These accept an `object` (plural slug) + typed payload validated against live metadata.
 
-| Tool | Maps to | Annotations |
-|---|---|---|
-| `twenty_list_records` | `GET /rest/{object}` — filter, order_by, limit, cursor, depth, fields | ro / no / yes |
-| `twenty_get_record` | `GET /rest/{object}/{id}` (depth control for relations) | ro / no / yes |
-| `twenty_create_record` | `POST /rest/{object}` | write / no / no |
-| `twenty_update_record` | `PATCH /rest/{object}/{id}` | write / no / no |
-| `twenty_delete_record` | `DELETE /rest/{object}/{id}` (soft delete → trash) | write / **yes** / yes |
-| `twenty_restore_record` | `PATCH /rest/restore/{object}/{id}` | write / no / yes |
-| `twenty_batch_create_records` | `POST /rest/batch/{object}` | write / no / no |
-| `twenty_find_duplicates` | `POST /rest/{object}/duplicates` | ro / no / yes |
-| `twenty_merge_records` | `PATCH /rest/{object}/merge` | write / **yes** / no |
-| `twenty_group_by` | `GET /rest/{object}/groupBy` — counts/aggregations per group (kanban, board, pipeline) | ro / no / yes |
+| Tool                          | Maps to                                                                                | Annotations           |
+| ----------------------------- | -------------------------------------------------------------------------------------- | --------------------- |
+| `twenty_list_records`         | `GET /rest/{object}` — filter, order_by, limit, cursor, depth, fields                  | ro / no / yes         |
+| `twenty_get_record`           | `GET /rest/{object}/{id}` (depth control for relations)                                | ro / no / yes         |
+| `twenty_create_record`        | `POST /rest/{object}`                                                                  | write / no / no       |
+| `twenty_update_record`        | `PATCH /rest/{object}/{id}`                                                            | write / no / no       |
+| `twenty_delete_record`        | `DELETE /rest/{object}/{id}` (soft delete → trash)                                     | write / **yes** / yes |
+| `twenty_restore_record`       | `PATCH /rest/restore/{object}/{id}`                                                    | write / no / yes      |
+| `twenty_batch_create_records` | `POST /rest/batch/{object}`                                                            | write / no / no       |
+| `twenty_find_duplicates`      | `POST /rest/{object}/duplicates`                                                       | ro / no / yes         |
+| `twenty_merge_records`        | `PATCH /rest/{object}/merge`                                                           | write / **yes** / no  |
+| `twenty_group_by`             | `GET /rest/{object}/groupBy` — counts/aggregations per group (kanban, board, pipeline) | ro / no / yes         |
 
 Notes:
+
 - `twenty_delete_record` is soft (recoverable via trash/restore). A separate hard-delete
   (`twenty_destroy_record`) is **P2 and gated** behind an explicit `confirm: true` because
   it's irreversible.
 - Generic tools alone technically satisfy "everything," but the specialized tools below make
   the common UI journeys reliable and self-documenting.
 
-### 4.3 People  (P0/P1)
+### 4.3 People (P0/P1)
 
 - `twenty_create_person` — name, emails, phones, jobTitle, linkedinLink, companyId, ownerId.
 - `twenty_update_person`
@@ -305,7 +313,7 @@ Notes:
   enrollments) in one call.
 - `twenty_set_person_company` — link/unlink to a company.
 
-### 4.4 Companies  (P0/P1)
+### 4.4 Companies (P0/P1)
 
 - `twenty_create_company` — name, domainName, industry, employees, annualRevenue, address,
   accountOwnerId, segments, technologies.
@@ -314,7 +322,7 @@ Notes:
 - `twenty_get_company` — with people/opportunities/notes/tasks.
 - `twenty_set_company_owner`
 
-### 4.5 Opportunities  (P0/P1)
+### 4.5 Opportunities (P0/P1)
 
 - `twenty_create_opportunity` — name, amount, closeDate, stage, probability, companyId,
   pointOfContactId, ownerId.
@@ -325,7 +333,7 @@ Notes:
 - `twenty_get_pipeline` — `group_by(stage)` with sums of `amount` and counts → the Kanban
   board as structured data.
 
-### 4.6 Tasks & Notes  (P1)
+### 4.6 Tasks & Notes (P1)
 
 - `twenty_create_task` / `twenty_update_task` / `twenty_complete_task` — title, body, dueAt,
   priority, assigneeId.
@@ -334,7 +342,7 @@ Notes:
   `noteTarget` / `taskTarget`).
 - `twenty_list_activities` — tasks + notes + timeline for a given record.
 
-### 4.7 Lists  (P1)
+### 4.7 Lists (P1)
 
 - `twenty_list_lists` — all `recordList`s (+ folder grouping, type).
 - `twenty_create_list` — name, type (`COMPANY|PERSON|OPPORTUNITY`), folderId.
@@ -342,25 +350,29 @@ Notes:
 - `twenty_add_record_to_list` / `twenty_remove_record_from_list` — manage `recordListMember`.
 - `twenty_list_folders` / `twenty_create_folder` — (P2).
 
-### 4.8 Sequences  (P1)
+### 4.8 Sequences (P1)
 
 - `twenty_list_sequences` — name, status, metrics (enrolled/active/completed/replied/failed).
+- `twenty_get_sequence_capabilities` — current settings, step schemas, conditions, branch and
+  merge semantics, execution modes, limits, and enrollment controls.
 - `twenty_get_sequence` — sequence + ordered steps + settings + metrics.
+- `twenty_list_sequence_steps` — exact global position and branch placement for all steps.
 - `twenty_create_sequence` — name, `settings` (with sane defaults), senderConnectedAccountId.
 - `twenty_update_sequence` — rename / edit settings.
 - `twenty_set_sequence_status` — `DRAFT` ↔ `ACTIVE` ↔ `PAUSED` (activate/pause/draft).
-- `twenty_add_sequence_step` — type + per-type settings (email/delay/task/LinkedIn), position.
+- `twenty_add_sequence_step` — all current action/condition/enrichment types, position,
+  branch placement, and automated/manual execution.
 - `twenty_update_sequence_step` / `twenty_reorder_sequence_step` / `twenty_delete_sequence_step`.
 - `twenty_enroll_person_in_sequence` — create a `sequenceEnrollment` (person + sequence +
   optional sender override). **Primary outreach action.** Surfaces invariant errors clearly.
 - `twenty_bulk_enroll_people` — enroll many (batch create), reporting per-person success.
 - `twenty_list_enrollments` — filter by sequence and/or status; shows `waitingOn`,
   `nextActionAt`, `currentStepPosition`.
-- `twenty_pause_enrollment` / `twenty_stop_enrollment` — update enrollment `status`
-  (`REMOVED`) — destructive-ish, confirm.
+- `twenty_mark_enrollment_replied`, `twenty_skip_enrollment_to_next_step`, and
+  `twenty_stop_enrollment` — the supported enrollment controls; confirm each.
 - `twenty_get_sequence_metrics` — roll-up per sequence/step.
 
-### 4.9 LinkedIn  (P1/P2)
+### 4.9 LinkedIn (P1/P2)
 
 - `twenty_list_linkedin_connections` / `twenty_get_linkedin_connection`.
 - `twenty_list_linkedin_threads` / `twenty_get_linkedin_thread` — thread + messages.
@@ -371,26 +383,26 @@ Notes:
 - `twenty_withdraw_linkedin_invitation` — WITHDRAW_CONNECTION_REQUEST action.
 - `twenty_list_linkedin_actions` — queued/executed actions with status & errors.
 
-> ⚠️ These create *outbound* actions on the user's behalf. They are annotated
+> ⚠️ These create _outbound_ actions on the user's behalf. They are annotated
 > `destructive: true, openWorld: true` and the description instructs the model to confirm
 > intent + recipient before calling. Exact `linkedinAction.type` enum literals to be read
 > from field metadata during implementation.
 
-### 4.10 Unibox  (P1) — user-token dependent (see §7)
+### 4.10 Unibox (P1) — user-token dependent (see §7)
 
 - `twenty_unibox_list_threads` — channel (`EMAIL|LINKEDIN`), folder, filters, pagination.
 - `twenty_unibox_get_thread` — messages in a thread.
 - `twenty_unibox_list_contacts` — inbox contacts with CRM-status filters.
 - `twenty_unibox_add_contacts_to_crm` — bulk-create People/Companies from selected contacts.
 
-### 4.11 Messaging / Email  (P2, if a send path is exposed)
+### 4.11 Messaging / Email (P2, if a send path is exposed)
 
 - `twenty_list_messages` / `twenty_list_message_threads` (read).
-- Direct email *send* outside a sequence: only if the server exposes a send mutation for a
+- Direct email _send_ outside a sequence: only if the server exposes a send mutation for a
   connected account. If not exposed, the sanctioned path is a one-step `SEND_EMAIL` sequence
   — document this rather than fabricate an endpoint.
 
-### 4.12 Files / attachments  (P2)
+### 4.12 Files / attachments (P2)
 
 - `twenty_list_attachments` (per record).
 - `twenty_upload_attachment` — `uploadFile` (multipart via GraphQL) then link as attachment.
@@ -410,7 +422,7 @@ Consider grouping into MCP "tool namespaces" or gating advanced sets behind a
    - Timeouts, limited retry with backoff on 429/5xx, and a single error-normalizer.
 2. **Metadata cache + dynamic Zod** — on first use, fetch objects/fields from the metadata
    API; cache (TTL + manual refresh tool). Build Zod schemas per object so
-   `create/update_record` validate field names/types/enums *before* hitting the server and
+   `create/update_record` validate field names/types/enums _before_ hitting the server and
    return actionable messages ("field `stagee` not found; did you mean `stage`?").
 3. **Pagination helper** — normalize Twenty cursor pagination into
    `{ total, count, items, has_more, next_cursor }` (§ best-practices).
@@ -477,7 +489,7 @@ conventions. Register tools with `server.registerTool` (modern API only).
   `Authorization: Bearer <key>`. Stored only in env (`TWENTY_API_KEY`), never in code or
   logs. Works for REST, core GraphQL (auto-generated), metadata, and the in-server MCP.
 - **User-scoped resolvers:** `UniboxResolver` uses `UserAuthGuard` and reads
-  `workspaceMemberId`/`userWorkspaceId`. An API key JWT *can* carry a `workspaceMemberId`,
+  `workspaceMemberId`/`userWorkspaceId`. An API key JWT _can_ carry a `workspaceMemberId`,
   so it **may** satisfy these — **must be verified during Phase 4.** If it doesn't, support
   an optional `TWENTY_USER_TOKEN` (user access token) used only for Unibox tools, and
   degrade gracefully (Unibox tools report "requires a user token" instead of failing
@@ -510,9 +522,12 @@ setup, and each agent spawns its own instance independently.
       "twenty": {
         "command": "node",
         "args": ["packages/twenty-mcp/dist/index.js"],
-        "env": { "TWENTY_BASE_URL": "http://localhost:3000", "TWENTY_API_KEY": "..." }
-      }
-    }
+        "env": {
+          "TWENTY_BASE_URL": "http://localhost:3000",
+          "TWENTY_API_KEY": "...",
+        },
+      },
+    },
   }
   ```
 - **Codex** — register in `~/.codex/config.toml` under `[mcp_servers.twenty]` with the same
@@ -599,19 +614,19 @@ package, CI (build + lint + typecheck via Nx), example client configs (Claude De
 
 ## 12. Appendix — capability ↔ UI map
 
-| UI surface | MCP tools |
-|---|---|
-| Companies table / record page | `create/update/find/get_company`, generic CRUD, `set_company_owner`, `get_company` relations |
-| People table / record page | `create/update/find/get_person`, `set_person_company` |
-| Opportunities / Kanban pipeline | `create/update/find/get_opportunity`, `set_opportunity_stage`, `get_pipeline`, `group_by` |
-| Tasks & Notes tabs | `create/update/complete_task`, `create/update_note`, `attach_note/task`, `list_activities` |
-| Lists (+ folders) | `list/create/get_list`, `add/remove_record_from_list`, `list/create_folder` |
-| Sequences builder & enrollment | `list/get/create/update_sequence`, `set_sequence_status`, `add/update/reorder/delete_sequence_step`, `enroll_person/bulk_enroll`, `list/stop_enrollment`, `get_sequence_metrics` |
-| LinkedIn | `list_connections/threads/actions`, `get_thread`, `send_message/invitation`, `withdraw_invitation` |
-| Unibox | `unibox_list_threads/get_thread/list_contacts/add_contacts_to_crm` |
-| Global search | `global_search` |
-| Trash / restore / merge / dedupe | `delete/restore_record`, `merge_records`, `find_duplicates` |
-| Any custom object | generic record tools + `describe_object` |
+| UI surface                       | MCP tools                                                                                                                                                                                                                            |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Companies table / record page    | `create/update/find/get_company`, generic CRUD, `set_company_owner`, `get_company` relations                                                                                                                                         |
+| People table / record page       | `create/update/find/get_person`, `set_person_company`                                                                                                                                                                                |
+| Opportunities / Kanban pipeline  | `create/update/find/get_opportunity`, `set_opportunity_stage`, `get_pipeline`, `group_by`                                                                                                                                            |
+| Tasks & Notes tabs               | `create/update/complete_task`, `create/update_note`, `attach_note/task`, `list_activities`                                                                                                                                           |
+| Lists (+ folders)                | `list/create/get_list`, `add/remove_record_from_list`, `list/create_folder`                                                                                                                                                          |
+| Sequences builder & enrollment   | `get_sequence_capabilities`, `list/get/create/update_sequence`, `list/add/update/reorder/delete_sequence_step`, `set_sequence_status`, `enroll_person/bulk_enroll`, `list/mark_replied/skip/stop_enrollment`, `get_sequence_metrics` |
+| LinkedIn                         | `list_connections/threads/actions`, `get_thread`, `send_message/invitation`, `withdraw_invitation`                                                                                                                                   |
+| Unibox                           | `unibox_list_threads/get_thread/list_contacts/add_contacts_to_crm`                                                                                                                                                                   |
+| Global search                    | `global_search`                                                                                                                                                                                                                      |
+| Trash / restore / merge / dedupe | `delete/restore_record`, `merge_records`, `find_duplicates`                                                                                                                                                                          |
+| Any custom object                | generic record tools + `describe_object`                                                                                                                                                                                             |
 
 _Field/enum specifics in this plan were read from the current codebase
 (`packages/twenty-server/src/modules/*`, `packages/twenty-shared/src/types/*`,

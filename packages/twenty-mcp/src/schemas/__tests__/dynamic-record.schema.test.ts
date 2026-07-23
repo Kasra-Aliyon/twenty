@@ -86,11 +86,17 @@ describe('dynamic record schema', () => {
   });
 
   it('accepts current sequence step types when live metadata is stale', () => {
-    expect(
-      validateRecordInput(sequenceStepObject, {
-        type: 'SEND_LINKEDIN_MESSAGE',
-      }),
-    ).toEqual({ type: 'SEND_LINKEDIN_MESSAGE' });
+    for (const type of [
+      'SEND_LINKEDIN_MESSAGE',
+      'CONDITION',
+      'ENRICH_PHONE_NUMBER',
+    ]) {
+      expect(
+        validateRecordInput(sequenceStepObject, {
+          type,
+        }),
+      ).toEqual({ type });
+    }
   });
 
   it('suggests the closest live field for a typo', () => {

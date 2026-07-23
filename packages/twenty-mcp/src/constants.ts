@@ -1,5 +1,5 @@
 export const SERVER_NAME = 'twenty-mcp-server';
-export const SERVER_VERSION = '0.1.0';
+export const SERVER_VERSION = '0.2.0';
 
 export const DEFAULT_CHARACTER_LIMIT = 25_000;
 export const DEFAULT_LIST_LIMIT = 20;
@@ -64,6 +64,44 @@ export const SEQUENCE_STEP_TYPES = [
   'SEND_CONNECTION_REQUEST',
   'SEND_LINKEDIN_MESSAGE',
   'WITHDRAW_CONNECTION_REQUEST',
+  'CONDITION',
+  'ENRICH_PHONE_NUMBER',
+] as const;
+export const SEQUENCE_ACTION_EXECUTION_MODES = ['AUTOMATED', 'MANUAL'] as const;
+export const SEQUENCE_CONDITION_TYPES = [
+  'IS_IN_LINKEDIN_NETWORK',
+  'HAS_EMAIL_ADDRESS',
+  'HAS_LINKEDIN_URL',
+  'ACCEPTED_LINKEDIN_INVITE',
+  'OPENED_LINKEDIN_MESSAGE',
+  'HAS_PHONE_NUMBER',
+] as const;
+export const SEQUENCE_CONDITION_BRANCHES = ['YES', 'NO'] as const;
+export const SEQUENCE_TASK_TYPES = [
+  'CALL',
+  'TODO',
+  'LINKEDIN_CONNECTION',
+  'LINKEDIN_MESSAGE',
+  'EMAIL',
+  'CUSTOM',
+] as const;
+export const SEQUENCE_TASK_PRIORITIES = [
+  'LOW',
+  'MEDIUM',
+  'HIGH',
+  'URGENT',
+] as const;
+export const SEQUENCE_TASK_CONTINUE_MODES = [
+  'IMMEDIATE',
+  'ON_DONE',
+  'ON_DEADLINE',
+] as const;
+export const SEQUENCE_WAITING_ON = [
+  'DELAY',
+  'EMAIL_SCHEDULED',
+  'TASK_DONE',
+  'TASK_DEADLINE',
+  'LINKEDIN_ACTION',
 ] as const;
 
 export const SEQUENCE_TEMPLATE_VARIABLES = [

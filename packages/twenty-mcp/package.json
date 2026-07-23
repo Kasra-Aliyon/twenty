@@ -1,6 +1,6 @@
 {
   "name": "twenty-mcp-server",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Model Context Protocol server for Twenty CRM",
   "type": "module",
   "license": "AGPL-3.0",

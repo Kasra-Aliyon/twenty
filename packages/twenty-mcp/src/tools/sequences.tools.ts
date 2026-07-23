@@ -3,10 +3,18 @@ import { z } from 'zod';
 
 import {
   DEFAULT_SEQUENCE_SETTINGS,
+  MAX_LIST_LIMIT,
+  SEQUENCE_ACTION_EXECUTION_MODES,
+  SEQUENCE_CONDITION_BRANCHES,
+  SEQUENCE_CONDITION_TYPES,
   SEQUENCE_ENROLLMENT_STATUSES,
   SEQUENCE_STATUSES,
   SEQUENCE_STEP_TYPES,
+  SEQUENCE_TASK_CONTINUE_MODES,
+  SEQUENCE_TASK_PRIORITIES,
+  SEQUENCE_TASK_TYPES,
   SEQUENCE_TEMPLATE_VARIABLES,
+  SEQUENCE_WAITING_ON,
   STANDARD_OBJECTS,
 } from '../constants.js';
 import { runTool } from '../formatting/format-tool-result.js';
@@ -87,7 +95,41 @@ const filterConnectedAccounts = (
       (provider === undefined || account.provider === provider),
   );
 
+const sequenceStepBranchSchema = z
+  .object({
+    conditionStepId: recordIdSchema.describe(
+      'ID of the CONDITION step that owns this branch.',
+    ),
+    outcome: z.enum(SEQUENCE_CONDITION_BRANCHES),
+  })
+  .describe(
+    'Places the step in a condition Yes/No lane. Omit or pass null for the root flow.',
+  );
+
+const placementSettingsShape = {
+  branch: sequenceStepBranchSchema.nullable().optional(),
+};
+
+const actionExecutionSettingsShape = {
+  ...placementSettingsShape,
+  executionMode: z
+    .enum(SEQUENCE_ACTION_EXECUTION_MODES)
+    .default('AUTOMATED')
+    .describe(
+      'AUTOMATED performs the action; MANUAL creates a task and waits for completion.',
+    ),
+  manualTaskTitle: z
+    .string()
+    .default('')
+    .describe('Required when executionMode is MANUAL. Supports variables.'),
+  manualTaskDescription: z
+    .string()
+    .default('')
+    .describe('Task context used when executionMode is MANUAL.'),
+};
+
 const emailSettingsSchema = z.object({
+  ...actionExecutionSettingsShape,
   subject: z.string(),
   bodyHtml: z.string(),
   threadAsReplyToPreviousEmail: z.boolean().default(false),
@@ -95,74 +137,154 @@ const emailSettingsSchema = z.object({
 });
 
 const delaySettingsSchema = z.object({
-  days: z.number().int().nonnegative().default(0),
-  hours: z.number().int().nonnegative().default(0),
-  minutes: z.number().int().nonnegative().default(0),
+  ...placementSettingsShape,
+  days: z.number().nonnegative().default(0),
+  hours: z.number().nonnegative().default(0),
+  minutes: z.number().nonnegative().default(0),
 });
 
 const taskSettingsSchema = z.object({
-  taskType: z
-    .enum([
-      'CALL',
-      'TODO',
-      'LINKEDIN_CONNECTION',
-      'LINKEDIN_MESSAGE',
-      'EMAIL',
-      'CUSTOM',
-    ])
-    .default('TODO'),
-  titleTemplate: z.string(),
+  ...placementSettingsShape,
+  taskType: z.enum(SEQUENCE_TASK_TYPES).default('TODO'),
+  titleTemplate: z.string().min(1),
   notesTemplate: z.string().default(''),
-  priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']).default('MEDIUM'),
+  priority: z.enum(SEQUENCE_TASK_PRIORITIES).default('MEDIUM'),
   assigneeWorkspaceMemberId: z.string().nullable().default(null),
-  continueMode: z
-    .enum(['IMMEDIATE', 'ON_DONE', 'ON_DEADLINE'])
-    .default('ON_DONE'),
-  deadlineDays: z.number().int().nonnegative().nullable().default(null),
+  continueMode: z.enum(SEQUENCE_TASK_CONTINUE_MODES).default('ON_DONE'),
+  deadlineDays: z.number().nonnegative().nullable().default(null),
 });
 
 const connectionRequestSettingsSchema = z.object({
+  ...actionExecutionSettingsShape,
   noteTemplate: z.string().default(''),
   skipIfAlreadyConnected: z.boolean().default(true),
 });
 
 const linkedinMessageSettingsSchema = z.object({
-  messageTemplate: z.string().min(1),
+  ...actionExecutionSettingsShape,
+  messageTemplate: z.string().min(1).max(2000),
 });
 
 const withdrawSettingsSchema = z.object({
-  withdrawAfterDays: z.number().int().nonnegative().default(0),
-  withdrawAfterHours: z.number().int().nonnegative().default(0),
+  ...actionExecutionSettingsShape,
+  withdrawAfterDays: z.number().nonnegative().default(7),
+  withdrawAfterHours: z.number().nonnegative().default(0),
 });
 
-const stepInputSchema = z.discriminatedUnion('type', [
-  z.object({
-    type: z.literal(SEQUENCE_STEP_TYPES[0]),
-    settings: emailSettingsSchema,
-  }),
-  z.object({
-    type: z.literal(SEQUENCE_STEP_TYPES[1]),
-    settings: delaySettingsSchema,
-  }),
-  z.object({
-    type: z.literal(SEQUENCE_STEP_TYPES[2]),
-    settings: taskSettingsSchema,
-  }),
-  z.object({
-    type: z.literal(SEQUENCE_STEP_TYPES[3]),
-    settings: connectionRequestSettingsSchema,
-  }),
-  z.object({
-    type: z.literal(SEQUENCE_STEP_TYPES[4]),
-    settings: linkedinMessageSettingsSchema,
-  }),
-  z.object({
-    type: z.literal(SEQUENCE_STEP_TYPES[5]),
-    settings: withdrawSettingsSchema,
-  }),
-]);
+const conditionSettingsSchema = z.object({
+  ...placementSettingsShape,
+  condition: z.enum(SEQUENCE_CONDITION_TYPES),
+});
+
+const enrichPhoneNumberSettingsSchema = z.object({
+  ...actionExecutionSettingsShape,
+});
+
+const stepInputSchema = z
+  .discriminatedUnion('type', [
+    z.object({
+      type: z.literal(SEQUENCE_STEP_TYPES[0]),
+      settings: emailSettingsSchema,
+    }),
+    z.object({
+      type: z.literal(SEQUENCE_STEP_TYPES[1]),
+      settings: delaySettingsSchema,
+    }),
+    z.object({
+      type: z.literal(SEQUENCE_STEP_TYPES[2]),
+      settings: taskSettingsSchema,
+    }),
+    z.object({
+      type: z.literal(SEQUENCE_STEP_TYPES[3]),
+      settings: connectionRequestSettingsSchema,
+    }),
+    z.object({
+      type: z.literal(SEQUENCE_STEP_TYPES[4]),
+      settings: linkedinMessageSettingsSchema,
+    }),
+    z.object({
+      type: z.literal(SEQUENCE_STEP_TYPES[5]),
+      settings: withdrawSettingsSchema,
+    }),
+    z.object({
+      type: z.literal(SEQUENCE_STEP_TYPES[6]),
+      settings: conditionSettingsSchema,
+    }),
+    z.object({
+      type: z.literal(SEQUENCE_STEP_TYPES[7]),
+      settings: enrichPhoneNumberSettingsSchema,
+    }),
+  ])
+  .superRefine((input, context) => {
+    if (
+      'executionMode' in input.settings &&
+      input.settings.executionMode === 'MANUAL' &&
+      input.settings.manualTaskTitle.trim().length === 0
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'manualTaskTitle is required for MANUAL execution.',
+        path: ['settings', 'manualTaskTitle'],
+      });
+    }
+
+    if (
+      input.type === 'CONDITION' &&
+      input.settings.branch !== undefined &&
+      input.settings.branch !== null
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message:
+          'Nested conditions are not supported by the sequence builder. Add the condition to the root flow.',
+        path: ['settings', 'branch'],
+      });
+    }
+
+    if (
+      input.type === 'CREATE_TASK' &&
+      input.settings.continueMode === 'ON_DEADLINE' &&
+      input.settings.deadlineDays === null
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'deadlineDays is required when continueMode is ON_DEADLINE.',
+        path: ['settings', 'deadlineDays'],
+      });
+    }
+  });
 
 type SequenceStepInput = z.infer<typeof stepInputSchema>;
+
+type UnknownRecord = Record<string, unknown>;
+
+const isRecord = (value: unknown): value is UnknownRecord =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const getSequenceStepStorageType = (
+  type: SequenceStepInput['type'],
+): SequenceStepInput['type'] => {
+  switch (type) {
+    case 'SEND_LINKEDIN_MESSAGE':
+    case 'CONDITION':
+    case 'ENRICH_PHONE_NUMBER':
+      return 'CREATE_TASK';
+    default:
+      return type;
+  }
+};
+
+const normalizedStepSettings = (
+  input: SequenceStepInput,
+): Record<string, unknown> => {
+  const { branch, ...settings } = input.settings;
+
+  return {
+    type: input.type,
+    ...settings,
+    ...(branch === undefined || branch === null ? {} : { branch }),
+  };
+};
 
 const stepData = ({
   input,
@@ -178,10 +300,142 @@ const stepData = ({
   compactRecord([
     ['sequenceId', sequenceId],
     ['name', name],
-    ['type', input.type],
-    ['settings', { type: input.type, ...input.settings }],
+    ['type', getSequenceStepStorageType(input.type)],
+    ['settings', normalizedStepSettings(input)],
     ['position', position],
   ]);
+
+const getStepSettings = (step: unknown): UnknownRecord => {
+  if (!isRecord(step) || !isRecord(step.settings)) {
+    throw new Error('Twenty returned a sequence step without settings.');
+  }
+
+  return step.settings;
+};
+
+const getStepSequenceId = (step: unknown): string => {
+  if (!isRecord(step) || typeof step.sequenceId !== 'string') {
+    throw new Error('Twenty returned a sequence step without sequenceId.');
+  }
+
+  return step.sequenceId;
+};
+
+const withPreservedStepBranch = ({
+  currentStep,
+  input,
+}: {
+  currentStep: unknown;
+  input: SequenceStepInput;
+}): SequenceStepInput => {
+  if (input.settings.branch !== undefined) {
+    return input;
+  }
+
+  const currentBranch = getStepSettings(currentStep).branch;
+
+  if (!isRecord(currentBranch)) {
+    return input;
+  }
+
+  return {
+    ...input,
+    settings: {
+      ...input.settings,
+      branch: currentBranch as z.infer<typeof sequenceStepBranchSchema>,
+    },
+  } as SequenceStepInput;
+};
+
+const assertBranchTarget = async ({
+  branch,
+  records,
+  sequenceId,
+}: {
+  branch: z.infer<typeof sequenceStepBranchSchema> | null | undefined;
+  records: RecordsService;
+  sequenceId: string;
+}): Promise<void> => {
+  if (branch === undefined || branch === null) {
+    return;
+  }
+
+  const conditionStep = await records.get({
+    object: STANDARD_OBJECTS.sequenceSteps,
+    id: branch.conditionStepId,
+  });
+
+  if (
+    getStepSequenceId(conditionStep) !== sequenceId ||
+    getStepSettings(conditionStep).type !== 'CONDITION'
+  ) {
+    throw new Error(
+      'branch.conditionStepId must reference a CONDITION step in the same sequence.',
+    );
+  }
+};
+
+const findDescendantStepIds = ({
+  stepId,
+  steps,
+}: {
+  stepId: string;
+  steps: unknown[];
+}): string[] => {
+  const descendants: string[] = [];
+  let parentIds = new Set([stepId]);
+
+  while (parentIds.size > 0) {
+    const childIds = steps
+      .filter((step) => {
+        if (!isRecord(step) || typeof step.id !== 'string') {
+          return false;
+        }
+
+        const settings = isRecord(step.settings) ? step.settings : {};
+        const branch = isRecord(settings.branch) ? settings.branch : {};
+
+        return (
+          typeof branch.conditionStepId === 'string' &&
+          parentIds.has(branch.conditionStepId) &&
+          !descendants.includes(step.id)
+        );
+      })
+      .map((step) => (step as UnknownRecord).id as string);
+
+    descendants.push(...childIds);
+    parentIds = new Set(childIds);
+  }
+
+  return descendants;
+};
+
+const listAllSequenceSteps = async ({
+  records,
+  sequenceId,
+}: {
+  records: RecordsService;
+  sequenceId: string;
+}): Promise<unknown[]> => {
+  const steps: unknown[] = [];
+  let startingAfter: string | undefined;
+
+  do {
+    const page = await records.list({
+      object: STANDARD_OBJECTS.sequenceSteps,
+      filter: filterCondition('sequenceId', 'eq', sequenceId),
+      orderBy: 'position[AscNullsLast]',
+      limit: MAX_LIST_LIMIT,
+      startingAfter,
+    });
+
+    steps.push(...page.items);
+    startingAfter =
+      page.has_more && page.next_cursor !== null ? page.next_cursor : undefined;
+  } while (startingAfter !== undefined);
+
+  return steps;
+};
 
 const createSequenceData = ({
   name,
@@ -199,6 +453,140 @@ const createSequenceData = ({
     : { senderConnectedAccountId }),
 });
 
+const SEQUENCE_CAPABILITIES = {
+  lifecycle: {
+    statuses: SEQUENCE_STATUSES,
+    activation_requirements: [
+      'At least one step.',
+      'A connected sender only when the sequence contains an automated SEND_EMAIL step.',
+      'Explicit confirmation because activation can start external outreach.',
+    ],
+    editing:
+      'Pause the sequence and wait for active enrollments to stop before changing settings or steps.',
+  },
+  sequence_settings: {
+    defaults: DEFAULT_SEQUENCE_SETTINGS,
+    active_days:
+      'Integers 0-6 where 0 is Sunday. Empty means the sequence never opens.',
+    sending_window:
+      'windowStart/windowEnd are HH:mm in the configured IANA timezone.',
+    daily_starts:
+      'Maximum pending enrollments admitted into the active sequence per local day.',
+    stagger_minutes:
+      'Minimum spacing used when scheduling automated email starts.',
+    linkedin_limits:
+      'linkedinDailyActions is capped at 20; linkedinDelayPatternMinutes controls workspace-wide LinkedIn action spacing.',
+    stop_on_reply:
+      'Sequence default. Automated email steps may inherit or override it.',
+  },
+  placement: {
+    field: 'step.settings.branch',
+    shape: {
+      conditionStepId: 'ID of a CONDITION step in the same sequence',
+      outcome: SEQUENCE_CONDITION_BRANCHES,
+    },
+    semantics:
+      'A matching contact enters YES and a non-matching contact enters NO. Each lane runs by global position, then merges into the next root step. Nested conditions are not supported by the builder.',
+  },
+  execution_modes: {
+    values: SEQUENCE_ACTION_EXECUTION_MODES,
+    supported_steps: [
+      'SEND_EMAIL',
+      'SEND_CONNECTION_REQUEST',
+      'SEND_LINKEDIN_MESSAGE',
+      'WITHDRAW_CONNECTION_REQUEST',
+      'ENRICH_PHONE_NUMBER',
+    ],
+    automated:
+      'Performs or queues the action when the enrollment reaches the step.',
+    manual:
+      'Creates a linked task using manualTaskTitle/manualTaskDescription and waits until that task is completed.',
+  },
+  step_types: {
+    SEND_EMAIL: {
+      fields: [
+        'subject',
+        'bodyHtml',
+        'threadAsReplyToPreviousEmail',
+        'stopOnReply',
+      ],
+      automated: 'Sends through the selected connected account.',
+      manual: 'Creates an EMAIL task and waits for completion.',
+    },
+    DELAY: {
+      fields: ['days', 'hours', 'minutes'],
+      behavior: 'Waits for the configured duration.',
+    },
+    CREATE_TASK: {
+      fields: [
+        'taskType',
+        'titleTemplate',
+        'notesTemplate',
+        'priority',
+        'assigneeWorkspaceMemberId',
+        'continueMode',
+        'deadlineDays',
+      ],
+      task_types: SEQUENCE_TASK_TYPES,
+      priorities: SEQUENCE_TASK_PRIORITIES,
+      continue_modes: {
+        IMMEDIATE: 'Create the task and continue immediately.',
+        ON_DONE: 'Wait until the linked task is completed.',
+        ON_DEADLINE:
+          'Continue when the task is completed or deadlineDays elapses.',
+      },
+    },
+    SEND_CONNECTION_REQUEST: {
+      fields: ['noteTemplate', 'skipIfAlreadyConnected'],
+      limits: 'The rendered note is truncated to 200 characters.',
+      automated: 'Queues a LinkedIn connection action for the browser runner.',
+      manual: 'Creates a LINKEDIN_CONNECTION task.',
+    },
+    SEND_LINKEDIN_MESSAGE: {
+      fields: ['messageTemplate'],
+      limits: 'Rendered message must contain 1-2000 characters.',
+      automated:
+        'Queues a LinkedIn message for a recognized first-degree connection.',
+      manual: 'Creates a LINKEDIN_MESSAGE task.',
+    },
+    WITHDRAW_CONNECTION_REQUEST: {
+      fields: ['withdrawAfterDays', 'withdrawAfterHours'],
+      automated: 'Queues a delayed LinkedIn invitation withdrawal.',
+      manual: 'Creates a CUSTOM task.',
+    },
+    CONDITION: {
+      fields: ['condition'],
+      conditions: {
+        IS_IN_LINKEDIN_NETWORK:
+          'True for a synced or recorded first-degree LinkedIn connection.',
+        HAS_EMAIL_ADDRESS: 'True when the person has a primary email.',
+        HAS_LINKEDIN_URL: 'True when the person has a primary LinkedIn URL.',
+        ACCEPTED_LINKEDIN_INVITE:
+          'True for a synced or recorded first-degree LinkedIn connection.',
+        OPENED_LINKEDIN_MESSAGE:
+          'LinkedIn has no recipient read receipt; inbound conversation activity is used as the signal.',
+        HAS_PHONE_NUMBER: 'True when the person has a primary phone number.',
+      },
+    },
+    ENRICH_PHONE_NUMBER: {
+      fields: [],
+      automated:
+        'Uses Apollo enrichment when the person lacks a phone number; the enrollment fails if enrichment is disabled or no number is found.',
+      manual: 'Creates a CUSTOM task to find and add a phone number.',
+    },
+  },
+  enrollment: {
+    statuses: SEQUENCE_ENROLLMENT_STATUSES,
+    waiting_on: SEQUENCE_WAITING_ON,
+    controls: [
+      'Mark an open enrollment as replied.',
+      'Skip an active enrollment to its next step now.',
+      'Remove a pending or active enrollment while preserving history.',
+    ],
+  },
+  template_variables: SEQUENCE_TEMPLATE_VARIABLES,
+} as const;
+
 export const registerSequenceTools = (
   server: McpServer,
   dependencies: ToolDependencies,
@@ -206,6 +594,22 @@ export const registerSequenceTools = (
   const records = new RecordsService(
     dependencies.client,
     dependencies.metadata,
+  );
+
+  server.registerTool(
+    'twenty_get_sequence_capabilities',
+    {
+      title: 'Get sequence builder capabilities',
+      description:
+        'Returns the current sequence lifecycle, settings, step schemas, conditions, Yes/No branch placement, automated/manual execution behavior, LinkedIn limits, phone enrichment behavior, task continuation, enrollment controls, and template variables. Call before creating or changing a sequence.',
+      inputSchema: z.object({
+        response_format: responseFormatSchema,
+      }),
+      outputSchema: TOOL_OUTPUT_SCHEMA,
+      annotations: { readOnlyHint: true, idempotentHint: true },
+    },
+    async ({ response_format }) =>
+      runTool(async () => SEQUENCE_CAPABILITIES, response_format),
   );
 
   server.registerTool(
@@ -303,7 +707,7 @@ export const registerSequenceTools = (
     {
       title: 'Get an outreach sequence',
       description:
-        'Gets a sequence with ordered steps, settings, enrollments, and metrics.',
+        'Gets a sequence with settings, nested relations, enrollments, and metrics. Use twenty_list_sequence_steps when exact global/branch ordering is needed.',
       inputSchema: z.object({
         sequence_id: recordIdSchema,
         depth: depthSchema.default(2),
@@ -322,6 +726,30 @@ export const registerSequenceTools = (
           }),
         response_format,
       ),
+  );
+
+  server.registerTool(
+    'twenty_list_sequence_steps',
+    {
+      title: 'List sequence steps',
+      description:
+        'Lists every step for one sequence in global position order, including each canonical settings.type, executionMode, and optional settings.branch placement.',
+      inputSchema: z.object({
+        sequence_id: recordIdSchema,
+        response_format: responseFormatSchema,
+      }),
+      outputSchema: TOOL_OUTPUT_SCHEMA,
+      annotations: { readOnlyHint: true, idempotentHint: true },
+    },
+    async ({ sequence_id, response_format }) =>
+      runTool(async () => {
+        const items = await listAllSequenceSteps({
+          records,
+          sequenceId: sequence_id,
+        });
+
+        return { count: items.length, items };
+      }, response_format),
   );
 
   server.registerTool(
@@ -397,7 +825,7 @@ export const registerSequenceTools = (
     {
       title: 'Set outreach sequence status',
       description:
-        'Activates, pauses, or returns a sequence to DRAFT. Activation requires a sender and at least one step.',
+        'Activates, pauses, or returns a sequence to DRAFT. Activation requires at least one step and requires a sender only when an automated email step exists.',
       inputSchema: z.object({
         sequence_id: recordIdSchema,
         status: z.enum(SEQUENCE_STATUSES),
@@ -438,11 +866,11 @@ export const registerSequenceTools = (
     {
       title: 'Add an outreach sequence step',
       description:
-        'Adds a typed email, delay, task, LinkedIn, or withdrawal step. The sequence must not be active.',
+        'Adds any current sequence step: email, delay, task, LinkedIn action, condition, or phone enrichment. Put an action in a Yes/No lane with settings.branch={conditionStepId,outcome}. Action-capable steps accept AUTOMATED or MANUAL execution. The sequence must not be active.',
       inputSchema: z.object({
         sequence_id: recordIdSchema,
         name: z.string().nullable().optional(),
-        position: z.number().optional(),
+        position: z.number().nonnegative().optional(),
         step: stepInputSchema,
         response_format: responseFormatSchema,
       }),
@@ -450,19 +878,23 @@ export const registerSequenceTools = (
       annotations: { readOnlyHint: false, idempotentHint: false },
     },
     async ({ sequence_id, name, position, step, response_format }) =>
-      runTool(
-        () =>
-          records.create({
-            object: STANDARD_OBJECTS.sequenceSteps,
-            data: stepData({
-              input: step,
-              sequenceId: sequence_id,
-              name,
-              position,
-            }),
+      runTool(async () => {
+        await assertBranchTarget({
+          branch: step.settings.branch,
+          records,
+          sequenceId: sequence_id,
+        });
+
+        return records.create({
+          object: STANDARD_OBJECTS.sequenceSteps,
+          data: stepData({
+            input: step,
+            sequenceId: sequence_id,
+            name,
+            position,
           }),
-        response_format,
-      ),
+        });
+      }, response_format),
   );
 
   server.registerTool(
@@ -470,7 +902,7 @@ export const registerSequenceTools = (
     {
       title: 'Update an outreach sequence step',
       description:
-        'Updates the type/settings/name of a step. The containing sequence must not be active.',
+        'Updates the type/settings/name of a step. Omitted settings.branch preserves its current lane; null moves it to the root flow. The containing sequence must not be active.',
       inputSchema: z.object({
         step_id: recordIdSchema,
         name: z.string().nullable().optional(),
@@ -481,15 +913,27 @@ export const registerSequenceTools = (
       annotations: { readOnlyHint: false, idempotentHint: false },
     },
     async ({ step_id, name, step, response_format }) =>
-      runTool(
-        () =>
-          records.update({
-            object: STANDARD_OBJECTS.sequenceSteps,
-            id: step_id,
-            data: stepData({ input: step, name }),
-          }),
-        response_format,
-      ),
+      runTool(async () => {
+        const currentStep = await records.get({
+          object: STANDARD_OBJECTS.sequenceSteps,
+          id: step_id,
+        });
+        const input = stepInputSchema.parse(
+          withPreservedStepBranch({ currentStep, input: step }),
+        );
+
+        await assertBranchTarget({
+          branch: input.settings.branch,
+          records,
+          sequenceId: getStepSequenceId(currentStep),
+        });
+
+        return records.update({
+          object: STANDARD_OBJECTS.sequenceSteps,
+          id: step_id,
+          data: stepData({ input, name }),
+        });
+      }, response_format),
   );
 
   server.registerTool(
@@ -523,7 +967,7 @@ export const registerSequenceTools = (
     {
       title: 'Delete an outreach sequence step',
       description:
-        'Moves a sequence step to trash. The sequence must not be active. Requires confirmation.',
+        'Moves a sequence step to trash. Deleting a condition also trashes every descendant in its Yes/No lanes, matching the sequence builder. The sequence must not be active. Requires confirmation.',
       inputSchema: z.object({
         step_id: recordIdSchema,
         confirm: z.boolean().describe(CONFIRMATION_DESCRIPTION),
@@ -544,7 +988,44 @@ export const registerSequenceTools = (
           );
         }
 
-        return records.softDelete(STANDARD_OBJECTS.sequenceSteps, step_id);
+        const step = await records.get({
+          object: STANDARD_OBJECTS.sequenceSteps,
+          id: step_id,
+        });
+        const steps = await listAllSequenceSteps({
+          records,
+          sequenceId: getStepSequenceId(step),
+        });
+        const descendantStepIds = findDescendantStepIds({
+          stepId: step_id,
+          steps,
+        });
+        const results = [];
+        const descendantDeleteOrder = [...descendantStepIds].reverse();
+
+        for (const descendantStepId of descendantDeleteOrder) {
+          results.push({
+            step_id: descendantStepId,
+            result: await records.softDelete(
+              STANDARD_OBJECTS.sequenceSteps,
+              descendantStepId,
+            ),
+          });
+        }
+
+        results.push({
+          step_id,
+          result: await records.softDelete(
+            STANDARD_OBJECTS.sequenceSteps,
+            step_id,
+          ),
+        });
+
+        return {
+          deleted_step_id: step_id,
+          deleted_descendant_ids: descendantStepIds,
+          results,
+        };
       }, response_format),
   );
 
@@ -647,7 +1128,7 @@ export const registerSequenceTools = (
     {
       title: 'List sequence enrollments',
       description:
-        'Lists enrollment execution state including waitingOn, nextActionAt, current step, and errors.',
+        'Lists enrollment execution state including waitingOn, nextActionAt, current step, sender, reply behavior, timestamps, and errors.',
       inputSchema: z.object({
         sequence_id: z.string().optional(),
         person_id: z.string().optional(),
@@ -680,6 +1161,78 @@ export const registerSequenceTools = (
           }),
         response_format,
       ),
+  );
+
+  server.registerTool(
+    'twenty_mark_enrollment_replied',
+    {
+      title: 'Mark a sequence enrollment replied',
+      description:
+        'Marks a PENDING or ACTIVE enrollment as REPLIED, clears pending execution, and retains its history. Requires confirmation.',
+      inputSchema: z.object({
+        enrollment_id: recordIdSchema,
+        confirm: z.boolean().describe(CONFIRMATION_DESCRIPTION),
+        response_format: responseFormatSchema,
+      }),
+      outputSchema: TOOL_OUTPUT_SCHEMA,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+      },
+    },
+    async ({ enrollment_id, confirm, response_format }) =>
+      runTool(async () => {
+        if (!confirm) {
+          throw new Error(
+            'Enrollment reply was not recorded: confirm the enrollment first.',
+          );
+        }
+
+        return records.update({
+          object: STANDARD_OBJECTS.sequenceEnrollments,
+          id: enrollment_id,
+          data: { status: 'REPLIED' },
+        });
+      }, response_format),
+  );
+
+  server.registerTool(
+    'twenty_skip_enrollment_to_next_step',
+    {
+      title: 'Skip enrollment to the next step',
+      description:
+        'Makes an ACTIVE enrollment immediately eligible to leave its current wait and process the next step. This can accelerate external outreach, so confirm the enrollment and next step first.',
+      inputSchema: z.object({
+        enrollment_id: recordIdSchema,
+        confirm: z.boolean().describe(CONFIRMATION_DESCRIPTION),
+        response_format: responseFormatSchema,
+      }),
+      outputSchema: TOOL_OUTPUT_SCHEMA,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+    },
+    async ({ enrollment_id, confirm, response_format }) =>
+      runTool(async () => {
+        if (!confirm) {
+          throw new Error(
+            'Enrollment was not advanced: confirm the enrollment and next step first.',
+          );
+        }
+
+        return records.update({
+          object: STANDARD_OBJECTS.sequenceEnrollments,
+          id: enrollment_id,
+          data: {
+            waitingOn: 'DELAY',
+            nextActionAt: new Date().toISOString(),
+          },
+        });
+      }, response_format),
   );
 
   server.registerTool(
@@ -751,6 +1304,11 @@ export const registerSequenceTools = (
 
 export const sequencesToolsTesting = {
   createSequenceData,
+  findDescendantStepIds,
   filterConnectedAccounts,
+  getSequenceStepStorageType,
+  normalizedStepSettings,
   stepData,
+  stepInputSchema,
+  withPreservedStepBranch,
 };

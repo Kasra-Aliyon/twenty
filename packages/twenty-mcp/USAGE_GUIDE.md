@@ -327,7 +327,7 @@ From the terminal:
 codex mcp list
 ```
 
-Inside Codex, run `/mcp` and confirm that `twenty` is connected and exposes 106
+Inside Codex, run `/mcp` and confirm that `twenty` is connected and exposes 110
 tools. Then ask:
 
 ```text
@@ -792,8 +792,11 @@ for confirmation before setting Jane's company.
 Sequence example:
 
 ```text
-Create a draft sequence called July Follow-up with one email step and a
-two-day delay. Do not activate or enroll anyone. Show me the final draft.
+Call the sequence capabilities tool, then create a draft sequence called July
+Follow-up. First branch on whether the contact has an email. On Yes, add an
+automated email; on No, add a manual task to find the right address. Merge both
+paths into a two-day delay. Do not activate or enroll anyone. Show me the final
+ordered draft, including branch placement and execution modes.
 ```
 
 Outbound example:
@@ -920,7 +923,7 @@ intentionally issued `TWENTY_USER_TOKEN`, or leave connected accounts, email,
 drafts, record timelines, and Unibox unavailable. API-key-compatible tool
 families continue working.
 
-### Only 106 tools appear
+### Only 110 tools appear
 
 That is the normal safe configuration. Set `TWENTY_ENABLE_ADVANCED=true` and
 restart the server to expose the four advanced tools.
