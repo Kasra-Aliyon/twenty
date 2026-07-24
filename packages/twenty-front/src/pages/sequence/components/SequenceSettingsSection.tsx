@@ -1,6 +1,5 @@
-import { useQuery } from '@apollo/client/react';
 import { useUpdateOneRecord } from '@/object-record/hooks/useUpdateOneRecord';
-import { GET_MY_CONNECTED_ACCOUNTS } from '@/settings/accounts/graphql/queries/getMyConnectedAccounts';
+import { useMyConnectedAccounts } from '@/settings/accounts/hooks/useMyConnectedAccounts';
 import { useSnackBar } from '@/ui/feedback/snack-bar-manager/hooks/useSnackBar';
 import { Select } from '@/ui/input/components/Select';
 import { getDefaultSequenceSettings } from '@/sequence/constants/default-sequence-settings';
@@ -93,14 +92,14 @@ export const SequenceSettingsSection = ({
   const [isSaving, setIsSaving] = useState(false);
   const { updateOneRecord } = useUpdateOneRecord();
   const { enqueueSuccessSnackBar, enqueueErrorSnackBar } = useSnackBar();
-  const { data: accountsData } = useQuery<{
-    myConnectedAccounts: SequenceSenderAccount[];
-  }>(GET_MY_CONNECTED_ACCOUNTS);
+  const { accounts } = useMyConnectedAccounts();
 
-  const accountOptions: SelectOption<string>[] =
-    accountsData?.myConnectedAccounts
-      .filter(isSequenceSenderAccount)
-      .map((account) => ({ label: account.handle, value: account.id })) ?? [];
+  const accountOptions: SelectOption<string>[] = accounts
+    .filter(isSequenceSenderAccount)
+    .map((account: SequenceSenderAccount) => ({
+      label: account.handle,
+      value: account.id,
+    }));
   const effectiveSenderConnectedAccountId = accountOptions.some(
     (option) => option.value === senderConnectedAccountId,
   )
@@ -276,7 +275,7 @@ export const SequenceSettingsSection = ({
       {accountOptions.length === 0 && (
         <StyledField>
           <span>{t`Sender mailbox`}</span>
-          <span>{t`Connect an email account before activating this sequence.`}</span>
+          <span>{t`Connect an email account and wait for inbox sync to finish before activating this sequence.`}</span>
         </StyledField>
       )}
 

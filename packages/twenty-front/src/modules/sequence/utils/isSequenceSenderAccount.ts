@@ -1,5 +1,8 @@
 import { type SequenceSenderAccount } from '@/sequence/types/SequenceSenderAccount';
-import { ConnectedAccountProvider } from 'twenty-shared/types';
+import {
+  ConnectedAccountProvider,
+  MessageChannelSyncStatus,
+} from 'twenty-shared/types';
 
 const SEQUENCE_SENDER_PROVIDERS: ReadonlySet<ConnectedAccountProvider> =
   new Set([
@@ -13,4 +16,10 @@ export const isSequenceSenderAccount = (
 ): boolean =>
   account.archivedAt === null &&
   account.authFailedAt === null &&
-  SEQUENCE_SENDER_PROVIDERS.has(account.provider);
+  SEQUENCE_SENDER_PROVIDERS.has(account.provider) &&
+  account.messageChannels.some(
+    (messageChannel) =>
+      messageChannel.handle === account.handle &&
+      messageChannel.isSyncEnabled &&
+      messageChannel.syncStatus === MessageChannelSyncStatus.ACTIVE,
+  );

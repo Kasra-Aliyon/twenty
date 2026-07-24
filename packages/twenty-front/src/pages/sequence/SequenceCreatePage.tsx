@@ -1,4 +1,3 @@
-import { useQuery } from '@apollo/client/react';
 import { useDoObjectMetadataItemsExist } from '@/object-metadata/hooks/useDoObjectMetadataItemsExist';
 import { useObjectMetadataItem } from '@/object-metadata/hooks/useObjectMetadataItem';
 import { useCreateOneRecord } from '@/object-record/hooks/useCreateOneRecord';
@@ -6,7 +5,7 @@ import { useObjectPermissionsForObject } from '@/object-record/hooks/useObjectPe
 import { getDefaultSequenceSettings } from '@/sequence/constants/default-sequence-settings';
 import { type SequenceSenderAccount } from '@/sequence/types/SequenceSenderAccount';
 import { isSequenceSenderAccount } from '@/sequence/utils/isSequenceSenderAccount';
-import { GET_MY_CONNECTED_ACCOUNTS } from '@/settings/accounts/graphql/queries/getMyConnectedAccounts';
+import { useMyConnectedAccounts } from '@/settings/accounts/hooks/useMyConnectedAccounts';
 import { useSnackBar } from '@/ui/feedback/snack-bar-manager/hooks/useSnackBar';
 import { Select } from '@/ui/input/components/Select';
 import { PageCardHeader } from '@/ui/layout/page/components/PageCardHeader';
@@ -63,14 +62,14 @@ const SequenceCreatePageContent = () => {
     objectNameSingular: 'sequence',
     skipPostOptimisticEffect: true,
   });
-  const { data: accountsData } = useQuery<{
-    myConnectedAccounts: SequenceSenderAccount[];
-  }>(GET_MY_CONNECTED_ACCOUNTS);
+  const { accounts } = useMyConnectedAccounts();
 
-  const accountOptions: SelectOption<string>[] =
-    accountsData?.myConnectedAccounts
-      .filter(isSequenceSenderAccount)
-      .map((account) => ({ label: account.handle, value: account.id })) ?? [];
+  const accountOptions: SelectOption<string>[] = accounts
+    .filter(isSequenceSenderAccount)
+    .map((account: SequenceSenderAccount) => ({
+      label: account.handle,
+      value: account.id,
+    }));
   const senderConnectedAccountId =
     selectedAccountId || accountOptions[0]?.value || '';
 
@@ -136,7 +135,7 @@ const SequenceCreatePageContent = () => {
               />
             ) : (
               <StyledMailboxHint>
-                {t`Connect an email account in Settings before creating a sequence.`}
+                {t`Connect an email account and wait for inbox sync to finish before creating a sequence.`}
               </StyledMailboxHint>
             )}
           </StyledSection>

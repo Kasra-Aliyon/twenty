@@ -27,6 +27,7 @@ export const LINKEDIN_OWNED_OBJECT_NAMES = [
   'linkedinThreadParticipant',
   'linkedinConnection',
   'linkedinInvitation',
+  'linkedinAction',
 ] as const;
 
 export type LinkedinOwnedObjectName =
@@ -40,6 +41,7 @@ const LINKEDIN_OWNED_OBJECT_UNIVERSAL_IDENTIFIERS = {
     STANDARD_OBJECTS.linkedinThreadParticipant.universalIdentifier,
   linkedinConnection: STANDARD_OBJECTS.linkedinConnection.universalIdentifier,
   linkedinInvitation: STANDARD_OBJECTS.linkedinInvitation.universalIdentifier,
+  linkedinAction: STANDARD_OBJECTS.linkedinAction.universalIdentifier,
 } as const satisfies Record<LinkedinOwnedObjectName, string>;
 
 export type LinkedinOwnedRecordData = Partial<ObjectRecord> & {

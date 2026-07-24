@@ -14,13 +14,18 @@ import { AddUniboxCommand } from 'src/database/commands/upgrade-version-command/
 import { EnableLinkedinDirectMessagesCommand } from 'src/database/commands/upgrade-version-command/2-15/2-15-workspace-command-1800000010000-enable-linkedin-direct-messages.command';
 import { ExpandSequenceBuilderCommand } from 'src/database/commands/upgrade-version-command/2-15/2-15-workspace-command-1800000011000-expand-sequence-builder.command';
 import { RenameSequenceTasksNavigationItemCommand } from 'src/database/commands/upgrade-version-command/2-15/2-15-workspace-command-1800000012000-rename-sequence-tasks-navigation-item.command';
+import { BackfillLinkedinConnectionPersonMatchesCommand } from 'src/database/commands/upgrade-version-command/2-15/2-15-workspace-command-1800000013000-backfill-linkedin-connection-person-matches.command';
+import { ScopeLinkedinActionsToSendersCommand } from 'src/database/commands/upgrade-version-command/2-15/2-15-workspace-command-1800000014000-scope-linkedin-actions-to-senders.command';
 import { ApplicationModule } from 'src/engine/core-modules/application/application.module';
 import { FeatureFlagModule } from 'src/engine/core-modules/feature-flag/feature-flag.module';
+import { UserWorkspaceEntity } from 'src/engine/core-modules/user-workspace/user-workspace.entity';
+import { ConnectedAccountEntity } from 'src/engine/metadata-modules/connected-account/entities/connected-account.entity';
 import { FieldMetadataModule } from 'src/engine/metadata-modules/field-metadata/field-metadata.module';
 import { FieldMetadataEntity } from 'src/engine/metadata-modules/field-metadata/field-metadata.entity';
 import { WorkspaceMetadataVersionModule } from 'src/engine/metadata-modules/workspace-metadata-version/workspace-metadata-version.module';
 import { WorkspaceCacheModule } from 'src/engine/workspace-cache/workspace-cache.module';
 import { WorkspaceMigrationModule } from 'src/engine/workspace-manager/workspace-migration/workspace-migration.module';
+import { LinkedinModule } from 'src/modules/linkedin/linkedin.module';
 
 @Module({
   imports: [
@@ -30,8 +35,13 @@ import { WorkspaceMigrationModule } from 'src/engine/workspace-manager/workspace
     WorkspaceCacheModule,
     WorkspaceMigrationModule,
     FieldMetadataModule,
-    TypeOrmModule.forFeature([FieldMetadataEntity]),
+    TypeOrmModule.forFeature([
+      ConnectedAccountEntity,
+      FieldMetadataEntity,
+      UserWorkspaceEntity,
+    ]),
     WorkspaceMetadataVersionModule,
+    LinkedinModule,
   ],
   providers: [
     MigrateManualTriggerVariablesToPayloadCommand,
@@ -46,6 +56,8 @@ import { WorkspaceMigrationModule } from 'src/engine/workspace-manager/workspace
     EnableLinkedinDirectMessagesCommand,
     ExpandSequenceBuilderCommand,
     RenameSequenceTasksNavigationItemCommand,
+    BackfillLinkedinConnectionPersonMatchesCommand,
+    ScopeLinkedinActionsToSendersCommand,
   ],
 })
 export class V2_15_UpgradeVersionCommandModule {}

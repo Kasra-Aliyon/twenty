@@ -11,9 +11,38 @@ import { SequenceEnrollmentWorkspaceEntity } from 'src/modules/sequence/standard
 describe('SequenceReplyListener', () => {
   it('exits only the person attached to an incoming FROM participant', async () => {
     const associationRepository = {
-      find: jest.fn().mockResolvedValue([{ messageId: 'incoming-message-id' }]),
+      find: jest.fn().mockResolvedValue([
+        {
+          messageId: 'incoming-message-id',
+          messageThreadExternalId: 'replied-thread-id',
+        },
+      ]),
     };
     const enrollmentRepository = {
+      find: jest.fn().mockResolvedValue([
+        {
+          id: 'replied-enrollment-id',
+          personId: 'incoming-person-id',
+          sentEmailsByStepId: {
+            'email-step-id': {
+              headerMessageId: 'header-message-id',
+              threadExternalId: 'replied-thread-id',
+              sentAt: new Date().toISOString(),
+            },
+          },
+        },
+        {
+          id: 'unrelated-enrollment-id',
+          personId: 'incoming-person-id',
+          sentEmailsByStepId: {
+            'email-step-id': {
+              headerMessageId: 'other-header-message-id',
+              threadExternalId: 'unrelated-thread-id',
+              sentAt: new Date().toISOString(),
+            },
+          },
+        },
+      ]),
       update: jest.fn().mockResolvedValue({ affected: 1 }),
     };
     const repositories = new Map<object, object>([
@@ -83,13 +112,17 @@ describe('SequenceReplyListener', () => {
       }),
     );
     expect(enrollmentRepository.update).toHaveBeenCalledTimes(1);
-    const updateCriteria = enrollmentRepository.update.mock.calls[0][0] as {
+    const findCriteria = enrollmentRepository.find.mock.calls[0][0].where as {
       personId: { value: string[] };
       stopOnReply: boolean;
     };
+    const updateCriteria = enrollmentRepository.update.mock.calls[0][0] as {
+      id: { value: string[] };
+    };
 
-    expect(updateCriteria.personId.value).toEqual(['incoming-person-id']);
-    expect(updateCriteria.stopOnReply).toBe(true);
+    expect(findCriteria.personId.value).toEqual(['incoming-person-id']);
+    expect(findCriteria.stopOnReply).toBe(true);
+    expect(updateCriteria.id.value).toEqual(['replied-enrollment-id']);
   });
 
   it('does not resolve sequence repositories when the feature is disabled', async () => {

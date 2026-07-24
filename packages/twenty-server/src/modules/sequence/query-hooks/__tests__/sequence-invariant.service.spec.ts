@@ -1,6 +1,7 @@
 import {
   SEQUENCE_ENROLLMENT_STATUSES,
   SEQUENCE_STATUSES,
+  SEQUENCE_STEP_TYPES,
   SEQUENCE_WAITING_ON,
 } from 'twenty-shared/types';
 
@@ -8,6 +9,7 @@ import { type WorkspaceAuthContext } from 'src/engine/core-modules/auth/types/wo
 import { type GlobalWorkspaceOrmManager } from 'src/engine/twenty-orm/global-workspace-datasource/global-workspace-orm.manager';
 import { SequenceInvariantService } from 'src/modules/sequence/query-hooks/sequence-invariant.service';
 import { type SequenceEnrollmentWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence-enrollment.workspace-entity';
+import { type SequenceSenderService } from 'src/modules/sequence/services/sequence-sender.service';
 import { SequenceStepWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence-step.workspace-entity';
 import { SequenceWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence.workspace-entity';
 
@@ -28,16 +30,30 @@ describe('SequenceInvariantService', () => {
   } as SequenceEnrollmentWorkspaceEntity;
   let activeEnrollmentCount: number;
   let service: SequenceInvariantService;
+  const sequenceSenderService = {
+    getReadySenderOrThrow: jest.fn(),
+  } as unknown as SequenceSenderService;
 
   beforeEach(() => {
+    jest.clearAllMocks();
     activeEnrollmentCount = 0;
     const sequenceRepository = {
       find: jest.fn().mockResolvedValue([sequence]),
     };
     const stepRepository = {
-      find: jest
-        .fn()
-        .mockResolvedValue([{ id: 'step-id', sequenceId: sequence.id }]),
+      find: jest.fn().mockResolvedValue([
+        {
+          id: 'step-id',
+          sequenceId: sequence.id,
+          settings: {
+            type: SEQUENCE_STEP_TYPES.SEND_EMAIL,
+            subject: 'Hello',
+            bodyHtml: '<p>Hello</p>',
+            threadAsReplyToPreviousEmail: false,
+            stopOnReply: null,
+          },
+        },
+      ]),
       count: jest.fn().mockResolvedValue(1),
     };
     const enrollmentRepository = {
@@ -54,7 +70,10 @@ describe('SequenceInvariantService', () => {
       }),
     } as unknown as GlobalWorkspaceOrmManager;
 
-    service = new SequenceInvariantService(globalWorkspaceOrmManager);
+    service = new SequenceInvariantService(
+      globalWorkspaceOrmManager,
+      sequenceSenderService,
+    );
   });
 
   it('forces engine-owned enrollment fields on create', async () => {
@@ -149,5 +168,33 @@ describe('SequenceInvariantService', () => {
         stepId: 'step-id',
       }),
     ).rejects.toThrow('Pause the sequence');
+  });
+
+  it('requires a ready, syncing sender before activation', async () => {
+    await service.assertSequenceUpdateAllowed({
+      authContext,
+      sequenceId: sequence.id,
+      data: { status: SEQUENCE_STATUSES.ACTIVE },
+    });
+
+    expect(sequenceSenderService.getReadySenderOrThrow).toHaveBeenCalledWith({
+      connectedAccountId: sequence.senderConnectedAccountId,
+      expectedUserWorkspaceId: undefined,
+      workspaceId: authContext.workspace.id,
+    });
+  });
+
+  it('blocks activation when sender inbox sync is unavailable', async () => {
+    jest
+      .mocked(sequenceSenderService.getReadySenderOrThrow)
+      .mockRejectedValueOnce(new Error('Enable inbox sync'));
+
+    await expect(
+      service.assertSequenceUpdateAllowed({
+        authContext,
+        sequenceId: sequence.id,
+        data: { status: SEQUENCE_STATUSES.ACTIVE },
+      }),
+    ).rejects.toThrow('Enable inbox sync');
   });
 });

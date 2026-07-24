@@ -22,4 +22,11 @@ export const buildLinkedinActionStandardFlatIndexMetadatas = (
       relatedFieldNames: ['sequenceEnrollmentId'],
     },
   }),
+  ownerStatusScheduledAtIndex: createStandardIndexFlatMetadata({
+    ...args,
+    context: {
+      indexName: 'ownerStatusScheduledAtIndex',
+      relatedFieldNames: ['ownerWorkspaceMemberId', 'status', 'scheduledAt'],
+    },
+  }),
 });

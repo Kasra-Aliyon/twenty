@@ -74,19 +74,27 @@ export class SequenceReplyListener {
           ]),
           direction: MessageDirection.INCOMING,
         },
-        select: { messageId: true },
+        select: {
+          messageId: true,
+          messageThreadExternalId: true,
+        },
       });
-      const incomingMessageIds = new Set(
-        incomingAssociations.map(({ messageId }) => messageId),
+      const incomingThreadExternalIdByMessageId = new Map(
+        incomingAssociations
+          .filter(({ messageThreadExternalId }) =>
+            isDefined(messageThreadExternalId),
+          )
+          .map(({ messageId, messageThreadExternalId }) => [
+            messageId,
+            messageThreadExternalId as string,
+          ]),
+      );
+      const incomingParticipants = fromParticipants.filter(({ messageId }) =>
+        incomingThreadExternalIdByMessageId.has(messageId),
       );
       const personIds = [
-        ...new Set(
-          fromParticipants
-            .filter(({ messageId }) => incomingMessageIds.has(messageId))
-            .map(({ personId }) => personId)
-            .filter(isDefined),
-        ),
-      ];
+        ...new Set(incomingParticipants.map(({ personId }) => personId)),
+      ].filter(isDefined);
 
       if (personIds.length === 0) {
         return;
@@ -99,8 +107,8 @@ export class SequenceReplyListener {
           { shouldBypassPermissionChecks: true },
         );
 
-      await enrollmentRepository.update(
-        {
+      const enrollments = await enrollmentRepository.find({
+        where: {
           personId: In(personIds),
           status: In([
             SEQUENCE_ENROLLMENT_STATUSES.PENDING,
@@ -108,6 +116,32 @@ export class SequenceReplyListener {
           ]),
           stopOnReply: true,
         },
+        select: ['id', 'personId', 'sentEmailsByStepId'],
+      });
+      const repliedEnrollmentIds = enrollments
+        .filter((enrollment) => {
+          const sentThreadExternalIds = new Set(
+            Object.values(enrollment.sentEmailsByStepId ?? {}).map(
+              ({ threadExternalId }) => threadExternalId,
+            ),
+          );
+
+          return incomingParticipants.some(
+            ({ messageId, personId }) =>
+              personId === enrollment.personId &&
+              sentThreadExternalIds.has(
+                incomingThreadExternalIdByMessageId.get(messageId) ?? '',
+              ),
+          );
+        })
+        .map(({ id }) => id);
+
+      if (repliedEnrollmentIds.length === 0) {
+        return;
+      }
+
+      await enrollmentRepository.update(
+        { id: In(repliedEnrollmentIds) },
         {
           status: SEQUENCE_ENROLLMENT_STATUSES.REPLIED,
           waitingOn: null,

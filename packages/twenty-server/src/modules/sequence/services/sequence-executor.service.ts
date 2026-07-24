@@ -41,6 +41,7 @@ import { PersonWorkspaceEntity } from 'src/modules/person/standard-objects/perso
 import { SequenceEmailSenderService } from 'src/modules/sequence/services/sequence-email-sender.service';
 import { SequenceLinkedinThrottleService } from 'src/modules/sequence/services/sequence-linkedin-throttle.service';
 import { SequenceMailboxThrottleService } from 'src/modules/sequence/services/sequence-mailbox-throttle.service';
+import { SequenceSenderService } from 'src/modules/sequence/services/sequence-sender.service';
 import { SequenceTaskCreatorService } from 'src/modules/sequence/services/sequence-task-creator.service';
 import { SequenceVariableService } from 'src/modules/sequence/services/sequence-variable.service';
 import {
@@ -74,6 +75,7 @@ export class SequenceExecutorService {
     private readonly sequenceTaskCreatorService: SequenceTaskCreatorService,
     private readonly sequenceMailboxThrottleService: SequenceMailboxThrottleService,
     private readonly sequenceLinkedinThrottleService: SequenceLinkedinThrottleService,
+    private readonly sequenceSenderService: SequenceSenderService,
     private readonly sequenceVariableService: SequenceVariableService,
     private readonly apolloEnrichmentService: ApolloEnrichmentService,
   ) {}
@@ -192,13 +194,28 @@ export class SequenceExecutorService {
           return;
         }
 
-        conditionOutcome = (await this.evaluateCondition({
-          workspaceId,
-          person,
-          settings: currentStep.settings,
-        }))
-          ? SEQUENCE_CONDITION_BRANCHES.YES
-          : SEQUENCE_CONDITION_BRANCHES.NO;
+        try {
+          conditionOutcome = (await this.evaluateCondition({
+            workspaceId,
+            person,
+            senderConnectedAccountId:
+              enrollment.senderConnectedAccountId ??
+              sequence.senderConnectedAccountId,
+            settings: currentStep.settings,
+          }))
+            ? SEQUENCE_CONDITION_BRANCHES.YES
+            : SEQUENCE_CONDITION_BRANCHES.NO;
+        } catch (error) {
+          await this.failEnrollment({
+            enrollmentRepository,
+            enrollment,
+            errorMessage: this.toErrorMessage(error),
+            stepId: currentStep.id,
+            stepPosition: currentStep.position,
+          });
+
+          return;
+        }
       }
 
       const nextStep = findNextSequenceStep({
@@ -596,34 +613,22 @@ export class SequenceExecutorService {
   private async evaluateCondition({
     workspaceId,
     person,
+    senderConnectedAccountId,
     settings,
   }: {
     workspaceId: string;
     person: PersonWorkspaceEntity;
+    senderConnectedAccountId: string | null;
     settings: SequenceConditionStepSettings;
   }): Promise<boolean> {
     switch (settings.condition) {
       case SEQUENCE_CONDITION_TYPES.IS_IN_LINKEDIN_NETWORK:
       case SEQUENCE_CONDITION_TYPES.ACCEPTED_LINKEDIN_INVITE: {
-        if (
-          person.linkedinConnectionState ===
-          LINKEDIN_CONNECTION_STATES.CONNECTED
-        ) {
-          return true;
-        }
-
-        const connectionRepository =
-          await this.globalWorkspaceOrmManager.getRepository(
-            workspaceId,
-            LinkedinConnectionWorkspaceEntity,
-            { shouldBypassPermissionChecks: true },
-          );
-
-        return (
-          (await connectionRepository.count({
-            where: { personId: person.id },
-          })) > 0
-        );
+        return this.isPersonConnectedToSender({
+          workspaceId,
+          personId: person.id,
+          senderConnectedAccountId,
+        });
       }
       case SEQUENCE_CONDITION_TYPES.HAS_EMAIL_ADDRESS:
         return isNonEmptyString(person.emails?.primaryEmail);
@@ -632,6 +637,11 @@ export class SequenceExecutorService {
       case SEQUENCE_CONDITION_TYPES.HAS_PHONE_NUMBER:
         return isNonEmptyString(person.phones?.primaryPhoneNumber);
       case SEQUENCE_CONDITION_TYPES.OPENED_LINKEDIN_MESSAGE: {
+        const ownerWorkspaceMemberId =
+          await this.getSenderOwnerWorkspaceMemberId({
+            workspaceId,
+            senderConnectedAccountId,
+          });
         const participantRepository =
           await this.globalWorkspaceOrmManager.getRepository(
             workspaceId,
@@ -639,11 +649,28 @@ export class SequenceExecutorService {
             { shouldBypassPermissionChecks: true },
           );
         const participants = await participantRepository.find({
-          where: { personId: person.id, isSelf: false },
+          where: {
+            personId: person.id,
+            isSelf: false,
+            ownerWorkspaceMemberId,
+          },
+          select: ['linkedinUrn', 'threadId'],
         });
-        const threadIds = participants.map(({ threadId }) => threadId);
+        const messageWhere = participants.flatMap(
+          ({ linkedinUrn, threadId }) =>
+            isNonEmptyString(linkedinUrn)
+              ? [
+                  {
+                    direction: 'INBOUND' as const,
+                    ownerWorkspaceMemberId,
+                    senderLinkedinUrn: linkedinUrn,
+                    threadId,
+                  },
+                ]
+              : [],
+        );
 
-        if (threadIds.length === 0) {
+        if (messageWhere.length === 0) {
           return false;
         }
 
@@ -658,10 +685,7 @@ export class SequenceExecutorService {
         // the connector-backed signal that the recipient saw the conversation.
         return (
           (await messageRepository.count({
-            where: {
-              threadId: In(threadIds),
-              direction: 'INBOUND',
-            },
+            where: messageWhere,
           })) > 0
         );
       }
@@ -775,19 +799,6 @@ export class SequenceExecutorService {
     step: SequenceStepWorkspaceEntity;
     settings: SequenceConnectionRequestStepSettings;
   }): Promise<void> {
-    if (
-      settings.skipIfAlreadyConnected &&
-      person.linkedinConnectionState === LINKEDIN_CONNECTION_STATES.CONNECTED
-    ) {
-      await this.advanceEnrollmentStep({
-        enrollmentRepository,
-        enrollment,
-        step,
-      });
-
-      return;
-    }
-
     if (!isNonEmptyString(person.linkedinLink?.primaryLinkUrl)) {
       await this.failEnrollment({
         enrollmentRepository,
@@ -798,6 +809,38 @@ export class SequenceExecutorService {
       });
 
       return;
+    }
+
+    if (settings.skipIfAlreadyConnected) {
+      try {
+        const isConnected = await this.isPersonConnectedToSender({
+          workspaceId,
+          personId: person.id,
+          senderConnectedAccountId:
+            enrollment.senderConnectedAccountId ??
+            sequenceSenderConnectedAccountId,
+        });
+
+        if (isConnected) {
+          await this.advanceEnrollmentStep({
+            enrollmentRepository,
+            enrollment,
+            step,
+          });
+
+          return;
+        }
+      } catch (error) {
+        await this.failEnrollment({
+          enrollmentRepository,
+          enrollment,
+          errorMessage: this.toErrorMessage(error),
+          stepId: step.id,
+          stepPosition: step.position,
+        });
+
+        return;
+      }
     }
 
     const variables = await this.sequenceVariableService.buildVariables({
@@ -986,6 +1029,22 @@ export class SequenceExecutorService {
     reserveFrom: Date;
   }): Promise<void> {
     try {
+      const connectedAccountId = enrollment.senderConnectedAccountId;
+
+      if (!isDefined(connectedAccountId)) {
+        throw new Error(SEQUENCE_EXECUTION_ERROR.MISSING_CONNECTED_ACCOUNT);
+      }
+
+      const { connectedAccount } =
+        await this.sequenceSenderService.getReadySenderOrThrow({
+          connectedAccountId,
+          workspaceId,
+        });
+      const ownerWorkspaceMemberId =
+        await this.sequenceSenderService.getOwnerWorkspaceMemberIdOrThrow({
+          connectedAccount,
+          workspaceId,
+        });
       const workspaceDataSource =
         await this.globalWorkspaceOrmManager.getGlobalWorkspaceDataSource();
       const linkedinActionRepository =
@@ -1033,6 +1092,7 @@ export class SequenceExecutorService {
             linkedinUrl: person.linkedinLink?.primaryLinkUrl ?? '',
             noteText,
             connectionState: LINKEDIN_CONNECTION_STATES.UNKNOWN,
+            ownerWorkspaceMemberId,
             personId: person.id,
             sequenceEnrollmentId: enrollment.id,
             sequenceStepId: step.id,
@@ -1054,6 +1114,61 @@ export class SequenceExecutorService {
         stepPosition: step.position,
       });
     }
+  }
+
+  private async isPersonConnectedToSender({
+    workspaceId,
+    personId,
+    senderConnectedAccountId,
+  }: {
+    workspaceId: string;
+    personId: string;
+    senderConnectedAccountId: string | null;
+  }): Promise<boolean> {
+    const ownerWorkspaceMemberId = await this.getSenderOwnerWorkspaceMemberId({
+      workspaceId,
+      senderConnectedAccountId,
+    });
+    const connectionRepository =
+      await this.globalWorkspaceOrmManager.getRepository(
+        workspaceId,
+        LinkedinConnectionWorkspaceEntity,
+        { shouldBypassPermissionChecks: true },
+      );
+
+    return (
+      (await connectionRepository.count({
+        where: {
+          ownerWorkspaceMemberId,
+          personId,
+        },
+      })) > 0
+    );
+  }
+
+  private async getSenderOwnerWorkspaceMemberId({
+    workspaceId,
+    senderConnectedAccountId,
+  }: {
+    workspaceId: string;
+    senderConnectedAccountId: string | null;
+  }): Promise<string> {
+    if (!isDefined(senderConnectedAccountId)) {
+      throw new Error(SEQUENCE_EXECUTION_ERROR.MISSING_CONNECTED_ACCOUNT);
+    }
+
+    const { connectedAccount } =
+      await this.sequenceSenderService.getReadySenderOrThrow({
+        connectedAccountId: senderConnectedAccountId,
+        workspaceId,
+      });
+    const ownerWorkspaceMemberId =
+      await this.sequenceSenderService.getOwnerWorkspaceMemberIdOrThrow({
+        connectedAccount,
+        workspaceId,
+      });
+
+    return ownerWorkspaceMemberId;
   }
 
   private async processSendEmailStep({
@@ -1109,6 +1224,23 @@ export class SequenceExecutorService {
         enrollmentRepository,
         enrollment,
         errorMessage: SEQUENCE_EXECUTION_ERROR.MISSING_CONNECTED_ACCOUNT,
+        stepId: step.id,
+        stepPosition: step.position,
+      });
+
+      return;
+    }
+
+    try {
+      await this.sequenceSenderService.getReadySenderOrThrow({
+        connectedAccountId,
+        workspaceId,
+      });
+    } catch (error) {
+      await this.failEnrollment({
+        enrollmentRepository,
+        enrollment,
+        errorMessage: this.toErrorMessage(error),
         stepId: step.id,
         stepPosition: step.position,
       });

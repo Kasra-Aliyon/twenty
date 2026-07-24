@@ -197,6 +197,21 @@ export const buildLinkedinActionStandardFlatFieldMetadatas = (
       isUIEditable: false,
     },
   }),
+  ownerWorkspaceMemberId: createStandardFieldFlatMetadata({
+    ...args,
+    context: {
+      fieldName: 'ownerWorkspaceMemberId',
+      type: FieldMetadataType.TEXT,
+      label: i18nLabel(msg`Owner workspace member ID`),
+      description: i18nLabel(
+        msg`Workspace member whose LinkedIn connector must run this action`,
+      ),
+      icon: 'IconLock',
+      isSystem: true,
+      isNullable: true,
+      isUIEditable: false,
+    },
+  }),
   linkedinUrl: createStandardFieldFlatMetadata({
     ...args,
     context: {

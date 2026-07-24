@@ -195,6 +195,11 @@ describe('Sequence standard metadata build', () => {
         STANDARD_OBJECTS.linkedinAction.fields.connectionState
           .universalIdentifier
       ];
+    const ownerWorkspaceMemberIdField =
+      allFlatEntityMaps.flatFieldMetadataMaps.byUniversalIdentifier[
+        STANDARD_OBJECTS.linkedinAction.fields.ownerWorkspaceMemberId
+          .universalIdentifier
+      ];
     const personConnectionStateField =
       allFlatEntityMaps.flatFieldMetadataMaps.byUniversalIdentifier[
         STANDARD_OBJECTS.person.fields.linkedinConnectionState
@@ -207,6 +212,11 @@ describe('Sequence standard metadata build', () => {
     const statusScheduledAtIndex =
       allFlatEntityMaps.flatIndexMaps.byUniversalIdentifier[
         STANDARD_OBJECTS.linkedinAction.indexes.statusScheduledAtIndex
+          .universalIdentifier
+      ];
+    const ownerStatusScheduledAtIndex =
+      allFlatEntityMaps.flatIndexMaps.byUniversalIdentifier[
+        STANDARD_OBJECTS.linkedinAction.indexes.ownerStatusScheduledAtIndex
           .universalIdentifier
       ];
 
@@ -239,6 +249,13 @@ describe('Sequence standard metadata build', () => {
         relationType: RelationType.MANY_TO_ONE,
       }),
     });
+    expect(ownerWorkspaceMemberIdField).toMatchObject({
+      type: FieldMetadataType.TEXT,
+      isNullable: true,
+    });
     expect(statusScheduledAtIndex?.flatIndexFieldMetadatas).toHaveLength(2);
+    expect(ownerStatusScheduledAtIndex?.flatIndexFieldMetadatas).toHaveLength(
+      3,
+    );
   });
 });

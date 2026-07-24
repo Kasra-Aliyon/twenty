@@ -14,12 +14,16 @@ import {
 import { type ApolloEnrichmentService } from 'src/modules/apollo-enrichment/services/apollo-enrichment.service';
 import { type GlobalWorkspaceOrmManager } from 'src/engine/twenty-orm/global-workspace-datasource/global-workspace-orm.manager';
 import { type WorkspaceEntityManager } from 'src/engine/twenty-orm/entity-manager/workspace-entity-manager';
-import { PersonWorkspaceEntity } from 'src/modules/person/standard-objects/person.workspace-entity';
 import { LinkedinActionWorkspaceEntity } from 'src/modules/linkedin/standard-objects/linkedin-action.workspace-entity';
+import { LinkedinConnectionWorkspaceEntity } from 'src/modules/linkedin/standard-objects/linkedin-connection.workspace-entity';
+import { LinkedinMessageWorkspaceEntity } from 'src/modules/linkedin/standard-objects/linkedin-message.workspace-entity';
+import { LinkedinThreadParticipantWorkspaceEntity } from 'src/modules/linkedin/standard-objects/linkedin-thread-participant.workspace-entity';
+import { PersonWorkspaceEntity } from 'src/modules/person/standard-objects/person.workspace-entity';
 import { type SequenceEmailSenderService } from 'src/modules/sequence/services/sequence-email-sender.service';
 import { SequenceExecutorService } from 'src/modules/sequence/services/sequence-executor.service';
 import { type SequenceLinkedinThrottleService } from 'src/modules/sequence/services/sequence-linkedin-throttle.service';
 import { type SequenceMailboxThrottleService } from 'src/modules/sequence/services/sequence-mailbox-throttle.service';
+import { type SequenceSenderService } from 'src/modules/sequence/services/sequence-sender.service';
 import { type SequenceTaskCreatorService } from 'src/modules/sequence/services/sequence-task-creator.service';
 import { type SequenceVariableService } from 'src/modules/sequence/services/sequence-variable.service';
 import {
@@ -122,12 +126,27 @@ describe('SequenceExecutorService', () => {
     const linkedinActionRepository = {
       insert: jest.fn(),
     };
+    const linkedinConnectionRepository = {
+      count: jest.fn().mockResolvedValue(0),
+    };
+    const linkedinMessageRepository = {
+      count: jest.fn().mockResolvedValue(0),
+    };
+    const linkedinThreadParticipantRepository = {
+      find: jest.fn().mockResolvedValue([]),
+    };
     const repositories = new Map<object, object>([
       [SequenceEnrollmentWorkspaceEntity, enrollmentRepository],
       [SequenceWorkspaceEntity, sequenceRepository],
       [SequenceStepWorkspaceEntity, stepRepository],
       [PersonWorkspaceEntity, personRepository],
       [LinkedinActionWorkspaceEntity, linkedinActionRepository],
+      [LinkedinConnectionWorkspaceEntity, linkedinConnectionRepository],
+      [LinkedinMessageWorkspaceEntity, linkedinMessageRepository],
+      [
+        LinkedinThreadParticipantWorkspaceEntity,
+        linkedinThreadParticipantRepository,
+      ],
     ]);
     const transactionManager = {} as WorkspaceEntityManager;
     const transaction = jest.fn(
@@ -171,6 +190,17 @@ describe('SequenceExecutorService', () => {
     const sequenceLinkedinThrottleService = {
       reserveSlot,
     } as unknown as SequenceLinkedinThrottleService;
+    const getReadySenderOrThrow = jest.fn().mockResolvedValue({
+      connectedAccount: { id: 'connected-account-id' },
+      messageChannel: { id: 'message-channel-id' },
+    });
+    const getOwnerWorkspaceMemberIdOrThrow = jest
+      .fn()
+      .mockResolvedValue('owner-workspace-member-id');
+    const sequenceSenderService = {
+      getReadySenderOrThrow,
+      getOwnerWorkspaceMemberIdOrThrow,
+    } as unknown as SequenceSenderService;
     const buildVariables = jest.fn().mockResolvedValue({
       firstName: 'Ada',
       lastName: 'Lovelace',
@@ -188,6 +218,7 @@ describe('SequenceExecutorService', () => {
       sequenceTaskCreatorService,
       sequenceMailboxThrottleService,
       sequenceLinkedinThrottleService,
+      sequenceSenderService,
       sequenceVariableService,
       apolloEnrichmentService,
     );
@@ -205,7 +236,12 @@ describe('SequenceExecutorService', () => {
       getLastSendAt,
       setLastSendAt,
       linkedinActionRepository,
+      linkedinConnectionRepository,
+      linkedinMessageRepository,
+      linkedinThreadParticipantRepository,
       reserveSlot,
+      getReadySenderOrThrow,
+      getOwnerWorkspaceMemberIdOrThrow,
       buildVariables,
       enrichPerson,
     };
@@ -604,6 +640,85 @@ describe('SequenceExecutorService', () => {
     );
   });
 
+  it('scopes LinkedIn activity conditions to the sender and message author', async () => {
+    const conditionStep = {
+      id: 'condition-step-id',
+      sequenceId: sequence.id,
+      position: 0,
+      type: SEQUENCE_STEP_TYPES.CONDITION,
+      settings: {
+        type: SEQUENCE_STEP_TYPES.CONDITION,
+        condition: SEQUENCE_CONDITION_TYPES.OPENED_LINKEDIN_MESSAGE,
+      },
+    } as SequenceStepWorkspaceEntity;
+    const yesStep = {
+      id: 'yes-step-id',
+      sequenceId: sequence.id,
+      position: 1,
+      type: SEQUENCE_STEP_TYPES.CREATE_TASK,
+      settings: {
+        type: SEQUENCE_STEP_TYPES.CREATE_TASK,
+        branch: {
+          conditionStepId: conditionStep.id,
+          outcome: SEQUENCE_CONDITION_BRANCHES.YES,
+        },
+        taskType: SEQUENCE_TASK_TYPES.CUSTOM,
+        titleTemplate: 'LinkedIn activity received',
+        notesTemplate: '',
+        priority: TASK_PRIORITIES.MEDIUM,
+        assigneeWorkspaceMemberId: null,
+        continueMode: 'ON_DONE',
+        deadlineDays: null,
+      },
+    } as SequenceStepWorkspaceEntity;
+    const {
+      service,
+      createTask,
+      linkedinMessageRepository,
+      linkedinThreadParticipantRepository,
+    } = setup({
+      currentEnrollment: {
+        ...enrollment,
+        currentStepId: conditionStep.id,
+        currentStepPosition: conditionStep.position,
+        waitingOn: SEQUENCE_WAITING_ON.DELAY,
+      },
+      steps: [conditionStep, yesStep],
+    });
+
+    linkedinThreadParticipantRepository.find.mockResolvedValue([
+      {
+        linkedinUrn: 'recipient-linkedin-urn',
+        threadId: 'thread-id',
+      },
+    ]);
+    linkedinMessageRepository.count.mockResolvedValue(1);
+
+    await service.process({ workspaceId, enrollmentId });
+
+    expect(linkedinThreadParticipantRepository.find).toHaveBeenCalledWith({
+      where: {
+        personId: enrollment.personId,
+        isSelf: false,
+        ownerWorkspaceMemberId: 'owner-workspace-member-id',
+      },
+      select: ['linkedinUrn', 'threadId'],
+    });
+    expect(linkedinMessageRepository.count).toHaveBeenCalledWith({
+      where: [
+        {
+          direction: 'INBOUND',
+          ownerWorkspaceMemberId: 'owner-workspace-member-id',
+          senderLinkedinUrn: 'recipient-linkedin-urn',
+          threadId: 'thread-id',
+        },
+      ],
+    });
+    expect(createTask).toHaveBeenCalledWith(
+      expect.objectContaining({ step: yesStep }),
+    );
+  });
+
   it('enriches a missing phone number through Apollo before continuing', async () => {
     const enrichStep = {
       id: 'enrich-step-id',
@@ -760,6 +875,7 @@ describe('SequenceExecutorService', () => {
         type: 'SEND_MESSAGE',
         linkedinUrl: 'https://www.linkedin.com/in/ada-lovelace/',
         noteText: 'Hi Ada, thanks for connecting.',
+        ownerWorkspaceMemberId: 'owner-workspace-member-id',
       }),
       transactionManager,
     );

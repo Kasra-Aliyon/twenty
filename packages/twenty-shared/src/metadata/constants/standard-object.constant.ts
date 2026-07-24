@@ -2909,6 +2909,9 @@ export const STANDARD_OBJECTS = {
       errorMessage: {
         universalIdentifier: '7d01fe03-2573-4618-a0cd-28cbaace5693',
       },
+      ownerWorkspaceMemberId: {
+        universalIdentifier: 'fb976b5f-aaba-44cd-bba6-b65cbad6dc1c',
+      },
       linkedinUrl: {
         universalIdentifier: 'c7a04de7-59a3-457a-ae74-576d96c1d6a1',
       },
@@ -2934,6 +2937,9 @@ export const STANDARD_OBJECTS = {
       },
       sequenceEnrollmentIdIndex: {
         universalIdentifier: '2b30f6fa-5e51-4382-8d2f-8371e0fbb752',
+      },
+      ownerStatusScheduledAtIndex: {
+        universalIdentifier: 'd78fc27a-a94c-4ae8-a85b-f7a8aa3816fc',
       },
     },
   },

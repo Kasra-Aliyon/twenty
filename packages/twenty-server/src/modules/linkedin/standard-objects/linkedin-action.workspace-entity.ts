@@ -20,6 +20,7 @@ export class LinkedinActionWorkspaceEntity extends BaseWorkspaceEntity {
   executedAt: Date | null;
   attemptCount: number;
   errorMessage: string | null;
+  ownerWorkspaceMemberId: string | null;
   linkedinUrl: string;
   noteText: string;
   connectionState: LinkedInConnectionState;

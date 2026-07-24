@@ -1,7 +1,10 @@
 import { Module } from '@nestjs/common';
 
 import { WorkspaceCacheModule } from 'src/engine/workspace-cache/workspace-cache.module';
+import { LinkedinConnectionMatchJob } from 'src/modules/linkedin/jobs/linkedin-connection-match.job';
 import { LinkedinThreadParticipantMatchJob } from 'src/modules/linkedin/jobs/linkedin-thread-participant-match.job';
+import { LinkedinConnectionPersonListener } from 'src/modules/linkedin/listeners/linkedin-connection-person.listener';
+import { LinkedinConnectionListener } from 'src/modules/linkedin/listeners/linkedin-connection.listener';
 import { LinkedinThreadParticipantPersonListener } from 'src/modules/linkedin/listeners/linkedin-thread-participant-person.listener';
 import { LinkedinThreadParticipantListener } from 'src/modules/linkedin/listeners/linkedin-thread-participant.listener';
 import { LinkedinRecordAccessService } from 'src/modules/linkedin/query-hooks/linkedin-record-access.service';
@@ -22,13 +25,18 @@ import {
   LinkedinRecordUpdateManyPreQueryHook,
   LinkedinRecordUpdateOnePreQueryHook,
 } from 'src/modules/linkedin/query-hooks/linkedin-record.query-hooks';
+import { LinkedinConnectionMatcherService } from 'src/modules/linkedin/services/linkedin-connection-matcher.service';
 import { LinkedinParticipantMatcherService } from 'src/modules/linkedin/services/linkedin-participant-matcher.service';
 
 @Module({
   imports: [WorkspaceCacheModule],
   providers: [
+    LinkedinConnectionMatcherService,
     LinkedinParticipantMatcherService,
+    LinkedinConnectionMatchJob,
     LinkedinThreadParticipantMatchJob,
+    LinkedinConnectionListener,
+    LinkedinConnectionPersonListener,
     LinkedinThreadParticipantListener,
     LinkedinThreadParticipantPersonListener,
     LinkedinRecordAccessService,
@@ -48,6 +56,9 @@ import { LinkedinParticipantMatcherService } from 'src/modules/linkedin/services
     LinkedinRecordRestoreManyPreQueryHook,
     LinkedinRecordMergeManyPreQueryHook,
   ],
-  exports: [LinkedinParticipantMatcherService],
+  exports: [
+    LinkedinConnectionMatcherService,
+    LinkedinParticipantMatcherService,
+  ],
 })
 export class LinkedinModule {}

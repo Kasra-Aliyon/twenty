@@ -141,13 +141,13 @@ describe('LinkedIn record query hooks', () => {
     }
   });
 
-  it('does not change queries for non-harvest LinkedIn objects', async () => {
+  it('does not change queries for objects outside the LinkedIn connector', async () => {
     const payload = { filter: { status: { eq: 'PENDING' } } };
 
     await expect(
       new LinkedinRecordFindManyPreQueryHook(accessService).execute(
         authContext,
-        'linkedinAction',
+        'person',
         payload,
       ),
     ).resolves.toBe(payload);

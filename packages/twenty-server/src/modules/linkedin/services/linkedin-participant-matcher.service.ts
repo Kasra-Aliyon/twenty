@@ -10,9 +10,14 @@ import { buildSystemAuthContext } from 'src/engine/twenty-orm/utils/build-system
 import { type LinkedinConnectionWorkspaceEntity } from 'src/modules/linkedin/standard-objects/linkedin-connection.workspace-entity';
 import { type LinkedinMessageThreadWorkspaceEntity } from 'src/modules/linkedin/standard-objects/linkedin-message-thread.workspace-entity';
 import { type LinkedinThreadParticipantWorkspaceEntity } from 'src/modules/linkedin/standard-objects/linkedin-thread-participant.workspace-entity';
+import {
+  addValueToSetMap,
+  getOnlySetValue,
+  getPersonFullName,
+  normalizeFullName,
+  normalizeLinkedinHandle,
+} from 'src/modules/linkedin/utils/linkedin-identity-matching.util';
 import { type PersonWorkspaceEntity } from 'src/modules/person/standard-objects/person.workspace-entity';
-
-const LINKEDIN_HANDLE_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;
 
 type MatchLinkedinThreadParticipantsArgs = {
   participantIds: string[];
@@ -31,63 +36,8 @@ type MatcherRepositories = {
   threadRepository: WorkspaceRepository<LinkedinMessageThreadWorkspaceEntity>;
 };
 
-const normalizeLinkedinHandle = (
-  value: string | null | undefined,
-): string | null => {
-  if (!isNonEmptyString(value)) {
-    return null;
-  }
-
-  const trimmedValue = value.trim();
-  const linkedinPathMatch = trimmedValue.match(/(?:^|\/)in\/([^/?#]+)/i);
-  const handleWithPossibleEncoding = linkedinPathMatch?.[1]
-    ? linkedinPathMatch[1]
-    : trimmedValue.replace(/^@/, '').split(/[/?#]/, 1)[0];
-
-  let handle: string;
-
-  try {
-    handle = decodeURIComponent(handleWithPossibleEncoding).toLowerCase();
-  } catch {
-    return null;
-  }
-
-  return LINKEDIN_HANDLE_PATTERN.test(handle) ? handle : null;
-};
-
-const normalizeFullName = (value: string | null | undefined): string | null => {
-  if (!isNonEmptyString(value)) {
-    return null;
-  }
-
-  const normalizedName = value.trim().replace(/\s+/g, ' ').toLowerCase();
-
-  return normalizedName.split(' ').length > 1 ? normalizedName : null;
-};
-
-const getPersonFullName = (person: PersonWorkspaceEntity): string | null =>
-  normalizeFullName(
-    [person.name?.firstName, person.name?.lastName]
-      .filter(isNonEmptyString)
-      .join(' '),
-  );
-
-const addValueToSetMap = (
-  map: Map<string, Set<string>>,
-  key: string,
-  value: string,
-): void => {
-  const existingValues = map.get(key) ?? new Set<string>();
-
-  existingValues.add(value);
-  map.set(key, existingValues);
-};
-
 const getOwnerUrnKey = (ownerLinkedinId: string, linkedinUrn: string) =>
   `${ownerLinkedinId}\u0000${linkedinUrn}`;
-
-const getOnlySetValue = (values: Set<string> | undefined): string | null =>
-  values?.size === 1 ? ([...values][0] ?? null) : null;
 
 @Injectable()
 export class LinkedinParticipantMatcherService {

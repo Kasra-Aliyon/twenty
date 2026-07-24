@@ -1,4 +1,7 @@
-import { type ConnectedAccountProvider } from 'twenty-shared/types';
+import {
+  type ConnectedAccountProvider,
+  type MessageChannelSyncStatus,
+} from 'twenty-shared/types';
 
 export type SequenceSenderAccount = {
   id: string;
@@ -6,4 +9,9 @@ export type SequenceSenderAccount = {
   provider: ConnectedAccountProvider;
   archivedAt: string | null;
   authFailedAt: string | null;
+  messageChannels: Array<{
+    handle: string;
+    isSyncEnabled: boolean;
+    syncStatus: MessageChannelSyncStatus;
+  }>;
 };

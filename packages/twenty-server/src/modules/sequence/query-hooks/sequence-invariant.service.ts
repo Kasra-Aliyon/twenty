@@ -15,8 +15,10 @@ import {
   CommonQueryRunnerException,
   CommonQueryRunnerExceptionCode,
 } from 'src/engine/api/common/common-query-runners/errors/common-query-runner.exception';
+import { isUserAuthContext } from 'src/engine/core-modules/auth/guards/is-user-auth-context.guard';
 import { type WorkspaceAuthContext } from 'src/engine/core-modules/auth/types/workspace-auth-context.type';
 import { GlobalWorkspaceOrmManager } from 'src/engine/twenty-orm/global-workspace-datasource/global-workspace-orm.manager';
+import { SequenceSenderService } from 'src/modules/sequence/services/sequence-sender.service';
 import { type SequenceEnrollmentWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence-enrollment.workspace-entity';
 import { SequenceStepWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence-step.workspace-entity';
 import { SequenceWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence.workspace-entity';
@@ -39,6 +41,7 @@ const TERMINAL_USER_STATUSES: ReadonlySet<SequenceEnrollmentStatus> = new Set([
 export class SequenceInvariantService {
   constructor(
     private readonly globalWorkspaceOrmManager: GlobalWorkspaceOrmManager,
+    private readonly sequenceSenderService: SequenceSenderService,
   ) {}
 
   normalizeSequenceCreate(
@@ -253,18 +256,44 @@ export class SequenceInvariantService {
       });
       const senderConnectedAccountId =
         data.senderConnectedAccountId ?? sequence.senderConnectedAccountId;
-      const hasAutomatedEmail = steps.some(
-        ({ settings }) =>
-          settings.type === SEQUENCE_STEP_TYPES.SEND_EMAIL &&
-          settings.executionMode !== SEQUENCE_ACTION_EXECUTION_MODES.MANUAL,
-      );
+      const hasAutomatedOutboundStep = steps.some(({ settings }) => {
+        switch (settings.type) {
+          case SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST:
+          case SEQUENCE_STEP_TYPES.SEND_EMAIL:
+          case SEQUENCE_STEP_TYPES.SEND_LINKEDIN_MESSAGE:
+          case SEQUENCE_STEP_TYPES.WITHDRAW_CONNECTION_REQUEST:
+            return (
+              settings.executionMode !== SEQUENCE_ACTION_EXECUTION_MODES.MANUAL
+            );
+          default:
+            return false;
+        }
+      });
 
-      if (hasAutomatedEmail && !senderConnectedAccountId) {
+      if (hasAutomatedOutboundStep && !senderConnectedAccountId) {
         this.throwBadRequest('Choose a sender before activating the sequence');
       }
 
       if (steps.length === 0) {
         this.throwBadRequest('Add a step before activating the sequence');
+      }
+
+      if (hasAutomatedOutboundStep && senderConnectedAccountId) {
+        try {
+          await this.sequenceSenderService.getReadySenderOrThrow({
+            connectedAccountId: senderConnectedAccountId,
+            expectedUserWorkspaceId: isUserAuthContext(authContext)
+              ? authContext.userWorkspaceId
+              : undefined,
+            workspaceId: authContext.workspace.id,
+          });
+        } catch (error) {
+          this.throwBadRequest(
+            error instanceof Error
+              ? error.message
+              : 'The selected sender mailbox is not ready',
+          );
+        }
       }
     }
   }
