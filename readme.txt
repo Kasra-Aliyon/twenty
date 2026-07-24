@@ -2,6 +2,14 @@
 bash packages/twenty-utils/setup-dev-env.sh
 yarn start
 
+# build the app changes:
+
+npx nx build twenty-shared
+npx nx build twenty-ui
+npx nx build twenty-front
+npx nx build twenty-server
+
+
 # building the mcp upon changes:
 
 npx nx lint twenty-mcp
@@ -21,6 +29,8 @@ npm run build
 npm run build:firefox
 npm run zip
 npm run zip:firefox
+
+# run on localhost as frontend
 
 bash packages/twenty-utils/setup-dev-env.sh
 yarn start:localhost

@@ -144,10 +144,13 @@ export class SequenceLinkedinReplyListener {
           LinkedinActionWorkspaceEntity,
           { shouldBypassPermissionChecks: true },
         );
-      const completedMessageActions = await actionRepository.find({
+      const completedOutboundActions = await actionRepository.find({
         where: {
           personId: In(personIds),
-          type: LINKEDIN_ACTION_TYPES.SEND_MESSAGE,
+          type: In([
+            LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST,
+            LINKEDIN_ACTION_TYPES.SEND_MESSAGE,
+          ]),
           status: LINKEDIN_ACTION_STATUSES.COMPLETED,
           sequenceEnrollmentId: Not(IsNull()),
           executedAt: Not(IsNull()),
@@ -205,7 +208,7 @@ export class SequenceLinkedinReplyListener {
               : [],
         );
 
-        for (const action of completedMessageActions) {
+        for (const action of completedOutboundActions) {
           if (
             isDefined(action.sequenceEnrollmentId) &&
             isDefined(action.executedAt) &&

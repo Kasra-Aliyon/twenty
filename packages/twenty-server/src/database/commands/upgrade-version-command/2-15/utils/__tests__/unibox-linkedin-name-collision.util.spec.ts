@@ -1,9 +1,12 @@
 import {
   assertNoUniboxLinkedinObjectNameCollisions,
+  buildUniboxLinkedinLegacyArchiveOperations,
   buildUniboxLinkedinLegacyObjectRenames,
   findUniboxLinkedinLegacyObjects,
   findUniboxLinkedinObjectNameCollisions,
 } from 'src/database/commands/upgrade-version-command/2-15/utils/unibox-linkedin-name-collision.util';
+import { type FlatNavigationMenuItem } from 'src/engine/metadata-modules/flat-navigation-menu-item/types/flat-navigation-menu-item.type';
+import { type FlatView } from 'src/engine/metadata-modules/flat-view/types/flat-view.type';
 import { getFlatObjectMetadataMock } from 'src/engine/metadata-modules/flat-object-metadata/__mocks__/get-flat-object-metadata.mock';
 
 const CUSTOM_APPLICATION_ID = '20202020-1111-4111-8111-111111111111';
@@ -160,5 +163,124 @@ describe('Unibox LinkedIn object-name collision preflight', () => {
         objectMetadata: legacyThread,
       },
     ]);
+  });
+
+  it('freezes legacy objects and removes their object and view navigation pins', () => {
+    const legacyMessage = getFlatObjectMetadataMock({
+      applicationId: CUSTOM_APPLICATION_ID,
+      applicationUniversalIdentifier: CUSTOM_APPLICATION_ID,
+      isSearchable: true,
+      isUICreatable: true,
+      isUIEditable: true,
+      labelPlural: 'LinkedIn Messages',
+      labelSingular: 'LinkedIn Message',
+      namePlural: 'legacyLinkedinMessages',
+      nameSingular: 'legacyLinkedinMessage',
+      universalIdentifier: '20202020-9999-4999-8999-999999999999',
+    });
+    const legacyView = {
+      id: '30303030-1111-4111-8111-111111111111',
+      objectMetadataId: legacyMessage.id,
+      universalIdentifier: '30303030-1111-4111-8111-111111111111',
+    } as FlatView;
+    const objectNavigationItem = {
+      id: '30303030-2222-4222-8222-222222222222',
+      targetObjectMetadataId: legacyMessage.id,
+      universalIdentifier: '30303030-2222-4222-8222-222222222222',
+      viewId: null,
+    } as FlatNavigationMenuItem;
+    const viewNavigationItem = {
+      id: '30303030-3333-4333-8333-333333333333',
+      targetObjectMetadataId: null,
+      universalIdentifier: '30303030-3333-4333-8333-333333333333',
+      viewId: legacyView.id,
+    } as FlatNavigationMenuItem;
+    const unrelatedNavigationItem = {
+      id: '30303030-4444-4444-8444-444444444444',
+      targetObjectMetadataId: '30303030-5555-4555-8555-555555555555',
+      universalIdentifier: '30303030-4444-4444-8444-444444444444',
+      viewId: null,
+    } as FlatNavigationMenuItem;
+
+    const operations = buildUniboxLinkedinLegacyArchiveOperations({
+      flatNavigationMenuItemMaps: {
+        byUniversalIdentifier: {
+          [objectNavigationItem.universalIdentifier]: objectNavigationItem,
+          [viewNavigationItem.universalIdentifier]: viewNavigationItem,
+          [unrelatedNavigationItem.universalIdentifier]:
+            unrelatedNavigationItem,
+        },
+        universalIdentifierById: {},
+        universalIdentifiersByApplicationId: {},
+      },
+      flatViewMaps: {
+        byUniversalIdentifier: {
+          [legacyView.universalIdentifier]: legacyView,
+        },
+        universalIdentifierById: {},
+        universalIdentifiersByApplicationId: {},
+      },
+      legacyObjects: [
+        {
+          objectName: 'linkedinMessage',
+          objectMetadata: legacyMessage,
+        },
+      ],
+      now: '2026-07-24T00:00:00.000Z',
+    });
+
+    expect(operations.archivedObjectMetadatas).toEqual([
+      expect.objectContaining({
+        id: legacyMessage.id,
+        isActive: false,
+        isSearchable: false,
+        isUICreatable: false,
+        isUIEditable: false,
+        labelPlural: 'LinkedIn Messages (Legacy backup)',
+        labelSingular: 'LinkedIn Message (Legacy backup)',
+      }),
+    ]);
+    expect(operations.navigationMenuItemsToDelete).toEqual([
+      objectNavigationItem,
+      viewNavigationItem,
+    ]);
+  });
+
+  it('does not rebuild an already archived legacy object', () => {
+    const archivedConnection = getFlatObjectMetadataMock({
+      applicationId: CUSTOM_APPLICATION_ID,
+      applicationUniversalIdentifier: CUSTOM_APPLICATION_ID,
+      isActive: false,
+      isSearchable: false,
+      isUICreatable: false,
+      isUIEditable: false,
+      labelPlural: 'LinkedIn Connections (Legacy backup)',
+      labelSingular: 'LinkedIn Connection (Legacy backup)',
+      namePlural: 'legacyLinkedinConnections',
+      nameSingular: 'legacyLinkedinConnection',
+      universalIdentifier: '40404040-1111-4111-8111-111111111111',
+    });
+
+    expect(
+      buildUniboxLinkedinLegacyArchiveOperations({
+        flatNavigationMenuItemMaps: {
+          byUniversalIdentifier: {},
+          universalIdentifierById: {},
+          universalIdentifiersByApplicationId: {},
+        },
+        flatViewMaps: {
+          byUniversalIdentifier: {},
+          universalIdentifierById: {},
+          universalIdentifiersByApplicationId: {},
+        },
+        legacyObjects: [
+          {
+            objectName: 'linkedinConnection',
+            objectMetadata: archivedConnection,
+          },
+        ],
+        now: '2026-07-24T00:00:00.000Z',
+      }).archivedObjectMetadatas,
+    ).toEqual([]);
   });
 });

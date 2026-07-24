@@ -7,9 +7,9 @@ import { TRANSPARENT_COLORS_DARK } from './TransparentColorsDark';
 export const BACKGROUND_DARK = {
   noisy: 'none',
   primary: GRAY_SCALE_DARK.gray1,
-  secondary: GRAY_SCALE_DARK.gray1,
-  tertiary: GRAY_SCALE_DARK.gray1,
-  quaternary: GRAY_SCALE_DARK.gray3,
+  secondary: GRAY_SCALE_DARK.gray2,
+  tertiary: GRAY_SCALE_DARK.gray3,
+  quaternary: GRAY_SCALE_DARK.gray4,
   invertedPrimary: GRAY_SCALE_DARK.gray12,
   invertedSecondary: GRAY_SCALE_DARK.gray11,
   danger: COLOR_DARK.red3,

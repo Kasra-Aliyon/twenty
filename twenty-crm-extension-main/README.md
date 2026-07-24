@@ -69,10 +69,11 @@ Same process - visit any LinkedIn company page (`linkedin.com/company/name`)
   IDs so interrupted syncs can safely resume.
 - Current releases write to Twenty's standard LinkedIn objects. If a workspace
   used an older extension that created custom LinkedIn objects at runtime,
-  those legacy objects are intentionally left untouched. If the server upgrade
-  reports an object-name collision, a workspace administrator must export any
-  needed legacy data, remove or rename the conflicting custom objects under
-  **Settings → Data model**, rerun the upgrade, and then start a new sync.
+  the Twenty 2.15 upgrade preserves them under `legacy...` API names, creates
+  the standard LinkedIn objects, and copies supported legacy connections,
+  invitations, threads, participants, and messages into the new model. Review
+  the upgrade logs before starting a new sync; the preserved legacy objects
+  remain available for verification and are not deleted automatically.
 
 ### Outbound actions
 

@@ -7,9 +7,9 @@ import { TRANSPARENT_COLORS_LIGHT } from './TransparentColorsLight';
 export const BACKGROUND_LIGHT = {
   noisy: 'none',
   primary: GRAY_SCALE_LIGHT.gray1,
-  secondary: GRAY_SCALE_LIGHT.gray1,
-  tertiary: GRAY_SCALE_LIGHT.gray1,
-  quaternary: GRAY_SCALE_LIGHT.gray2,
+  secondary: GRAY_SCALE_LIGHT.gray2,
+  tertiary: GRAY_SCALE_LIGHT.gray3,
+  quaternary: GRAY_SCALE_LIGHT.gray4,
   invertedPrimary: GRAY_SCALE_LIGHT.gray12,
   invertedSecondary: GRAY_SCALE_LIGHT.gray11,
   danger: COLOR_LIGHT.red3,

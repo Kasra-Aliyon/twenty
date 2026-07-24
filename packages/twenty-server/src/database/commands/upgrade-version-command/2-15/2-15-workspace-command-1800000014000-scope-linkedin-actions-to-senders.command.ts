@@ -3,7 +3,7 @@ import { Command } from 'nest-commander';
 
 import { STANDARD_OBJECTS } from 'twenty-shared/metadata';
 import { isDefined } from 'twenty-shared/utils';
-import { In, IsNull, Not, Repository } from 'typeorm';
+import { In, IsNull, MoreThan, Not, Repository } from 'typeorm';
 
 import { ActiveOrSuspendedWorkspaceCommandRunner } from 'src/database/commands/command-runners/active-or-suspended-workspace.command-runner';
 import { WorkspaceIteratorService } from 'src/database/commands/command-runners/workspace-iterator.service';
@@ -203,13 +203,18 @@ export class ScopeLinkedinActionsToSendersCommand extends ActiveOrSuspendedWorks
           }),
         );
         let backfilledCount = 0;
+        let lastActionId: string | null = null;
 
         for (;;) {
           const actions = await actionRepository.find({
             where: {
+              ...(isDefined(lastActionId)
+                ? { id: MoreThan(lastActionId) }
+                : {}),
               ownerWorkspaceMemberId: IsNull(),
               sequenceEnrollmentId: Not(IsNull()),
             },
+            order: { id: 'ASC' },
             select: ['id', 'sequenceEnrollmentId'],
             take: ACTION_BATCH_SIZE,
           });
@@ -253,20 +258,22 @@ export class ScopeLinkedinActionsToSendersCommand extends ActiveOrSuspendedWorks
               : [];
           });
 
-          if (updates.length === 0) {
-            break;
+          if (updates.length > 0) {
+            const workspaceDataSource =
+              await this.globalWorkspaceOrmManager.getGlobalWorkspaceDataSource();
+
+            await workspaceDataSource.transaction(
+              async (transactionManager) => {
+                await actionRepository.updateMany(
+                  updates,
+                  transactionManager as WorkspaceEntityManager,
+                );
+              },
+            );
+            backfilledCount += updates.length;
           }
 
-          const workspaceDataSource =
-            await this.globalWorkspaceOrmManager.getGlobalWorkspaceDataSource();
-
-          await workspaceDataSource.transaction(async (transactionManager) => {
-            await actionRepository.updateMany(
-              updates,
-              transactionManager as WorkspaceEntityManager,
-            );
-          });
-          backfilledCount += updates.length;
+          lastActionId = actions[actions.length - 1].id;
 
           if (actions.length < ACTION_BATCH_SIZE) {
             break;

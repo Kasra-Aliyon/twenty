@@ -10,21 +10,48 @@ describe('feature tool input builders', () => {
     const accounts = [
       {
         id: 'active-google',
+        handle: 'sender@example.com',
         provider: 'google',
         archivedAt: null,
         authFailedAt: null,
+        messageChannels: [
+          {
+            connectedAccountId: 'active-google',
+            handle: 'sender@example.com',
+            isSyncEnabled: true,
+            syncStatus: 'ACTIVE',
+          },
+        ],
       },
       {
         id: 'failed-google',
+        handle: 'failed@example.com',
         provider: 'google',
         archivedAt: null,
         authFailedAt: '2026-01-01T00:00:00.000Z',
+        messageChannels: [
+          {
+            connectedAccountId: 'failed-google',
+            handle: 'failed@example.com',
+            isSyncEnabled: true,
+            syncStatus: 'ACTIVE',
+          },
+        ],
       },
       {
         id: 'active-microsoft',
+        handle: 'microsoft@example.com',
         provider: 'microsoft',
         archivedAt: null,
         authFailedAt: null,
+        messageChannels: [
+          {
+            connectedAccountId: 'active-microsoft',
+            handle: 'microsoft@example.com',
+            isSyncEnabled: false,
+            syncStatus: 'ACTIVE',
+          },
+        ],
       },
     ];
 
@@ -34,6 +61,32 @@ describe('feature tool input builders', () => {
         provider: 'google',
       }),
     ).toEqual([accounts[0]]);
+  });
+
+  it('requires an enabled active inbox channel for a sequence sender', () => {
+    expect(
+      sequencesToolsTesting.isReadySequenceSenderAccount({
+        id: 'account-id',
+        handle: 'sender@example.com',
+        provider: 'google',
+        archivedAt: null,
+        authFailedAt: null,
+        messageChannels: [
+          {
+            connectedAccountId: 'account-id',
+            handle: 'alias@example.com',
+            isSyncEnabled: true,
+            syncStatus: 'ACTIVE',
+          },
+          {
+            connectedAccountId: 'account-id',
+            handle: 'sender@example.com',
+            isSyncEnabled: true,
+            syncStatus: 'ONGOING',
+          },
+        ],
+      }),
+    ).toBe(false);
   });
 
   it('models current sequence branches and manual execution settings', () => {

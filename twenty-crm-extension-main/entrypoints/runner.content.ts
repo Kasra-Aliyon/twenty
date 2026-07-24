@@ -696,6 +696,7 @@ export default defineContentScript({
       ) {
         const reportResponse = await sendMessage('REPORT_LINKEDIN_ACTION', {
           id: action.id,
+          claimedAt: action.claimedAt,
           status: 'FAILED',
           connectionState: 'UNKNOWN',
           errorMessage:
@@ -719,6 +720,7 @@ export default defineContentScript({
       if (runnerState.activeActionStartedAt) {
         const reportResponse = await sendMessage('REPORT_LINKEDIN_ACTION', {
           id: action.id,
+          claimedAt: action.claimedAt,
           status: 'FAILED',
           connectionState: 'UNKNOWN',
           errorMessage:
@@ -824,6 +826,7 @@ export default defineContentScript({
 
       const reportResponse = await sendMessage('REPORT_LINKEDIN_ACTION', {
         id: action.id,
+        claimedAt: action.claimedAt,
         status: result.status,
         connectionState: result.connectionState,
         errorMessage: result.status === 'FAILED' ? result.errorMessage : null,

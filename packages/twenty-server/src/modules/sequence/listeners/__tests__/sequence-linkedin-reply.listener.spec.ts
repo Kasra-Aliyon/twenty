@@ -89,6 +89,19 @@ describe('SequenceLinkedinReplyListener', () => {
   it('stops the enrollment when the same LinkedIn owner receives a message after its sequence action', async () => {
     await listener.handleMessageCreatedEvent(buildMessageCreatedPayload());
 
+    expect(actionRepository.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          type: expect.objectContaining({
+            _type: 'in',
+            _value: [
+              LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST,
+              LINKEDIN_ACTION_TYPES.SEND_MESSAGE,
+            ],
+          }),
+        }),
+      }),
+    );
     expect(enrollmentRepository.update).toHaveBeenCalledWith(
       expect.objectContaining({
         id: expect.objectContaining({ value: ['enrollment-id'] }),
@@ -98,6 +111,26 @@ describe('SequenceLinkedinReplyListener', () => {
         waitingOn: null,
         nextActionAt: null,
       }),
+    );
+  });
+
+  it('stops the enrollment when the reply follows a connection-request note', async () => {
+    actionRepository.find.mockResolvedValue([
+      {
+        personId: 'person-id',
+        sequenceEnrollmentId: 'enrollment-id',
+        ownerWorkspaceMemberId: 'owner-id',
+        type: LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST,
+        status: LINKEDIN_ACTION_STATUSES.COMPLETED,
+        executedAt: new Date('2026-07-24T11:00:00.000Z'),
+      },
+    ]);
+
+    await listener.handleMessageCreatedEvent(buildMessageCreatedPayload());
+
+    expect(enrollmentRepository.update).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ status: 'REPLIED' }),
     );
   });
 

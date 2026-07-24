@@ -69,14 +69,49 @@ const CONNECTED_ACCOUNTS_QUERY = `
       createdAt
       updatedAt
     }
+    myMessageChannels {
+      handle
+      connectedAccountId
+      isSyncEnabled
+      syncStatus
+    }
   }
 `;
 
+type MessageChannel = {
+  handle: string;
+  connectedAccountId: string;
+  isSyncEnabled: boolean;
+  syncStatus: string;
+};
+
 type ConnectedAccount = {
+  id?: unknown;
+  handle?: unknown;
   provider?: unknown;
   authFailedAt?: unknown;
   archivedAt?: unknown;
+  messageChannels?: MessageChannel[];
 };
+
+const SEQUENCE_SENDER_PROVIDERS = new Set([
+  'google',
+  'microsoft',
+  'imap_smtp_caldav',
+]);
+
+const isReadySequenceSenderAccount = (account: ConnectedAccount): boolean =>
+  account.archivedAt == null &&
+  account.authFailedAt == null &&
+  typeof account.handle === 'string' &&
+  typeof account.provider === 'string' &&
+  SEQUENCE_SENDER_PROVIDERS.has(account.provider) &&
+  (account.messageChannels ?? []).some(
+    (messageChannel) =>
+      messageChannel.handle === account.handle &&
+      messageChannel.isSyncEnabled &&
+      messageChannel.syncStatus === 'ACTIVE',
+  );
 
 const filterConnectedAccounts = (
   accounts: ConnectedAccount[],
@@ -90,8 +125,7 @@ const filterConnectedAccounts = (
 ): ConnectedAccount[] =>
   accounts.filter(
     (account) =>
-      (!activeOnly ||
-        (account.archivedAt == null && account.authFailedAt == null)) &&
+      (!activeOnly || isReadySequenceSenderAccount(account)) &&
       (provider === undefined || account.provider === provider),
   );
 
@@ -458,7 +492,7 @@ const SEQUENCE_CAPABILITIES = {
     statuses: SEQUENCE_STATUSES,
     activation_requirements: [
       'At least one step.',
-      'A connected sender only when the sequence contains an automated SEND_EMAIL step.',
+      'A synchronized sender mailbox for every automated outbound email or LinkedIn step. The sender also determines which workspace member owns LinkedIn actions.',
       'Explicit confirmation because activation can start external outreach.',
     ],
     editing:
@@ -617,7 +651,7 @@ export const registerSequenceTools = (
     {
       title: 'List connected sender accounts',
       description:
-        'Lists user-owned connected accounts that can be selected as sequence or one-off email senders. Requires TWENTY_USER_TOKEN.',
+        'Lists user-owned connected accounts that can be selected as sequence or one-off email senders. With active_only enabled, returns only supported mailboxes whose inbox sync is enabled and ACTIVE. Requires TWENTY_USER_TOKEN.',
       inputSchema: z.object({
         provider: z.string().min(1).optional(),
         active_only: z.boolean().default(true),
@@ -634,6 +668,7 @@ export const registerSequenceTools = (
       runTool(async () => {
         const result = await dependencies.client.graphql<{
           myConnectedAccounts: ConnectedAccount[];
+          myMessageChannels: MessageChannel[];
         }>(
           CONNECTED_ACCOUNTS_QUERY,
           {},
@@ -643,7 +678,35 @@ export const registerSequenceTools = (
           },
         );
 
-        return filterConnectedAccounts(result.myConnectedAccounts, {
+        const messageChannelsByConnectedAccountId = new Map<
+          string,
+          MessageChannel[]
+        >();
+
+        for (const messageChannel of result.myMessageChannels) {
+          const channels =
+            messageChannelsByConnectedAccountId.get(
+              messageChannel.connectedAccountId,
+            ) ?? [];
+
+          channels.push(messageChannel);
+          messageChannelsByConnectedAccountId.set(
+            messageChannel.connectedAccountId,
+            channels,
+          );
+        }
+
+        const accountsWithMessageChannels = result.myConnectedAccounts.map(
+          (account) => ({
+            ...account,
+            messageChannels:
+              typeof account.id === 'string'
+                ? (messageChannelsByConnectedAccountId.get(account.id) ?? [])
+                : [],
+          }),
+        );
+
+        return filterConnectedAccounts(accountsWithMessageChannels, {
           activeOnly: active_only,
           provider,
         });
@@ -825,7 +888,7 @@ export const registerSequenceTools = (
     {
       title: 'Set outreach sequence status',
       description:
-        'Activates, pauses, or returns a sequence to DRAFT. Activation requires at least one step and requires a sender only when an automated email step exists.',
+        'Activates, pauses, or returns a sequence to DRAFT. Activation requires at least one step and a synchronized sender mailbox whenever an automated email or LinkedIn outbound step exists.',
       inputSchema: z.object({
         sequence_id: recordIdSchema,
         status: z.enum(SEQUENCE_STATUSES),
@@ -1307,6 +1370,7 @@ export const sequencesToolsTesting = {
   findDescendantStepIds,
   filterConnectedAccounts,
   getSequenceStepStorageType,
+  isReadySequenceSenderAccount,
   normalizedStepSettings,
   stepData,
   stepInputSchema,

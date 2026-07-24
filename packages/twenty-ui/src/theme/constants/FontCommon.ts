@@ -13,5 +13,5 @@ export const FONT_COMMON = {
     medium: 500,
     semiBold: 600,
   },
-  family: "'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+  family: "'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, sans-serif",
 };

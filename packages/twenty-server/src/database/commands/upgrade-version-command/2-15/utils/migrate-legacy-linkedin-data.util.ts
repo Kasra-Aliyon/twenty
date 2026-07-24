@@ -7,6 +7,12 @@ import { escapeIdentifier } from 'src/engine/workspace-manager/workspace-migrati
 
 type LegacyLinkedinObjectName = UniboxLinkedinLegacyObject['objectName'];
 
+export type LegacyLinkedinMigrationStat = {
+  dataset: LegacyLinkedinObjectName | 'linkedinThreadParticipant';
+  eligibleLegacyRowCount: number;
+  missingCanonicalRowCount: number;
+};
+
 const STANDARD_TABLE_BY_OBJECT_NAME: Record<LegacyLinkedinObjectName, string> =
   {
     linkedinConnection: 'linkedinConnection',
@@ -55,6 +61,36 @@ const tableExists = async ({
   )) as Array<{ exists: boolean }>;
 
   return result[0]?.exists === true;
+};
+
+const getMigrationStat = async ({
+  dataset,
+  queryRunner,
+  sourceFromAndJoins,
+  sourceWhere,
+}: {
+  dataset: LegacyLinkedinMigrationStat['dataset'];
+  queryRunner: QueryRunner;
+  sourceFromAndJoins: string;
+  sourceWhere: string;
+}): Promise<LegacyLinkedinMigrationStat> => {
+  const result = (await queryRunner.query(`
+    SELECT
+      count(*)::integer AS "eligibleLegacyRowCount",
+      count(*) FILTER (WHERE canonical.id IS NULL)::integer
+        AS "missingCanonicalRowCount"
+    ${sourceFromAndJoins}
+    WHERE ${sourceWhere}
+  `)) as Array<{
+    eligibleLegacyRowCount: number;
+    missingCanonicalRowCount: number;
+  }>;
+
+  return {
+    dataset,
+    eligibleLegacyRowCount: result[0]?.eligibleLegacyRowCount ?? 0,
+    missingCanonicalRowCount: result[0]?.missingCanonicalRowCount ?? 0,
+  };
 };
 
 const copyLegacyConnections = async ({
@@ -481,6 +517,155 @@ export const migrateLegacyLinkedinData = async ({
   } catch (error) {
     await queryRunner.rollbackTransaction();
     throw error;
+  } finally {
+    await queryRunner.release();
+  }
+};
+
+export const getLegacyLinkedinMigrationStats = async ({
+  dataSource,
+  legacyObjects,
+  workspaceId,
+}: {
+  dataSource: DataSource;
+  legacyObjects: UniboxLinkedinLegacyObject[];
+  workspaceId: string;
+}): Promise<LegacyLinkedinMigrationStat[]> => {
+  if (legacyObjects.length === 0) {
+    return [];
+  }
+
+  const schemaName = getWorkspaceSchemaName(workspaceId);
+  const legacyTableByObjectName = getLegacyTableByObjectName(legacyObjects);
+  const queryRunner = dataSource.createQueryRunner();
+
+  await queryRunner.connect();
+
+  try {
+    for (const tableName of Object.values(STANDARD_TABLE_BY_OBJECT_NAME)) {
+      if (!(await tableExists({ queryRunner, schemaName, tableName }))) {
+        throw new Error(
+          `Cannot validate legacy LinkedIn data because ${schemaName}.${tableName} does not exist`,
+        );
+      }
+    }
+
+    const stats: LegacyLinkedinMigrationStat[] = [];
+    const connectionTable = legacyTableByObjectName.linkedinConnection;
+    const invitationTable = legacyTableByObjectName.linkedinInvitation;
+    const threadTable = legacyTableByObjectName.linkedinMessageThread;
+    const messageTable = legacyTableByObjectName.linkedinMessage;
+
+    if (connectionTable) {
+      stats.push(
+        await getMigrationStat({
+          dataset: 'linkedinConnection',
+          queryRunner,
+          sourceFromAndJoins: `
+            FROM ${qualifiedTable(schemaName, connectionTable)} source
+            LEFT JOIN ${qualifiedTable(
+              schemaName,
+              STANDARD_TABLE_BY_OBJECT_NAME.linkedinConnection,
+            )} canonical
+              ON canonical."externalId" = source."externalId"
+          `,
+          sourceWhere:
+            'source."externalId" IS NOT NULL AND source."ownerLinkedinId" IS NOT NULL',
+        }),
+      );
+    }
+
+    if (invitationTable) {
+      stats.push(
+        await getMigrationStat({
+          dataset: 'linkedinInvitation',
+          queryRunner,
+          sourceFromAndJoins: `
+            FROM ${qualifiedTable(schemaName, invitationTable)} source
+            LEFT JOIN ${qualifiedTable(
+              schemaName,
+              STANDARD_TABLE_BY_OBJECT_NAME.linkedinInvitation,
+            )} canonical
+              ON canonical."externalId" = source."externalId"
+          `,
+          sourceWhere:
+            'source."externalId" IS NOT NULL AND source."ownerLinkedinId" IS NOT NULL',
+        }),
+      );
+    }
+
+    if (threadTable) {
+      stats.push(
+        await getMigrationStat({
+          dataset: 'linkedinMessageThread',
+          queryRunner,
+          sourceFromAndJoins: `
+            FROM ${qualifiedTable(schemaName, threadTable)} source
+            LEFT JOIN ${qualifiedTable(
+              schemaName,
+              STANDARD_TABLE_BY_OBJECT_NAME.linkedinMessageThread,
+            )} canonical
+              ON canonical."externalId" = source."externalId"
+          `,
+          sourceWhere:
+            'source."externalId" IS NOT NULL AND source."threadId" IS NOT NULL AND source."ownerLinkedinId" IS NOT NULL',
+        }),
+      );
+
+      stats.push(
+        await getMigrationStat({
+          dataset: 'linkedinThreadParticipant',
+          queryRunner,
+          sourceFromAndJoins: `
+            FROM ${qualifiedTable(schemaName, threadTable)} source
+            CROSS JOIN LATERAL jsonb_array_elements(
+              COALESCE(source."participants", '[]'::jsonb)
+            ) participant
+            LEFT JOIN ${qualifiedTable(
+              schemaName,
+              STANDARD_TABLE_BY_OBJECT_NAME.linkedinThreadParticipant,
+            )} canonical
+              ON canonical."externalId" = concat(
+                source."ownerLinkedinId", ':', source."threadId", ':',
+                COALESCE(
+                  participant ->> 'linkedinUrn',
+                  participant ->> 'linkedinId',
+                  lower(participant ->> 'name')
+                )
+              )
+          `,
+          sourceWhere:
+            'source."externalId" IS NOT NULL AND source."threadId" IS NOT NULL AND source."ownerLinkedinId" IS NOT NULL',
+        }),
+      );
+    }
+
+    if (messageTable) {
+      stats.push(
+        await getMigrationStat({
+          dataset: 'linkedinMessage',
+          queryRunner,
+          sourceFromAndJoins: `
+            FROM ${qualifiedTable(schemaName, messageTable)} source
+            LEFT JOIN ${qualifiedTable(
+              schemaName,
+              STANDARD_TABLE_BY_OBJECT_NAME.linkedinMessageThread,
+            )} canonical_thread
+              ON canonical_thread."externalId" = source."threadExternalId"
+            LEFT JOIN ${qualifiedTable(
+              schemaName,
+              STANDARD_TABLE_BY_OBJECT_NAME.linkedinMessage,
+            )} canonical
+              ON canonical."externalId" = source."externalId"
+              AND canonical."threadId" = canonical_thread.id
+          `,
+          sourceWhere:
+            'source."externalId" IS NOT NULL AND source."messageId" IS NOT NULL AND source."deliveredAt" IS NOT NULL AND source."ownerLinkedinId" IS NOT NULL',
+        }),
+      );
+    }
+
+    return stats;
   } finally {
     await queryRunner.release();
   }

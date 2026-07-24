@@ -6,8 +6,8 @@ export const ICON = {
     xl: 24,
   },
   stroke: {
-    sm: 1.5,
-    md: 1.75,
-    lg: 2,
+    sm: 1.35,
+    md: 1.5,
+    lg: 1.75,
   },
 };

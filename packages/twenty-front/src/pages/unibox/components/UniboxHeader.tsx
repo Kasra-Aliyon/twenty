@@ -83,6 +83,7 @@ export const UniboxHeaderActions = ({
   onlyCrmContacts,
   isDraftEnabled,
   isLinkedinEnabled,
+  showLinkedinContactFilter,
   onTabChange,
   onToggleAccount,
   onOnlyCrmContactsChange,
@@ -95,6 +96,7 @@ export const UniboxHeaderActions = ({
   onlyCrmContacts: boolean;
   isDraftEnabled: boolean;
   isLinkedinEnabled: boolean;
+  showLinkedinContactFilter: boolean;
   onTabChange: (tab: UniboxTab) => void;
   onToggleAccount: (accountId: string) => void;
   onOnlyCrmContactsChange: (value: boolean) => void;
@@ -137,7 +139,7 @@ export const UniboxHeaderActions = ({
           </StyledTab>
         )}
       </StyledTabs>
-      {tab !== 'DRAFT' && (
+      {tab !== 'DRAFT' && (tab !== 'LINKEDIN' || showLinkedinContactFilter) && (
         <>
           <StyledToggleLabel>
             {t`Only Twenty contacts`}

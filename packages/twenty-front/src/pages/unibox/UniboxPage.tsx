@@ -10,6 +10,7 @@ import { useDoObjectMetadataItemsExist } from '@/object-metadata/hooks/useDoObje
 import { useApolloCoreClient } from '@/object-metadata/hooks/useApolloCoreClient';
 import { useUniboxAccounts } from '@/unibox/hooks/useUniboxAccounts';
 import { useUniboxThreads } from '@/unibox/hooks/useUniboxThreads';
+import { type LinkedinUniboxDataset } from '@/unibox/types/LinkedinUniboxRecords';
 import {
   type UniboxFilters,
   type UniboxTab,
@@ -28,6 +29,9 @@ import { UniboxEmailThreadView } from '~/pages/unibox/components/UniboxEmailThre
 import { UniboxFilterBar } from '~/pages/unibox/components/UniboxFilterBar';
 import { UniboxHeaderActions } from '~/pages/unibox/components/UniboxHeader';
 import { UniboxLinkedInThreadView } from '~/pages/unibox/components/UniboxLinkedInThreadView';
+import { UniboxLinkedInDataBar } from '~/pages/unibox/components/UniboxLinkedInDataBar';
+import { UniboxLinkedInDatasetPicker } from '~/pages/unibox/components/UniboxLinkedInDatasetPicker';
+import { UniboxLinkedInDataView } from '~/pages/unibox/components/UniboxLinkedInDataView';
 import { UniboxSplitView } from '~/pages/unibox/components/UniboxSplitView';
 import { UniboxThreadList } from '~/pages/unibox/components/UniboxThreadList';
 import { t } from '@lingui/core/macro';
@@ -51,6 +55,8 @@ const StyledDetailLoading = styled.div`
 
 const UniboxPageContent = () => {
   const [tab, setTab] = useState<UniboxTab>('EMAILS');
+  const [linkedinDataset, setLinkedinDataset] =
+    useState<LinkedinUniboxDataset>('MESSAGE_THREADS');
   const [filters, setFilters] = useState<UniboxFilters>(DEFAULT_FILTERS);
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
   const [checkedThreadIds, setCheckedThreadIds] = useState<string[]>([]);
@@ -68,6 +74,8 @@ const UniboxPageContent = () => {
     'messageChannelMessageAssociation',
   ]);
   const isLinkedinMetadataAvailable = useDoObjectMetadataItemsExist([
+    'linkedinConnection',
+    'linkedinInvitation',
     'linkedinMessageThread',
     'linkedinMessage',
     'linkedinThreadParticipant',
@@ -77,13 +85,22 @@ const UniboxPageContent = () => {
     () => ({ ...filters, search: debouncedSearch }),
     [debouncedSearch, filters],
   );
-  const { threads, loading, isFetchingMore, fetchMoreThreads, refetch } =
-    useUniboxThreads({
-      tab,
-      filters: queryFilters,
-      skip:
-        tab === 'DRAFT' || (tab === 'LINKEDIN' && !isLinkedinMetadataAvailable),
-    });
+  const {
+    threads,
+    totalCount,
+    loading,
+    isFetchingMore,
+    fetchMoreThreads,
+    refetch,
+  } = useUniboxThreads({
+    tab,
+    filters: queryFilters,
+    skip:
+      tab === 'DRAFT' ||
+      (tab === 'LINKEDIN' &&
+        (!isLinkedinMetadataAvailable ||
+          linkedinDataset !== 'MESSAGE_THREADS')),
+  });
 
   useEffect(() => {
     if (tab === 'LINKEDIN' && !isLinkedinMetadataAvailable) {
@@ -136,6 +153,9 @@ const UniboxPageContent = () => {
                 onlyCrmContacts={filters.onlyCrmContacts}
                 isDraftEnabled={isMessageDraftMetadataAvailable}
                 isLinkedinEnabled={isLinkedinMetadataAvailable}
+                showLinkedinContactFilter={
+                  linkedinDataset === 'MESSAGE_THREADS'
+                }
                 onTabChange={(nextTab) => {
                   clearSelection();
                   setTab(nextTab);
@@ -166,8 +186,32 @@ const UniboxPageContent = () => {
           />
         }
         secondaryBar={
-          tab === 'DRAFT' ? undefined : (
+          tab === 'DRAFT' ? undefined : tab === 'LINKEDIN' &&
+            linkedinDataset !== 'MESSAGE_THREADS' ? (
+            <UniboxLinkedInDataBar
+              dataset={linkedinDataset}
+              search={filters.search}
+              dateRange={filters.dateRange}
+              onDatasetChange={(nextDataset) => {
+                clearSelection();
+                setLinkedinDataset(nextDataset);
+              }}
+              onSearchChange={(search) => updateFilters({ search })}
+              onDateRangeChange={(dateRange) => updateFilters({ dateRange })}
+            />
+          ) : (
             <UniboxFilterBar
+              leadingContent={
+                tab === 'LINKEDIN' ? (
+                  <UniboxLinkedInDatasetPicker
+                    value={linkedinDataset}
+                    onChange={(nextDataset) => {
+                      clearSelection();
+                      setLinkedinDataset(nextDataset);
+                    }}
+                  />
+                ) : undefined
+              }
               search={filters.search}
               recordListId={filters.recordListId}
               unreadOnly={filters.unreadOnly}
@@ -182,10 +226,23 @@ const UniboxPageContent = () => {
           )
         }
       >
-        {tab === 'DRAFT' && isMessageDraftMetadataAvailable ? (
+        {tab === 'LINKEDIN' &&
+        linkedinDataset !== 'MESSAGE_THREADS' &&
+        isLinkedinMetadataAvailable ? (
+          <UniboxLinkedInDataView
+            dataset={linkedinDataset}
+            search={queryFilters.search}
+            dateRange={queryFilters.dateRange}
+          />
+        ) : tab === 'DRAFT' && isMessageDraftMetadataAvailable ? (
           <UniboxDraftTab accounts={accounts} />
         ) : (
           <UniboxSplitView
+            summary={
+              tab === 'LINKEDIN'
+                ? t`${totalCount} synchronized records`
+                : undefined
+            }
             list={
               <UniboxThreadList
                 threads={threads}

@@ -2,6 +2,21 @@ import { styled } from '@linaria/react';
 import { type ReactNode, useEffect, useState } from 'react';
 import { themeCssVariables } from 'twenty-ui/theme-constants';
 
+const StyledRoot = styled.div`
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+`;
+
+const StyledSummary = styled.div`
+  border-bottom: 1px solid ${themeCssVariables.border.color.medium};
+  color: ${themeCssVariables.font.color.secondary};
+  font-size: ${themeCssVariables.font.size.sm};
+  padding: ${themeCssVariables.spacing[3]} ${themeCssVariables.spacing[4]};
+`;
+
 const StyledSplit = styled.div`
   display: flex;
   flex: 1;
@@ -40,9 +55,11 @@ const StyledRightPane = styled.div`
 `;
 
 export const UniboxSplitView = ({
+  summary,
   list,
   detail,
 }: {
+  summary?: ReactNode;
   list: ReactNode;
   detail: ReactNode;
 }) => {
@@ -73,17 +90,20 @@ export const UniboxSplitView = ({
   }, [resizeStart]);
 
   return (
-    <StyledSplit>
-      <StyledLeftPane width={leftPaneWidth}>{list}</StyledLeftPane>
-      <StyledDivider
-        onMouseDown={(event) => {
-          setResizeStart({
-            pointerX: event.clientX,
-            width: leftPaneWidth,
-          });
-        }}
-      />
-      <StyledRightPane>{detail}</StyledRightPane>
-    </StyledSplit>
+    <StyledRoot>
+      {summary !== undefined && <StyledSummary>{summary}</StyledSummary>}
+      <StyledSplit>
+        <StyledLeftPane width={leftPaneWidth}>{list}</StyledLeftPane>
+        <StyledDivider
+          onMouseDown={(event) => {
+            setResizeStart({
+              pointerX: event.clientX,
+              width: leftPaneWidth,
+            });
+          }}
+        />
+        <StyledRightPane>{detail}</StyledRightPane>
+      </StyledSplit>
+    </StyledRoot>
   );
 };

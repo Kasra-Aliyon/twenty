@@ -1,9 +1,13 @@
 import { Injectable } from '@nestjs/common';
 
-import { type ObjectRecordCreateEvent } from 'twenty-shared/database-events';
+import {
+  type ObjectRecordCreateEvent,
+  type ObjectRecordUpdateEvent,
+} from 'twenty-shared/database-events';
 
 import { OnDatabaseBatchEvent } from 'src/engine/api/graphql/graphql-query-runner/decorators/on-database-batch-event.decorator';
 import { DatabaseEventAction } from 'src/engine/api/graphql/graphql-query-runner/enums/database-event-action';
+import { objectRecordChangedProperties } from 'src/engine/core-modules/event-emitter/utils/object-record-changed-properties.util';
 import { InjectMessageQueue } from 'src/engine/core-modules/message-queue/decorators/message-queue.decorator';
 import { MessageQueue } from 'src/engine/core-modules/message-queue/message-queue.constants';
 import { MessageQueueService } from 'src/engine/core-modules/message-queue/services/message-queue.service';
@@ -13,6 +17,8 @@ import {
   type LinkedinConnectionMatchJobData,
 } from 'src/modules/linkedin/jobs/linkedin-connection-match.job';
 import { type LinkedinConnectionWorkspaceEntity } from 'src/modules/linkedin/standard-objects/linkedin-connection.workspace-entity';
+
+const CONNECTION_MATCHING_FIELDS = ['handle', 'name'] as const;
 
 @Injectable()
 export class LinkedinConnectionListener {
@@ -27,8 +33,38 @@ export class LinkedinConnectionListener {
       ObjectRecordCreateEvent<LinkedinConnectionWorkspaceEntity>
     >,
   ): Promise<void> {
-    const connectionIds = payload.events.map(({ recordId }) => recordId);
+    await this.enqueueConnections(
+      payload.events.map(({ recordId }) => recordId),
+      payload.workspaceId,
+    );
+  }
 
+  @OnDatabaseBatchEvent('linkedinConnection', DatabaseEventAction.UPDATED)
+  async handleUpdatedEvent(
+    payload: WorkspaceEventBatch<
+      ObjectRecordUpdateEvent<LinkedinConnectionWorkspaceEntity>
+    >,
+  ): Promise<void> {
+    const connectionIds = payload.events
+      .filter(({ properties }) => {
+        const changedProperties = objectRecordChangedProperties(
+          properties.before,
+          properties.after,
+        );
+
+        return CONNECTION_MATCHING_FIELDS.some((field) =>
+          changedProperties.includes(field),
+        );
+      })
+      .map(({ recordId }) => recordId);
+
+    await this.enqueueConnections(connectionIds, payload.workspaceId);
+  }
+
+  private async enqueueConnections(
+    connectionIds: string[],
+    workspaceId: string,
+  ): Promise<void> {
     if (connectionIds.length === 0) {
       return;
     }
@@ -36,9 +72,9 @@ export class LinkedinConnectionListener {
     await this.messageQueueService.add<LinkedinConnectionMatchJobData>(
       LinkedinConnectionMatchJob.name,
       {
-        connectionIds,
+        connectionIds: [...new Set(connectionIds)],
         personIds: [],
-        workspaceId: payload.workspaceId,
+        workspaceId,
       },
     );
   }

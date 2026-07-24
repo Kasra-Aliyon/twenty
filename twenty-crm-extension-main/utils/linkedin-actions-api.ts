@@ -77,10 +77,10 @@ const CLAIM_ACTION = `
 
 const REPORT_ACTION = `
   mutation ReportLinkedinAction(
-    $id: UUID!
+    $filter: LinkedinActionFilterInput!
     $data: LinkedinActionUpdateInput!
   ) {
-    updateLinkedinAction(id: $id, data: $data) {
+    updateLinkedinActions(filter: $filter, data: $data) {
       ${LINKEDIN_ACTION_FIELDS}
     }
   }
@@ -211,6 +211,8 @@ export const claimAction = async (
 export const reportAction = async (
   client: TwentyApiClient,
   id: string,
+  claimedBy: string,
+  claimedAt: string,
   report: {
     status: Extract<LinkedInActionStatus, 'COMPLETED' | 'SKIPPED' | 'FAILED'>;
     connectionState: LinkedInConnectionState;
@@ -218,9 +220,14 @@ export const reportAction = async (
   },
 ): Promise<TwentyLinkedInAction> => {
   const result = await client.graphqlRequest<{
-    updateLinkedinAction: TwentyLinkedInAction;
+    updateLinkedinActions: TwentyLinkedInAction[];
   }>(REPORT_ACTION, {
-    id,
+    filter: {
+      id: { eq: id },
+      status: { eq: 'CLAIMED' },
+      claimedBy: { eq: claimedBy },
+      claimedAt: { eq: claimedAt },
+    },
     data: {
       status: report.status,
       connectionState: report.connectionState,
@@ -228,10 +235,11 @@ export const reportAction = async (
       executedAt: new Date().toISOString(),
     },
   });
+  const action = result.data?.updateLinkedinActions[0];
 
-  if (!result.data?.updateLinkedinAction) {
-    throw new Error('Failed to report LinkedIn action');
+  if (!action) {
+    throw new Error('The LinkedIn action is no longer claimed by this runner');
   }
 
-  return result.data.updateLinkedinAction;
+  return action;
 };

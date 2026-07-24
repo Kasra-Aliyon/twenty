@@ -2,7 +2,9 @@ import { STANDARD_OBJECTS } from 'twenty-shared/metadata';
 import { isDefined } from 'twenty-shared/utils';
 
 import { type FlatEntityMaps } from 'src/engine/metadata-modules/flat-entity/types/flat-entity-maps.type';
+import { type FlatNavigationMenuItem } from 'src/engine/metadata-modules/flat-navigation-menu-item/types/flat-navigation-menu-item.type';
 import { type FlatObjectMetadata } from 'src/engine/metadata-modules/flat-object-metadata/types/flat-object-metadata.type';
+import { type FlatView } from 'src/engine/metadata-modules/flat-view/types/flat-view.type';
 
 export const UNIBOX_LINKEDIN_OBJECT_NAMES = [
   {
@@ -66,7 +68,13 @@ export type UniboxLinkedinLegacyObjectRename = UniboxLinkedinLegacyObject & {
   renamedObjectMetadata: FlatObjectMetadata;
 };
 
+export type UniboxLinkedinLegacyArchiveOperations = {
+  archivedObjectMetadatas: FlatObjectMetadata[];
+  navigationMenuItemsToDelete: FlatNavigationMenuItem[];
+};
+
 const MAX_LEGACY_NAME_ATTEMPTS = 100;
+const LEGACY_BACKUP_LABEL_PATTERN = / \(Legacy backup(?: \d+)?\)$/;
 
 const capitalize = (value: string): string =>
   value.length === 0 ? value : value[0].toUpperCase() + value.slice(1);
@@ -258,6 +266,98 @@ export const buildUniboxLinkedinLegacyObjectRenames = ({
       },
     };
   });
+};
+
+const getLegacyBackupLabelSuffix = ({
+  nameSingular,
+}: Pick<FlatObjectMetadata, 'nameSingular'>): string => {
+  const numericSuffix = nameSingular.match(/\d+$/)?.[0];
+
+  return numericSuffix
+    ? ` (Legacy backup ${numericSuffix})`
+    : ' (Legacy backup)';
+};
+
+const appendLegacyBackupLabelSuffix = ({
+  label,
+  nameSingular,
+}: {
+  label: string;
+  nameSingular: string;
+}): string =>
+  LEGACY_BACKUP_LABEL_PATTERN.test(label)
+    ? label
+    : `${label}${getLegacyBackupLabelSuffix({ nameSingular })}`;
+
+export const buildUniboxLinkedinLegacyArchiveOperations = ({
+  flatNavigationMenuItemMaps,
+  flatViewMaps,
+  legacyObjects,
+  now,
+}: {
+  flatNavigationMenuItemMaps: FlatEntityMaps<FlatNavigationMenuItem>;
+  flatViewMaps: FlatEntityMaps<FlatView>;
+  legacyObjects: UniboxLinkedinLegacyObject[];
+  now: string;
+}): UniboxLinkedinLegacyArchiveOperations => {
+  const legacyObjectIds = new Set(
+    legacyObjects.map(({ objectMetadata }) => objectMetadata.id),
+  );
+  const legacyViewIds = new Set(
+    Object.values(flatViewMaps.byUniversalIdentifier)
+      .filter(isDefined)
+      .filter(({ objectMetadataId }) => legacyObjectIds.has(objectMetadataId))
+      .map(({ id }) => id),
+  );
+  const archivedObjectMetadatas = legacyObjects.flatMap(
+    ({ objectMetadata }) => {
+      const labelSingular = appendLegacyBackupLabelSuffix({
+        label: objectMetadata.labelSingular,
+        nameSingular: objectMetadata.nameSingular,
+      });
+      const labelPlural = appendLegacyBackupLabelSuffix({
+        label: objectMetadata.labelPlural,
+        nameSingular: objectMetadata.nameSingular,
+      });
+      const isAlreadyArchived =
+        labelSingular === objectMetadata.labelSingular &&
+        labelPlural === objectMetadata.labelPlural &&
+        objectMetadata.isActive === false &&
+        objectMetadata.isUICreatable === false &&
+        objectMetadata.isUIEditable === false &&
+        objectMetadata.isSearchable === false;
+
+      return isAlreadyArchived
+        ? []
+        : [
+            {
+              ...objectMetadata,
+              isActive: false,
+              isUICreatable: false,
+              isUIEditable: false,
+              isSearchable: false,
+              labelPlural,
+              labelSingular,
+              updatedAt: now,
+            },
+          ];
+    },
+  );
+  const navigationMenuItemsToDelete = Object.values(
+    flatNavigationMenuItemMaps.byUniversalIdentifier,
+  )
+    .filter(isDefined)
+    .filter(
+      ({ targetObjectMetadataId, viewId }) =>
+        (isDefined(targetObjectMetadataId) &&
+          legacyObjectIds.has(targetObjectMetadataId)) ||
+        (isDefined(viewId) && legacyViewIds.has(viewId)),
+    );
+
+  return {
+    archivedObjectMetadatas,
+    navigationMenuItemsToDelete,
+  };
 };
 
 export const assertNoUniboxLinkedinObjectNameCollisions = ({

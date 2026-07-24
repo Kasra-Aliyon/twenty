@@ -1,11 +1,11 @@
 import { styled } from '@linaria/react';
-import { type ReactNode } from 'react';
+import { t } from '@lingui/core/macro';
 import { SearchInput } from 'twenty-ui/input';
 import { themeCssVariables } from 'twenty-ui/theme-constants';
 
+import { type LinkedinUniboxDataset } from '@/unibox/types/LinkedinUniboxRecords';
 import { type UniboxDateRange } from '@/unibox/types/UniboxThread';
-import { UniboxRecordListFilter } from '~/pages/unibox/components/UniboxRecordListControls';
-import { t } from '@lingui/core/macro';
+import { UniboxLinkedInDatasetPicker } from '~/pages/unibox/components/UniboxLinkedInDatasetPicker';
 
 const StyledBar = styled.div`
   align-items: center;
@@ -18,18 +18,9 @@ const StyledBar = styled.div`
 `;
 
 const StyledSearch = styled.div`
-  max-width: 300px;
-  min-width: 180px;
-  width: 30vw;
-`;
-
-const StyledUnreadLabel = styled.label`
-  align-items: center;
-  color: ${themeCssVariables.font.color.secondary};
-  display: flex;
-  font-size: ${themeCssVariables.font.size.sm};
-  gap: ${themeCssVariables.spacing[1]};
-  white-space: nowrap;
+  max-width: 360px;
+  min-width: 200px;
+  width: 32vw;
 `;
 
 const StyledSelect = styled.select`
@@ -41,50 +32,32 @@ const StyledSelect = styled.select`
   padding: 0 ${themeCssVariables.spacing[2]};
 `;
 
-export const UniboxFilterBar = ({
-  leadingContent,
+export const UniboxLinkedInDataBar = ({
+  dataset,
   search,
-  recordListId,
-  unreadOnly,
   dateRange,
+  onDatasetChange,
   onSearchChange,
-  onRecordListChange,
-  onUnreadOnlyChange,
   onDateRangeChange,
 }: {
-  leadingContent?: ReactNode;
+  dataset: LinkedinUniboxDataset;
   search: string;
-  recordListId: string | null;
-  unreadOnly: boolean;
   dateRange: UniboxDateRange;
+  onDatasetChange: (value: LinkedinUniboxDataset) => void;
   onSearchChange: (value: string) => void;
-  onRecordListChange: (value: string | null) => void;
-  onUnreadOnlyChange: (value: boolean) => void;
   onDateRangeChange: (value: UniboxDateRange) => void;
 }) => (
   <StyledBar>
-    {leadingContent}
-    <UniboxRecordListFilter
-      value={recordListId}
-      onChange={onRecordListChange}
-    />
+    <UniboxLinkedInDatasetPicker value={dataset} onChange={onDatasetChange} />
     <StyledSearch>
       <SearchInput
         value={search}
         onChange={onSearchChange}
-        placeholder={t`Search messages`}
+        placeholder={t`Search LinkedIn data`}
       />
     </StyledSearch>
-    <StyledUnreadLabel>
-      <input
-        type="checkbox"
-        checked={unreadOnly}
-        onChange={(event) => onUnreadOnlyChange(event.target.checked)}
-      />
-      {t`Unread only`}
-    </StyledUnreadLabel>
     <StyledSelect
-      aria-label={t`Message date range`}
+      aria-label={t`LinkedIn data date range`}
       value={dateRange}
       onChange={(event) =>
         onDateRangeChange(event.target.value as UniboxDateRange)

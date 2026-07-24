@@ -59,6 +59,65 @@ describe('LinkedIn thread participant listeners', () => {
     });
   });
 
+  it('rematches a participant when a later sync adds identity data', async () => {
+    const participantBefore = {
+      id: PARTICIPANT_ID,
+      handle: null,
+      isSelf: false,
+      linkedinUrn: null,
+      name: 'Ada Lovelace',
+      threadId: 'thread-id',
+    } as LinkedinThreadParticipantWorkspaceEntity;
+
+    await participantListener.handleUpdatedEvent(
+      buildEventBatch('linkedinThreadParticipant', [
+        {
+          recordId: PARTICIPANT_ID,
+          properties: {
+            before: participantBefore,
+            after: {
+              ...participantBefore,
+              handle: 'ada-lovelace',
+              linkedinUrn: 'urn:li:fsd_profile:ada',
+            },
+          },
+        } as ObjectRecordUpdateEvent<LinkedinThreadParticipantWorkspaceEntity>,
+      ]),
+    );
+
+    expect(add).toHaveBeenCalledWith(LinkedinThreadParticipantMatchJob.name, {
+      participantIds: [PARTICIPANT_ID],
+      personIds: [],
+      workspaceId: WORKSPACE_ID,
+    });
+  });
+
+  it('does not rematch a participant for non-identity updates', async () => {
+    const participantBefore = {
+      id: PARTICIPANT_ID,
+      handle: 'ada-lovelace',
+      headline: 'Mathematician',
+      isSelf: false,
+      linkedinUrn: 'urn:li:fsd_profile:ada',
+      name: 'Ada Lovelace',
+      threadId: 'thread-id',
+    } as LinkedinThreadParticipantWorkspaceEntity;
+
+    await participantListener.handleUpdatedEvent(
+      buildEventBatch('linkedinThreadParticipant', [
+        {
+          recordId: PARTICIPANT_ID,
+          properties: {
+            before: participantBefore,
+            after: { ...participantBefore, headline: 'Programmer' },
+          },
+        } as ObjectRecordUpdateEvent<LinkedinThreadParticipantWorkspaceEntity>,
+      ]),
+    );
+
+    expect(add).not.toHaveBeenCalled();
+  });
+
   it('queues created people so historical participants are back-linked', async () => {
     await personListener.handleCreatedEvent(
       buildEventBatch('person', [

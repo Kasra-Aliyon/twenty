@@ -300,13 +300,26 @@ const handleLinkedinRunnerTabRemoved = async (tabId: number): Promise<void> => {
   if (didStartAction && runnerState.activeAction) {
     try {
       const client = await getApiClient();
+      const claimedAt = runnerState.activeAction.claimedAt;
 
-      await reportAction(client, runnerState.activeAction.id, {
-        status: 'FAILED',
-        connectionState: 'UNKNOWN',
-        errorMessage:
-          'The runner tab closed after this action began, so its outcome is unknown.',
-      });
+      if (!claimedAt) {
+        throw new Error(
+          'The interrupted action did not have a claim timestamp',
+        );
+      }
+
+      await reportAction(
+        client,
+        runnerState.activeAction.id,
+        `extension-tab-${tabId}`,
+        claimedAt,
+        {
+          status: 'FAILED',
+          connectionState: 'UNKNOWN',
+          errorMessage:
+            'The runner tab closed after this action began, so its outcome is unknown.',
+        },
+      );
       didReportInterruptedAction = true;
     } catch (error) {
       console.error(
@@ -971,9 +984,10 @@ async function handleMessage(
       }
 
       case 'REPORT_LINKEDIN_ACTION': {
-        const { id, status, connectionState, errorMessage } =
+        const { id, claimedAt, status, connectionState, errorMessage } =
           message.payload as {
             id: string;
+            claimedAt: string;
             status: Extract<
               LinkedInActionStatus,
               'COMPLETED' | 'SKIPPED' | 'FAILED'
@@ -981,13 +995,33 @@ async function handleMessage(
             connectionState: LinkedInConnectionState;
             errorMessage?: string | null;
           };
-        const client = await getApiClient();
-        const action = await reportAction(client, id, {
-          status,
-          connectionState,
-          errorMessage,
-        });
+        const tabId = sender?.tab?.id;
         const runnerState = await getLinkedinRunnerState();
+
+        if (
+          typeof tabId !== 'number' ||
+          runnerState.tabId !== tabId ||
+          runnerState.activeAction?.id !== id ||
+          runnerState.activeAction.claimedAt !== claimedAt
+        ) {
+          return {
+            success: false,
+            error: 'The action is no longer claimed by this runner',
+          };
+        }
+
+        const client = await getApiClient();
+        const action = await reportAction(
+          client,
+          id,
+          `extension-tab-${tabId}`,
+          claimedAt,
+          {
+            status,
+            connectionState,
+            errorMessage,
+          },
+        );
 
         await setLinkedinRunnerState({
           ...runnerState,

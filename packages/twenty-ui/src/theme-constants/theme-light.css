@@ -6,9 +6,9 @@
   --t-icon-size-md: 16;
   --t-icon-size-lg: 20;
   --t-icon-size-xl: 24;
-  --t-icon-stroke-sm: 1.5;
-  --t-icon-stroke-md: 1.75;
-  --t-icon-stroke-lg: 2;
+  --t-icon-stroke-sm: 1.35;
+  --t-icon-stroke-md: 1.5;
+  --t-icon-stroke-lg: 1.75;
   --t-modal-size-sm-width: 300px;
   --t-modal-size-md-width: 400px;
   --t-modal-size-lg-width: 53%;
@@ -20,9 +20,9 @@
   --t-text-line-height-md: 1.1;
   --t-text-icon-size-medium: 16;
   --t-text-icon-size-small: 14;
-  --t-text-icon-strike-light: 1.5;
-  --t-text-icon-strike-medium: 1.75;
-  --t-text-icon-strike-bold: 2;
+  --t-text-icon-strike-light: 1.35;
+  --t-text-icon-strike-medium: 1.5;
+  --t-text-icon-strike-bold: 1.75;
   --t-animation-duration-instant: 0.075;
   --t-animation-duration-fast: 0.15;
   --t-animation-duration-normal: 0.3;
@@ -70,95 +70,91 @@
   --t-side-panel-width: 500px;
   --t-clickable-element-background-transition: background 0.1s ease;
   --t-last-layer-z-index: 2147483647;
-  --t-buttons-secondary-text-color: color(display-p3 0.63 0.69 1);
-  --t-accent-primary: color(display-p3 0.831 0.87 1);
-  --t-accent-secondary: color(display-p3 0.831 0.87 1);
-  --t-accent-tertiary: color(display-p3 0.933 0.948 0.992);
-  --t-accent-quaternary: color(display-p3 0.971 0.977 0.998);
-  --t-accent-accent3570: color(display-p3 0.569 0.639 0.916);
-  --t-accent-accent4060: color(display-p3 0.569 0.639 0.916);
-  --t-accent-accent1: color(display-p3 0.992 0.992 0.996);
-  --t-accent-accent2: color(display-p3 0.971 0.977 0.998);
-  --t-accent-accent3: color(display-p3 0.933 0.948 0.992);
-  --t-accent-accent4: color(display-p3 0.885 0.914 1);
-  --t-accent-accent5: color(display-p3 0.831 0.87 1);
-  --t-accent-accent6: color(display-p3 0.767 0.814 0.995);
-  --t-accent-accent7: color(display-p3 0.685 0.74 0.957);
-  --t-accent-accent8: color(display-p3 0.569 0.639 0.916);
-  --t-accent-accent9: color(display-p3 0.276 0.384 0.837);
-  --t-accent-accent10: color(display-p3 0.234 0.343 0.801);
-  --t-accent-accent11: color(display-p3 0.256 0.354 0.755);
-  --t-accent-accent12: color(display-p3 0.133 0.175 0.348);
+  --t-buttons-secondary-text-color: #5E6AD2;
+  --t-accent-primary: #5E6AD2;
+  --t-accent-secondary: #4F56C6;
+  --t-accent-tertiary: #E0E3FF;
+  --t-accent-quaternary: #F0F2FF;
+  --t-accent-accent3570: #5E6AD2;
+  --t-accent-accent4060: #5E6AD2;
+  --t-accent-accent1: #F8F9FF;
+  --t-accent-accent2: #F0F2FF;
+  --t-accent-accent3: #E0E3FF;
+  --t-accent-accent4: #CCD1FF;
+  --t-accent-accent5: #B0B7FF;
+  --t-accent-accent6: #8892FF;
+  --t-accent-accent7: #707CFF;
+  --t-accent-accent8: #5E6AD2;
+  --t-accent-accent9: #5E6AD2;
+  --t-accent-accent10: #4F56C6;
+  --t-accent-accent11: #3C42B0;
+  --t-accent-accent12: #1A1D54;
   --t-background-noisy: none;
-  --t-background-primary: color(display-p3 1 1 1);
-  --t-background-secondary: color(display-p3 1 1 1);
-  --t-background-tertiary: color(display-p3 1 1 1);
-  --t-background-quaternary: color(display-p3 0.988 0.988 0.988);
-  --t-background-inverted-primary: color(display-p3 0.2 0.2 0.2);
-  --t-background-inverted-secondary: color(display-p3 0.4 0.4 0.4);
-  --t-background-danger: color(display-p3 0.985 0.925 0.925);
-  --t-background-transparent-primary: color(display-p3 1 1 1 / 0.5);
-  --t-background-transparent-secondary: color(display-p3 1 1 1 / 0.4);
-  --t-background-transparent-strong: color(display-p3 0 0 0 / 0.161);
-  --t-background-transparent-medium: color(display-p3 0 0 0 / 0.078);
-  --t-background-transparent-light: color(display-p3 0 0 0 / 0.039);
-  --t-background-transparent-lighter: color(display-p3 0 0 0 / 0.02);
+  --t-background-primary: #FFFFFF;
+  --t-background-secondary: #FAFAFA;
+  --t-background-tertiary: #F4F5F6;
+  --t-background-quaternary: #ECECEE;
+  --t-background-inverted-primary: #0F172A;
+  --t-background-inverted-secondary: #374151;
+  --t-background-danger: #FEF2F2;
+  --t-background-transparent-primary: rgba(255, 255, 255, 0.8);
+  --t-background-transparent-secondary: rgba(250, 250, 250, 0.6);
+  --t-background-transparent-strong: rgba(0, 0, 0, 0.12);
+  --t-background-transparent-medium: rgba(0, 0, 0, 0.06);
+  --t-background-transparent-light: rgba(0, 0, 0, 0.03);
+  --t-background-transparent-lighter: rgba(0, 0, 0, 0.015);
   --t-background-transparent-danger: #f3000d14;
-  --t-background-transparent-blue: #0047f112;
+  --t-background-transparent-blue: #5e6ad218;
   --t-background-transparent-orange: #ff9c0029;
   --t-background-transparent-success: #00a43319;
-  --t-background-overlay-primary: color(display-p3 0 0 0 / 0.722);
-  --t-background-overlay-secondary: color(display-p3 0 0 0 / 0.361);
-  --t-background-overlay-tertiary: color(display-p3 0 0 0 / 0.071);
+  --t-background-overlay-primary: rgba(0, 0, 0, 0.5);
+  --t-background-overlay-secondary: rgba(0, 0, 0, 0.25);
+  --t-background-overlay-tertiary: rgba(0, 0, 0, 0.05);
   --t-background-radial-gradient: radial-gradient(
     50% 62.62% at 50% 0%,
-    color(display-p3 0.6 0.6 0.6) 0%,
-    color(display-p3 0.514 0.514 0.514) 100%
+    #4B5563 0%,
+    #374151 100%
   );
   --t-background-radial-gradient-hover: radial-gradient(
     76.32% 95.59% at 50% 0%,
-    color(display-p3 0.514 0.514 0.514) 0%,
-    color(display-p3 0.4 0.4 0.4) 100%
+    #374151 0%,
+    #1F2937 100%
   );
-  --t-background-primary-inverted: color(display-p3 0.2 0.2 0.2);
-  --t-background-primary-inverted-hover: color(display-p3 0.4 0.4 0.4);
-  --t-blur-light: blur(6px) saturate(200%) contrast(50%) brightness(130%);
-  --t-blur-medium: blur(12px) saturate(200%) contrast(50%) brightness(130%);
-  --t-blur-strong: blur(20px) saturate(200%) contrast(50%) brightness(130%);
-  --t-border-color-strong: color(display-p3 0.839 0.839 0.839);
-  --t-border-color-medium: color(display-p3 0.922 0.922 0.922);
-  --t-border-color-light: color(display-p3 0.945 0.945 0.945);
-  --t-border-color-secondary-inverted: color(display-p3 0.4 0.4 0.4);
-  --t-border-color-inverted: color(display-p3 0.2 0.2 0.2);
-  --t-border-color-danger: color(display-p3 0.984 0.812 0.811);
-  --t-border-color-blue: color(display-p3 0.685 0.74 0.957);
-  --t-border-color-transparent-strong: color(display-p3 0 0 0 / 0.071);
+  --t-background-primary-inverted: #0F172A;
+  --t-background-primary-inverted-hover: #1F2937;
+  --t-blur-light: blur(8px) saturate(180%) contrast(100%);
+  --t-blur-medium: blur(14px) saturate(180%) contrast(100%);
+  --t-blur-strong: blur(24px) saturate(180%) contrast(100%);
+  --t-border-color-strong: #D1D5DB;
+  --t-border-color-medium: #E2E4E8;
+  --t-border-color-light: #ECECEE;
+  --t-border-color-secondary-inverted: #374151;
+  --t-border-color-inverted: #0F172A;
+  --t-border-color-danger: #FCA5A5;
+  --t-border-color-blue: #5E6AD2;
+  --t-border-color-transparent-strong: rgba(0, 0, 0, 0.08);
   --t-border-radius-xs: 4px;
   --t-border-radius-sm: 6px;
-  --t-border-radius-md: 10px;
-  --t-border-radius-xl: 24px;
-  --t-border-radius-xxl: 48px;
+  --t-border-radius-md: 8px;
+  --t-border-radius-xl: 16px;
+  --t-border-radius-xxl: 24px;
   --t-border-radius-pill: 9999px;
   --t-border-radius-rounded: 100%;
-  --t-box-shadow-color: color(display-p3 0 0 0 / 0.039);
+  --t-box-shadow-color: rgba(0, 0, 0, 0.05);
   --t-box-shadow-light:
-    0px 2px 4px 0px color(display-p3 0 0 0 / 0.039),
-    0px 0px 4px 0px color(display-p3 0 0 0 / 0.078);
+    0px 1px 2px 0px rgba(0, 0, 0, 0.05), 0px 0px 1px 0px rgba(0, 0, 0, 0.08);
   --t-box-shadow-strong:
-    2px 4px 16px 0px color(display-p3 0 0 0 / 0.161),
-    0px 2px 4px 0px color(display-p3 0 0 0 / 0.078);
-  --t-box-shadow-underline: 0px 1px 0px 0px color(display-p3 0 0 0 / 0.361);
+    0px 4px 12px 0px rgba(0, 0, 0, 0.08), 0px 1px 2px 0px rgba(0, 0, 0, 0.04);
+  --t-box-shadow-underline: 0px 1px 0px 0px rgba(0, 0, 0, 0.08);
   --t-box-shadow-super-heavy:
-    0px 0px 8px 0px color(display-p3 0 0 0 / 0.161),
-    0px 8px 64px -16px color(display-p3 0 0 0 / 0.478),
-    0px 24px 56px -16px color(display-p3 0 0 0 / 0.078);
-  --t-font-color-primary: color(display-p3 0.2 0.2 0.2);
-  --t-font-color-secondary: color(display-p3 0.4 0.4 0.4);
-  --t-font-color-tertiary: color(display-p3 0.6 0.6 0.6);
-  --t-font-color-light: color(display-p3 0.702 0.702 0.702);
-  --t-font-color-extra-light: color(display-p3 0.8 0.8 0.8);
-  --t-font-color-inverted: color(display-p3 1 1 1);
-  --t-font-color-danger: color(display-p3 0.83 0.329 0.324);
+    0px 12px 32px 0px rgba(0, 0, 0, 0.12), 0px 2px 6px 0px rgba(0, 0, 0, 0.04);
+  --t-font-color-primary: #0F172A;
+  --t-font-color-secondary: #374151;
+  --t-font-color-tertiary: #4B5563;
+  --t-font-color-light: #6B7280;
+  --t-font-color-extra-light: #9CA3AF;
+  --t-font-color-inverted: #FFFFFF;
+  --t-font-color-danger: #EF4444;
   --t-font-size-xxs: 0.625rem;
   --t-font-size-xs: 0.85rem;
   --t-font-size-sm: 0.92rem;
@@ -169,7 +165,7 @@
   --t-font-weight-regular: 400;
   --t-font-weight-medium: 500;
   --t-font-weight-semi-bold: 600;
-  --t-font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --t-font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif;
   --t-name: light;
   --t-snack-bar-success-color: color(display-p3 0.297 0.637 0.581);
   --t-snack-bar-success-background-color: #00a43319;
