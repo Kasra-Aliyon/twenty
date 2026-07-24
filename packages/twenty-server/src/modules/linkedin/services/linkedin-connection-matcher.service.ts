@@ -75,7 +75,6 @@ export class LinkedinConnectionMatcherService {
       const repositories = await this.getRepositories(workspaceId);
       const people = await repositories.personRepository.find({
         where: { id: In(uniquePersonIds) },
-        select: ['id', 'linkedinLink', 'name'],
       });
       const handles = [
         ...new Set(
@@ -151,7 +150,6 @@ export class LinkedinConnectionMatcherService {
                 primaryLinkUrl: ILike(`%/in/${handle}%`),
               },
             })),
-            select: ['id', 'linkedinLink'],
           });
     const personIdsByHandle = new Map<string, Set<string>>();
 

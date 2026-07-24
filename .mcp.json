@@ -3,28 +3,40 @@
     "postgres": {
       "type": "stdio",
       "command": "bash",
-      "args": ["-c", "source packages/twenty-server/.env && npx -y @modelcontextprotocol/server-postgres \"$PG_DATABASE_URL\""],
+      "args": [
+        "-c",
+        "source packages/twenty-server/.env && npx -y @modelcontextprotocol/server-postgres \"$PG_DATABASE_URL\""
+      ],
       "env": {}
     },
     "playwright": {
       "type": "stdio",
       "command": "npx",
-      "args": ["@playwright/mcp@latest", "--no-sandbox", "--headless"],
+      "args": [
+        "@playwright/mcp@latest",
+        "--no-sandbox",
+        "--headless"
+      ],
       "env": {}
     },
     "context7": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "@upstash/context7-mcp"],
+      "args": [
+        "-y",
+        "@upstash/context7-mcp"
+      ],
       "env": {}
     },
     "twenty": {
       "type": "stdio",
       "command": "/opt/homebrew/bin/node",
-      "args": ["packages/twenty-mcp/dist/index.js"],
+      "args": [
+        "packages/twenty-mcp/dist/index.js"
+      ],
       "env": {
         "TWENTY_BASE_URL": "http://localhost:3000",
-        "TWENTY_API_KEY": "${TWENTY_API_KEY}",
+        "TWENTY_API_KEY": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IjI4MjM3Y2E3LTQ1NmUtNGQ4OS05YmI1LTM5ZmNiOWZiODNmZiJ9.eyJzdWIiOiJiOWRkNjdkZS0wOWM2LTQzN2EtOTc3NS1jZjhiZGYwYTE2MmIiLCJ0eXBlIjoiQVBJX0tFWSIsIndvcmtzcGFjZUlkIjoiYjlkZDY3ZGUtMDljNi00MzdhLTk3NzUtY2Y4YmRmMGExNjJiIiwiaWF0IjoxNzg0ODAxMzUzLCJleHAiOjQ5Mzg0MDEzNTIsImp0aSI6IjA1OTlmM2UwLTc5ZjYtNGM5Yi1hNGUyLThiNTYwYzczZGZmOCJ9.Rwcsq27Sqcr0qoXLSXCbWYXY6Tf7yq0bbKluUt4kLjuSI3m_teYb8pJgZri7wkOqEdztPT7LQRufMqURn87ZGA",
         "TWENTY_ENABLE_ADVANCED": "false"
       }
     }

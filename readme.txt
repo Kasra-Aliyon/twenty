@@ -1,6 +1,26 @@
+# running the app:
 bash packages/twenty-utils/setup-dev-env.sh
 yarn start
 
+# building the mcp upon changes:
+
+npx nx lint twenty-mcp
+npx nx typecheck twenty-mcp
+npx nx test twenty-mcp
+npx nx build twenty-mcp
+
+cd packages/twenty-mcp
+yarn mcpb:pack
+
+# Building the linkedin connector:
+
+cd twenty-crm-extension-main
+
+npm run compile
+npm run build
+npm run build:firefox
+npm run zip
+npm run zip:firefox
 
 bash packages/twenty-utils/setup-dev-env.sh
 yarn start:localhost
