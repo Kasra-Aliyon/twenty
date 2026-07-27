@@ -15,12 +15,15 @@ import {
 } from 'src/modules/apollo-enrichment/types/apollo-api.type';
 import { ApolloEnrichmentError } from 'src/modules/apollo-enrichment/types/apollo-enrichment-error';
 
-type ApolloPeopleMatchRequest = {
+type ApolloPeopleMatchParams = {
   email?: string;
   first_name?: string;
   last_name?: string;
   linkedin_url?: string;
   organization_name?: string;
+  reveal_personal_emails: boolean;
+  reveal_phone_number: boolean;
+  webhook_url?: string;
 };
 
 type ApolloOrganizationEnrichRequest = {
@@ -47,7 +50,14 @@ export class ApolloClientService {
       revealPhoneNumber: false,
     },
   ): Promise<ApolloPersonMatchResponse> {
-    const request: ApolloPeopleMatchRequest = {
+    if (options.revealPhoneNumber && !options.webhookUrl) {
+      throw new ApolloEnrichmentError(
+        'Apollo phone enrichment requires a webhook URL',
+        false,
+      );
+    }
+
+    const params: ApolloPeopleMatchParams = {
       ...(input.email ? { email: input.email } : {}),
       ...(input.firstName ? { first_name: input.firstName } : {}),
       ...(input.lastName ? { last_name: input.lastName } : {}),
@@ -55,19 +65,16 @@ export class ApolloClientService {
       ...(input.organizationName
         ? { organization_name: input.organizationName }
         : {}),
+      reveal_personal_emails: options.revealPersonalEmails,
+      reveal_phone_number: options.revealPhoneNumber,
+      ...(options.webhookUrl ? { webhook_url: options.webhookUrl } : {}),
     };
 
     const response = await this.getHttpClient().post<ApolloPersonMatchResponse>(
       '/people/match',
-      request,
+      undefined,
       {
-        params: {
-          reveal_personal_emails: options.revealPersonalEmails,
-          reveal_phone_number: options.revealPhoneNumber,
-          ...(options.revealPhoneNumber
-            ? { webhook_url: this.buildPhoneEnrichmentWebhookUrl() }
-            : {}),
-        },
+        params,
       },
     );
 
@@ -137,7 +144,7 @@ export class ApolloClientService {
       return result.webhook_result?.people?.[0] ?? undefined;
     }
 
-    throw new ApolloEnrichmentError('Apollo phone enrichment timed out', true);
+    return undefined;
   }
 
   private async getWebhookResult(
@@ -157,13 +164,6 @@ export class ApolloClientService {
 
       throw error;
     }
-  }
-
-  private buildPhoneEnrichmentWebhookUrl(): string {
-    return new URL(
-      '/webhooks/apollo/enrichment',
-      this.twentyConfigService.get('SERVER_URL'),
-    ).toString();
   }
 
   private hasPhoneNumber(person: ApolloPerson | null | undefined): boolean {

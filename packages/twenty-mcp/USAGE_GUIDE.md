@@ -145,11 +145,11 @@ export TWENTY_REQUEST_TIMEOUT_MS="15000"
 export TWENTY_MAX_RETRIES="2"
 ```
 
-`TWENTY_USER_TOKEN` is needed for connected-account discovery, one-off email,
-drafts, record email/calendar timelines, user-scoped Unibox operations, and
-some user-owned LinkedIn data. Do not copy a browser session token into a
-shared configuration. If you do not have an intentionally issued user token,
-leave it unset and use the API-key-compatible tools.
+`TWENTY_USER_TOKEN` is needed for Apollo enrichment, connected-account
+discovery, one-off email, drafts, record email/calendar timelines, user-scoped
+Unibox operations, and some user-owned LinkedIn data. Do not copy a browser
+session token into a shared configuration. If you do not have an intentionally
+issued user token, leave it unset and use the API-key-compatible tools.
 
 Keep advanced mode off initially. It exposes permanent record destruction and
 high-volume attachment/message reads.
@@ -327,7 +327,7 @@ From the terminal:
 codex mcp list
 ```
 
-Inside Codex, run `/mcp` and confirm that `twenty` is connected and exposes 110
+Inside Codex, run `/mcp` and confirm that `twenty` is connected and exposes 113
 tools. Then ask:
 
 ```text
@@ -807,10 +807,18 @@ unsubscribe topic, subject, body, and sendable/skipped counts. Do not send
 until I explicitly confirm.
 ```
 
+Apollo enrichment example:
+
+```text
+Find the exact IDs for the selected people and show them to me. Explain the
+maximum Apollo credit usage. Do not call the enrichment tool until I explicitly
+confirm the complete ID list.
+```
+
 The server itself requires `confirm=true` for destructive, bulk, sequence
 activation/enrollment, email/campaign sending, draft sending, Unibox import,
-and LinkedIn actions. Keep the host's own write-approval policy enabled as a
-second layer.
+Apollo enrichment, and LinkedIn actions. Keep the host's own write-approval
+policy enabled as a second layer.
 
 ## 12. Safety and operational policy
 
@@ -819,7 +827,12 @@ second layer.
 - Keep advanced mode disabled unless permanent deletion or high-volume reads
   are explicitly required.
 - Review the exact targets before merges, deletion, bulk enrollment, sequence
-  activation, email/campaign sending, or outbound LinkedIn actions.
+  activation, email/campaign sending, Apollo enrichment, or outbound LinkedIn
+  actions.
+- Apollo enrichment uses an external paid service. General person and company
+  enrichment can consume up to one credit per matched record; phone enrichment
+  can consume up to nine credits per matched person and may complete
+  asynchronously.
 - Start merge operations with `dry_run=true`.
 - Prefer `twenty_delete_record`, which moves records to trash, over the advanced
   permanent destroy tool.
@@ -919,11 +932,11 @@ fields, options, roles, or workspace schema.
 ### User-scoped tools report that a user token is required
 
 The configured API key does not provide a user context. Configure an
-intentionally issued `TWENTY_USER_TOKEN`, or leave connected accounts, email,
-drafts, record timelines, and Unibox unavailable. API-key-compatible tool
-families continue working.
+intentionally issued `TWENTY_USER_TOKEN`, or leave Apollo enrichment, connected
+accounts, email, drafts, record timelines, and Unibox unavailable.
+API-key-compatible tool families continue working.
 
-### Only 110 tools appear
+### Only 113 tools appear
 
 That is the normal safe configuration. Set `TWENTY_ENABLE_ADVANCED=true` and
 restart the server to expose the four advanced tools.

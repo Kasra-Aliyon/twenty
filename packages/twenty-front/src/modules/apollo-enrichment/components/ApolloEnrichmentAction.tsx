@@ -113,7 +113,10 @@ export const ApolloEnrichmentAction = ({
 
     if (result.failedCount > 0) {
       enqueueErrorSnackBar({
-        message: t`${result.updatedCount} of ${result.requestedCount} records were enriched. ${result.failedCount} failed.`,
+        message:
+          kind === 'phone'
+            ? t`${result.failedCount} phone enrichment requests failed. Verify that the Apollo webhook base URL is public HTTPS and that the API key can reveal phone numbers.`
+            : t`${result.updatedCount} of ${result.requestedCount} records were enriched. ${result.failedCount} failed.`,
       });
 
       return;
@@ -125,7 +128,7 @@ export const ApolloEnrichmentAction = ({
     enqueueSuccessSnackBar({
       message:
         kind === 'phone'
-          ? t`Phone enrichment finished: ${result.updatedCount} updated, ${unchangedCount} unchanged.`
+          ? t`Phone enrichment requested: ${result.updatedCount} updated now. Apollo can deliver the remaining results asynchronously over the next several minutes.`
           : t`Apollo enrichment finished: ${result.updatedCount} updated, ${unchangedCount} unchanged.`,
     });
   };

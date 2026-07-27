@@ -59,12 +59,15 @@ describe('ApolloEnrichmentService', () => {
     enrichOrganization: jest.fn(),
   };
   const configValues: Partial<ConfigVariables> = {
+    APP_SECRET: 'test-app-secret',
     APOLLO_ENRICHMENT_ENABLED: true,
+    APOLLO_PHONE_ENRICHMENT_WEBHOOK_BASE_URL: 'https://hooks.example.com',
     APOLLO_REVEAL_PERSONAL_EMAILS: false,
     APOLLO_REVEAL_PHONE_NUMBER: false,
     APOLLO_ENRICHMENT_BACKFILL_ENABLED: true,
     APOLLO_ENRICHMENT_BACKFILL_LIMIT: 50,
     APOLLO_ENRICHMENT_RETRY_SECONDS: 3600,
+    SERVER_URL: 'https://twenty.example.com',
   };
   const twentyConfigService = {
     get: jest.fn(
@@ -95,6 +98,9 @@ describe('ApolloEnrichmentService', () => {
     jest.clearAllMocks();
     configValues.APOLLO_ENRICHMENT_ENABLED = true;
     configValues.APOLLO_ENRICHMENT_BACKFILL_ENABLED = true;
+    configValues.APOLLO_PHONE_ENRICHMENT_WEBHOOK_BASE_URL =
+      'https://hooks.example.com';
+    configValues.SERVER_URL = 'https://twenty.example.com';
     personRepository.findOne.mockResolvedValue(buildPerson());
     personRepository.find.mockResolvedValue([]);
     personRepository.update.mockResolvedValue(undefined);
@@ -230,10 +236,13 @@ describe('ApolloEnrichmentService', () => {
       {
         linkedinUrl: 'https://www.linkedin.com/in/jane',
       },
-      {
+      expect.objectContaining({
         revealPersonalEmails: false,
         revealPhoneNumber: true,
-      },
+        webhookUrl: expect.stringMatching(
+          /^https:\/\/hooks\.example\.com\/webhooks\/apollo\/enrichment\//,
+        ),
+      }),
     );
     expect(personRepository.update).toHaveBeenCalledWith(personId, {
       phones: {
@@ -243,6 +252,89 @@ describe('ApolloEnrichmentService', () => {
         additionalPhones: null,
       },
     });
+  });
+
+  it('rejects phone enrichment without a public HTTPS webhook base URL', async () => {
+    configValues.APOLLO_PHONE_ENRICHMENT_WEBHOOK_BASE_URL = undefined;
+    configValues.SERVER_URL = 'http://localhost:3000';
+
+    await expect(
+      service.enrichPerson({
+        workspaceId,
+        personId,
+        mode: 'phone',
+      }),
+    ).rejects.toThrow(
+      'Apollo phone enrichment requires APOLLO_PHONE_ENRICHMENT_WEBHOOK_BASE_URL or SERVER_URL to use public HTTPS',
+    );
+    expect(apolloClientService.enrichPerson).not.toHaveBeenCalled();
+  });
+
+  it('updates a person when Apollo delivers the asynchronous phone webhook', async () => {
+    apolloClientService.enrichPerson.mockResolvedValue({
+      person: {
+        id: 'apollo-person-id',
+      },
+    });
+
+    await service.enrichPerson({
+      workspaceId,
+      personId,
+      mode: 'phone',
+    });
+
+    const enrichmentOptions = apolloClientService.enrichPerson.mock.calls[0][1];
+    const webhookUrl = new URL(enrichmentOptions.webhookUrl);
+    const token = webhookUrl.pathname.split('/').pop();
+
+    jest.clearAllMocks();
+    personRepository.findOne.mockResolvedValue(buildPerson());
+
+    await service.handlePhoneEnrichmentWebhook({
+      token: token ?? '',
+      payload: {
+        status: 'success',
+        people: [
+          {
+            id: 'apollo-person-id',
+            phone_numbers: [
+              {
+                sanitized_number: '+14155550100',
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    expect(personRepository.update).toHaveBeenCalledWith(personId, {
+      phones: {
+        primaryPhoneNumber: '+14155550100',
+        primaryPhoneCountryCode: '',
+        primaryPhoneCallingCode: '',
+        additionalPhones: null,
+      },
+    });
+  });
+
+  it('ignores Apollo phone webhooks with an invalid correlation token', async () => {
+    await service.handlePhoneEnrichmentWebhook({
+      token: 'invalid-token',
+      payload: {
+        status: 'success',
+        people: [
+          {
+            phone_numbers: [
+              {
+                sanitized_number: '+14155550100',
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    expect(personRepository.update).not.toHaveBeenCalled();
   });
 
   it('enriches empty company fields without updating company phone data', async () => {

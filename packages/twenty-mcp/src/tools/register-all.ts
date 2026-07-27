@@ -3,6 +3,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { ToolDependencies } from '../types.js';
 import { registerActivityTimelineTools } from './activity-timeline.tools.js';
 import { registerAdvancedReadTools } from './advanced-read.tools.js';
+import { registerApolloEnrichmentTools } from './apollo-enrichment.tools.js';
 import { registerCompanyTools } from './companies.tools.js';
 import { registerDashboardTools } from './dashboards.tools.js';
 import { registerDiscoveryTools } from './discovery.tools.js';
@@ -25,6 +26,7 @@ export const registerAllTools = (
   registerRecordTools(server, dependencies);
   registerPeopleTools(server, dependencies);
   registerCompanyTools(server, dependencies);
+  registerApolloEnrichmentTools(server, dependencies);
   registerDashboardTools(server, dependencies);
   registerOpportunityTools(server, dependencies);
   registerTaskAndNoteTools(server, dependencies);

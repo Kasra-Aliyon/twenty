@@ -4,7 +4,7 @@ A standalone Model Context Protocol server for Twenty CRM. It gives local coding
 agents a metadata-aware interface to standard objects, custom objects, and common
 CRM workflows without coupling the MCP process to the Twenty server runtime.
 
-The server exposes 110 tools by default and four additional tools when advanced
+The server exposes 113 tools by default and four additional tools when advanced
 mode is enabled. It uses stdio by default and also supports stateless Streamable
 HTTP.
 
@@ -19,6 +19,8 @@ web/mobile clients, including long-running service examples, see the
   group, and aggregate records.
 - Work with people, companies, opportunities, tasks, notes, activities, lists,
   and folders through task-specific tools.
+- Enrich selected people, person phone numbers, and companies through Apollo
+  after confirming the exact records and potential credit usage.
 - Build outreach sequences with conditions and merging Yes/No branches,
   automated or manual email/LinkedIn/enrichment actions, delays and tasks;
   activate or pause sequences, manage enrollment execution, read metrics, and
@@ -76,7 +78,7 @@ Optional:
 
 | Variable                       |     Default | Description                                                                                                      |
 | ------------------------------ | ----------: | ---------------------------------------------------------------------------------------------------------------- |
-| `TWENTY_USER_TOKEN`            |       unset | User-scoped token for connected accounts, email, drafts, record timelines, Unibox, and user-owned LinkedIn data. |
+| `TWENTY_USER_TOKEN`            |       unset | User-scoped token for Apollo enrichment, connected accounts, email, drafts, record timelines, Unibox, and user-owned LinkedIn data. |
 | `TWENTY_METADATA_CACHE_TTL_MS` |    `300000` | Live metadata cache lifetime.                                                                                    |
 | `TWENTY_REQUEST_TIMEOUT_MS`    |     `15000` | Per-request timeout.                                                                                             |
 | `TWENTY_MAX_RETRIES`           |         `2` | Retries for rate limits, 5xx responses, and transient fetch failures.                                            |
@@ -177,6 +179,7 @@ default_tools_approval_mode = "writes"
 | Discovery            | `twenty_health_check`, `twenty_list_objects`, `twenty_describe_object`, `twenty_refresh_metadata`, `twenty_global_search`                                                                                                                                                                   |
 | Generic records      | `twenty_list_records`, `twenty_get_record`, `twenty_create_record`, `twenty_update_record`, `twenty_delete_record`, `twenty_restore_record`, `twenty_batch_create_records`, `twenty_find_duplicates`, `twenty_merge_records`, `twenty_group_by`                                             |
 | People and companies | `twenty_find_people`, `twenty_create_person`, `twenty_set_person_company`, `twenty_find_companies`, `twenty_set_company_owner`                                                                                                                                                              |
+| Apollo enrichment    | `twenty_enrich_people_with_apollo`, `twenty_enrich_people_phones_with_apollo`, `twenty_enrich_companies_with_apollo`                                                                                                                                                                      |
 | Opportunities        | `twenty_find_opportunities`, `twenty_set_opportunity_stage`, `twenty_get_pipeline`                                                                                                                                                                                                          |
 | Work and activity    | `twenty_create_task`, `twenty_complete_task`, `twenty_create_note`, `twenty_attach_task`, `twenty_attach_note`, `twenty_list_activities`                                                                                                                                                    |
 | Lists                | `twenty_list_lists`, `twenty_create_list`, `twenty_add_record_to_list`, `twenty_remove_record_from_list`, `twenty_create_folder`                                                                                                                                                            |
@@ -263,8 +266,11 @@ Both lanes merge into the next root step. Deleting a condition through
   `confirm=true`.
 - Soft deletion, list removal, step deletion, real merges, batch writes, bulk
   enrollment, sequence activation, email/campaign sending, draft sending,
-  dashboard layout deletion, saved-view deletion, Unibox imports, and LinkedIn
-  actions require confirmation.
+  dashboard layout deletion, saved-view deletion, Unibox imports, Apollo
+  enrichment, and LinkedIn actions require confirmation.
+- Apollo enrichment requires a user token and can consume external credits.
+  Phone enrichment can return initial matches immediately and deliver the
+  remaining results asynchronously.
 - Campaign audience preview is read-only and should precede every campaign
   send.
 - Merge defaults to `dry_run=true`.

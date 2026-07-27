@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 
+import { createHmac, timingSafeEqual } from 'node:crypto';
+
 import { FieldActorSource, type ActorMetadata } from 'twenty-shared/types';
 import { isDefined } from 'twenty-shared/utils';
 import { type DeepPartial, ILike } from 'typeorm';
@@ -20,8 +22,10 @@ import {
 } from 'src/modules/apollo-enrichment/services/apollo-enrichment-mapper.service';
 import {
   type ApolloOrganization,
+  type ApolloPhoneEnrichmentWebhookPayload,
   type ApolloPersonEnrichmentOptions,
 } from 'src/modules/apollo-enrichment/types/apollo-api.type';
+import { ApolloEnrichmentError } from 'src/modules/apollo-enrichment/types/apollo-enrichment-error';
 import { CompanyWorkspaceEntity } from 'src/modules/company/standard-objects/company.workspace-entity';
 import { PersonWorkspaceEntity } from 'src/modules/person/standard-objects/person.workspace-entity';
 
@@ -45,6 +49,13 @@ export type ApolloEnrichmentBatchResult = {
 };
 
 const APOLLO_ENRICHMENT_BATCH_CONCURRENCY = 10;
+const APOLLO_PHONE_WEBHOOK_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
+
+type ApolloPhoneWebhookTokenPayload = {
+  expiresAt: number;
+  personId: string;
+  workspaceId: string;
+};
 
 @Injectable()
 export class ApolloEnrichmentService {
@@ -105,7 +116,11 @@ export class ApolloEnrichmentService {
 
         const apolloResponse = await this.apolloClientService.enrichPerson(
           matchInput,
-          this.getPersonEnrichmentOptions(mode),
+          this.getPersonEnrichmentOptions({
+            mode,
+            personId,
+            workspaceId,
+          }),
         );
         const apolloPerson = apolloResponse.person;
 
@@ -164,6 +179,59 @@ export class ApolloEnrichmentService {
       },
       authContext,
     );
+  }
+
+  async handlePhoneEnrichmentWebhook({
+    token,
+    payload,
+  }: {
+    token: string;
+    payload: ApolloPhoneEnrichmentWebhookPayload;
+  }): Promise<void> {
+    const tokenPayload = this.verifyPhoneWebhookToken(token);
+    const apolloPerson = payload.people?.[0];
+
+    if (
+      !isDefined(tokenPayload) ||
+      payload.status !== 'success' ||
+      !isDefined(apolloPerson)
+    ) {
+      return;
+    }
+
+    const authContext = buildSystemAuthContext(tokenPayload.workspaceId);
+
+    await this.globalWorkspaceOrmManager.executeInWorkspaceContext(async () => {
+      const personRepository =
+        await this.globalWorkspaceOrmManager.getRepository(
+          tokenPayload.workspaceId,
+          PersonWorkspaceEntity,
+          {
+            shouldBypassPermissionChecks: true,
+          },
+        );
+      const person = await personRepository.findOne({
+        where: {
+          id: tokenPayload.personId,
+        },
+      });
+
+      if (!isDefined(person)) {
+        return;
+      }
+
+      const phoneUpdate =
+        this.apolloEnrichmentMapperService.mapApolloPersonPhoneToTwentyUpdate({
+          person,
+          apolloPerson,
+        });
+
+      if (Object.keys(phoneUpdate).length === 0) {
+        return;
+      }
+
+      await personRepository.update(person.id, phoneUpdate);
+    }, authContext);
   }
 
   async enrichPeople({
@@ -630,13 +698,23 @@ export class ApolloEnrichmentService {
     }
   }
 
-  private getPersonEnrichmentOptions(
-    mode: ApolloPersonEnrichmentMode,
-  ): ApolloPersonEnrichmentOptions {
+  private getPersonEnrichmentOptions({
+    mode,
+    personId,
+    workspaceId,
+  }: {
+    mode: ApolloPersonEnrichmentMode;
+    personId: string;
+    workspaceId: string;
+  }): ApolloPersonEnrichmentOptions {
     if (mode === 'phone') {
       return {
         revealPersonalEmails: false,
         revealPhoneNumber: true,
+        webhookUrl: this.buildPhoneEnrichmentWebhookUrl({
+          personId,
+          workspaceId,
+        }),
       };
     }
 
@@ -649,12 +727,113 @@ export class ApolloEnrichmentService {
       };
     }
 
+    const revealPhoneNumber =
+      this.twentyConfigService.get('APOLLO_REVEAL_PHONE_NUMBER') ?? false;
+
     return {
       revealPersonalEmails:
         this.twentyConfigService.get('APOLLO_REVEAL_PERSONAL_EMAILS') ?? false,
-      revealPhoneNumber:
-        this.twentyConfigService.get('APOLLO_REVEAL_PHONE_NUMBER') ?? false,
+      revealPhoneNumber,
+      ...(revealPhoneNumber
+        ? {
+            webhookUrl: this.buildPhoneEnrichmentWebhookUrl({
+              personId,
+              workspaceId,
+            }),
+          }
+        : {}),
     };
+  }
+
+  private buildPhoneEnrichmentWebhookUrl({
+    personId,
+    workspaceId,
+  }: {
+    personId: string;
+    workspaceId: string;
+  }): string {
+    const webhookBaseUrl =
+      this.twentyConfigService.get(
+        'APOLLO_PHONE_ENRICHMENT_WEBHOOK_BASE_URL',
+      ) ?? this.twentyConfigService.get('SERVER_URL');
+    const serverUrl = new URL(webhookBaseUrl);
+
+    if (serverUrl.protocol !== 'https:') {
+      throw new ApolloEnrichmentError(
+        'Apollo phone enrichment requires APOLLO_PHONE_ENRICHMENT_WEBHOOK_BASE_URL or SERVER_URL to use public HTTPS',
+        false,
+      );
+    }
+
+    const tokenPayload: ApolloPhoneWebhookTokenPayload = {
+      expiresAt: Date.now() + APOLLO_PHONE_WEBHOOK_TOKEN_TTL_MS,
+      personId,
+      workspaceId,
+    };
+    const encodedPayload = Buffer.from(JSON.stringify(tokenPayload)).toString(
+      'base64url',
+    );
+    const signature = this.signPhoneWebhookPayload(encodedPayload);
+
+    return new URL(
+      `/webhooks/apollo/enrichment/${encodedPayload}.${signature}`,
+      serverUrl,
+    ).toString();
+  }
+
+  private verifyPhoneWebhookToken(
+    token: string,
+  ): ApolloPhoneWebhookTokenPayload | undefined {
+    const [encodedPayload, signature, ...unexpectedTokenParts] =
+      token.split('.');
+
+    if (
+      !hasText(encodedPayload) ||
+      !hasText(signature) ||
+      unexpectedTokenParts.length > 0
+    ) {
+      return undefined;
+    }
+
+    const expectedSignature = this.signPhoneWebhookPayload(encodedPayload);
+    const signatureBuffer = Buffer.from(signature);
+    const expectedSignatureBuffer = Buffer.from(expectedSignature);
+
+    if (
+      signatureBuffer.length !== expectedSignatureBuffer.length ||
+      !timingSafeEqual(signatureBuffer, expectedSignatureBuffer)
+    ) {
+      return undefined;
+    }
+
+    try {
+      const payload = JSON.parse(
+        Buffer.from(encodedPayload, 'base64url').toString('utf8'),
+      ) as Partial<ApolloPhoneWebhookTokenPayload>;
+
+      if (
+        !hasText(payload.workspaceId) ||
+        !hasText(payload.personId) ||
+        typeof payload.expiresAt !== 'number' ||
+        payload.expiresAt < Date.now()
+      ) {
+        return undefined;
+      }
+
+      return {
+        expiresAt: payload.expiresAt,
+        personId: payload.personId,
+        workspaceId: payload.workspaceId,
+      };
+    } catch {
+      return undefined;
+    }
+  }
+
+  private signPhoneWebhookPayload(encodedPayload: string): string {
+    return createHmac('sha256', this.twentyConfigService.get('APP_SECRET'))
+      .update(encodedPayload)
+      .digest('base64url');
   }
 
   private resolveRolePermissionConfig(

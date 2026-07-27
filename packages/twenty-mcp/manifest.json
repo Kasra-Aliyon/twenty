@@ -5,7 +5,7 @@
   "display_name": "Twenty CRM",
   "version": "0.2.0",
   "description": "Discover, read, and manage Twenty CRM records and workflows through MCP.",
-  "long_description": "A metadata-driven MCP server for Twenty CRM. It supports standard and custom objects, CRM search and aggregation, people, companies, opportunities, tasks, notes, lists, outreach sequences with conditions, Yes/No branches, automated/manual actions, LinkedIn steps and phone enrichment, email and campaigns, dashboards, saved views, record activity timelines, LinkedIn action queues, and Unibox reads. Risky, bulk, and outbound operations require explicit confirmation, while irreversible and high-volume tools are opt-in.",
+  "long_description": "A metadata-driven MCP server for Twenty CRM. It supports standard and custom objects, CRM search and aggregation, people, companies, opportunities, tasks, notes, lists, confirmed Apollo person/company/phone enrichment, outreach sequences with conditions, Yes/No branches, automated/manual actions, LinkedIn steps and phone enrichment, email and campaigns, dashboards, saved views, record activity timelines, LinkedIn action queues, and Unibox reads. Risky, paid, bulk, and outbound operations require explicit confirmation, while irreversible and high-volume tools are opt-in.",
   "author": {
     "name": "Twenty.com, PBC",
     "url": "https://twenty.com"
@@ -61,7 +61,7 @@
     "user_token": {
       "type": "string",
       "title": "Twenty user token",
-      "description": "Optional user-scoped token for connected accounts, email, drafts, record timelines, Unibox, and user-owned LinkedIn records. Leave blank for API-key-only use.",
+      "description": "Optional user-scoped token for Apollo enrichment, connected accounts, email, drafts, record timelines, Unibox, and user-owned LinkedIn records. Leave blank for API-key-only use.",
       "sensitive": true,
       "default": "",
       "required": false

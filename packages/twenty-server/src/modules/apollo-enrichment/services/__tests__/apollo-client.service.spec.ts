@@ -79,6 +79,8 @@ describe('ApolloClientService', () => {
       {
         revealPersonalEmails: false,
         revealPhoneNumber: true,
+        webhookUrl:
+          'https://twenty.example.com/webhooks/apollo/enrichment/token',
       },
     );
 
@@ -96,21 +98,17 @@ describe('ApolloClientService', () => {
         ],
       },
     });
-    expect(httpClient.post).toHaveBeenCalledWith(
-      '/people/match',
-      {
+    expect(httpClient.post).toHaveBeenCalledWith('/people/match', undefined, {
+      params: {
         email: 'jane@example.com',
         first_name: 'Jane',
         last_name: 'Doe',
+        reveal_personal_emails: false,
+        reveal_phone_number: true,
+        webhook_url:
+          'https://twenty.example.com/webhooks/apollo/enrichment/token',
       },
-      {
-        params: {
-          reveal_personal_emails: false,
-          reveal_phone_number: true,
-          webhook_url: 'https://twenty.example.com/webhooks/apollo/enrichment',
-        },
-      },
-    );
+    });
     expect(httpClient.get).toHaveBeenCalledWith('/webhook_result/request-id');
   });
 
@@ -133,18 +131,13 @@ describe('ApolloClientService', () => {
       },
     );
 
-    expect(httpClient.post).toHaveBeenCalledWith(
-      '/people/match',
-      {
+    expect(httpClient.post).toHaveBeenCalledWith('/people/match', undefined, {
+      params: {
         linkedin_url: 'https://www.linkedin.com/in/jane',
+        reveal_personal_emails: true,
+        reveal_phone_number: false,
       },
-      {
-        params: {
-          reveal_personal_emails: true,
-          reveal_phone_number: false,
-        },
-      },
-    );
+    });
     expect(httpClient.get).not.toHaveBeenCalled();
   });
 

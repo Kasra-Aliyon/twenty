@@ -85,7 +85,7 @@ export const apiErrorFromResponse = ({
 
   if (status === 401) {
     guidance =
-      ' Check TWENTY_API_KEY (or TWENTY_USER_TOKEN for Unibox) and ensure it has not expired.';
+      ' Check TWENTY_API_KEY (or TWENTY_USER_TOKEN for user-scoped tools) and ensure it has not expired.';
   } else if (status === 403) {
     guidance =
       " The token's role lacks permission for this operation. Metadata discovery may require Data Model read permission.";
@@ -113,7 +113,7 @@ export const apiErrorFromGraphql = (errors: GraphqlError[]): TwentyApiError => {
 
   return new TwentyApiError({
     message: authFailure
-      ? `${messages} Unibox resolvers require TWENTY_USER_TOKEN when the API key has no user context.`
+      ? `${messages} User-scoped resolvers require TWENTY_USER_TOKEN when the API key has no user context.`
       : messages,
     code: 'GRAPHQL_ERROR',
     details: errors,

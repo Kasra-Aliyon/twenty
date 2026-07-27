@@ -302,6 +302,16 @@ export class ConfigVariables {
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.APOLLO_ENRICHMENT,
+    description:
+      'Public HTTPS base URL Apollo uses to deliver asynchronous phone enrichment webhooks',
+    type: ConfigVariableType.STRING,
+  })
+  @IsUrl({ require_protocol: true })
+  @IsOptional()
+  APOLLO_PHONE_ENRICHMENT_WEBHOOK_BASE_URL?: string;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.APOLLO_ENRICHMENT,
     description: 'Request personal email reveal from Apollo enrichment',
     type: ConfigVariableType.BOOLEAN,
   })
