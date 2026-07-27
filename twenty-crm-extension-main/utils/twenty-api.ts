@@ -746,6 +746,7 @@ export class TwentyApiClient {
           employees: data.employeeCount
             ? this.parseEmployeeCount(data.employeeCount)
             : undefined,
+          industry: data.industry || undefined,
         },
       },
     );
@@ -970,6 +971,7 @@ export class TwentyApiClient {
           employees: companyData.employeeCount
             ? this.parseEmployeeCount(companyData.employeeCount)
             : undefined,
+          industry: companyData.industry || undefined,
         },
       });
 

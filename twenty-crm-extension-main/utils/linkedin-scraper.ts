@@ -1,4 +1,8 @@
-import type { LinkedInProfileData, LinkedInCompanyData, LinkedInData } from '../types';
+import type {
+  LinkedInProfileData,
+  LinkedInCompanyData,
+  LinkedInData,
+} from '../types';
 
 const PROFILE_NAME_SELECTORS = [
   'h1.text-heading-xlarge',
@@ -93,6 +97,9 @@ const PROFILE_SECTION_NOISE_PATTERN =
 const COMPANY_NAME_NOISE_PATTERN =
   /^(linkedin|company|current company|current position|experience|education|followers|connections|follow|message|connect|visit website|website|contact info)$/i;
 
+const LINKEDIN_PAGE_URL_PATTERN =
+  /(?:^|\/\/)(?:[a-z0-9-]+\.)*linkedin\.com\/(in|company)\/([^/?#]+)/i;
+
 function cleanText(value: string | null | undefined): string {
   return (value || '')
     .replace(/\u00a0/g, ' ')
@@ -113,7 +120,10 @@ function normalizeForComparison(value: string): string {
 
 function normalizeCompanyNameForComparison(value: string): string {
   return normalizeForComparison(value)
-    .replace(/\b(inc|incorporated|llc|ltd|limited|corp|corporation|co|company|gmbh|ag|sas|sarl|plc|bv|nv|oy|ab)\b\.?/g, '')
+    .replace(
+      /\b(inc|incorporated|llc|ltd|limited|corp|corporation|co|company|gmbh|ag|sas|sarl|plc|bv|nv|oy|ab)\b\.?/g,
+      '',
+    )
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();
 }
@@ -198,10 +208,7 @@ function isLinkedInFeedOrPostElement(element: Element): boolean {
   );
 }
 
-function hasExactHeading(
-  element: Element,
-  headings: string[],
-): boolean {
+function hasExactHeading(element: Element, headings: string[]): boolean {
   const normalizedHeadings = new Set(
     headings.map((heading) => heading.toLowerCase()),
   );
@@ -328,7 +335,9 @@ function isLikelyCompanyName(candidate: string, jobTitle?: string): boolean {
     isDateRangeLine(companyName) ||
     DURATION_ONLY_PATTERN.test(companyName) ||
     /^https?:\/\//i.test(companyName) ||
-    /(?:^|\s)(followers|connections|mutual connections)(?:\s|$)/i.test(companyName)
+    /(?:^|\s)(followers|connections|mutual connections)(?:\s|$)/i.test(
+      companyName,
+    )
   ) {
     return false;
   }
@@ -344,7 +353,10 @@ function sanitizeCompanyName(candidate: string, jobTitle?: string): string {
         ? ''
         : match,
     )
-    .replace(new RegExp(`\\s+(?:${EMPLOYMENT_TYPE_PATTERN.source}).*$`, 'i'), '');
+    .replace(
+      new RegExp(`\\s+(?:${EMPLOYMENT_TYPE_PATTERN.source}).*$`, 'i'),
+      '',
+    );
 
   const companyName = trimPunctuation(
     removeJobTitlePrefix(withoutDateRange, jobTitle),
@@ -370,7 +382,9 @@ function sanitizeJobTitle(candidate: string): string {
   return jobTitle;
 }
 
-function normalizeCompanyLinkedInUrl(href: string | null | undefined): string | undefined {
+function normalizeCompanyLinkedInUrl(
+  href: string | null | undefined,
+): string | undefined {
   const match = href?.match(/\/company\/([^/?]+)/);
 
   return match ? `https://www.linkedin.com/company/${match[1]}/` : undefined;
@@ -386,9 +400,7 @@ function getCompanyLinkedInUrlFromElement(
   return normalizeCompanyLinkedInUrl(companyLink?.getAttribute('href'));
 }
 
-function getLinkedInImageAltText(
-  element: Element | null | undefined,
-): string {
+function getLinkedInImageAltText(element: Element | null | undefined): string {
   const imageElement = element?.querySelector('img[alt]') as
     | HTMLImageElement
     | null
@@ -561,7 +573,9 @@ function sortJsonLdPersonObjects(
       );
     };
 
-    return scorePersonObject(rightPersonObject) - scorePersonObject(leftPersonObject);
+    return (
+      scorePersonObject(rightPersonObject) - scorePersonObject(leftPersonObject)
+    );
   });
 }
 
@@ -591,7 +605,9 @@ function scrapeCurrentPositionFromJsonLd(
           getNamedEntityName(personObject.worksFor),
           jobTitle,
         );
-        const companyLinkedInUrl = getNamedEntityLinkedInUrl(personObject.worksFor);
+        const companyLinkedInUrl = getNamedEntityLinkedInUrl(
+          personObject.worksFor,
+        );
 
         if (jobTitle || companyName) {
           return {
@@ -626,20 +642,22 @@ function parseCurrentPositionFromLines(
 
   if (companyCandidate) {
     jobTitleCandidate =
-      [...linesBeforeDate]
-        .reverse()
-        .find((line) => {
-          const jobTitle = sanitizeJobTitle(line);
+      [...linesBeforeDate].reverse().find((line) => {
+        const jobTitle = sanitizeJobTitle(line);
 
-          return (
-            !!jobTitle &&
-            !isCompanyMetadataLine(line) &&
-            !areEquivalentCompanyNames(jobTitle, companyCandidate)
-          );
-        }) || '';
+        return (
+          !!jobTitle &&
+          !isCompanyMetadataLine(line) &&
+          !areEquivalentCompanyNames(jobTitle, companyCandidate)
+        );
+      }) || '';
   }
 
-  if (!companyCandidate && dateLineIndex >= 3 && isCompanyMetadataLine(lines[1])) {
+  if (
+    !companyCandidate &&
+    dateLineIndex >= 3 &&
+    isCompanyMetadataLine(lines[1])
+  ) {
     companyCandidate = lines[0];
     jobTitleCandidate = lines[dateLineIndex - 1];
   } else if (
@@ -671,9 +689,7 @@ function parseCurrentPositionFromLines(
 }
 
 function getMetaContent(selector: string): string {
-  return cleanText(
-    document.querySelector<HTMLMetaElement>(selector)?.content,
-  );
+  return cleanText(document.querySelector<HTMLMetaElement>(selector)?.content);
 }
 
 function getTextFromSelectors(
@@ -712,7 +728,10 @@ function getProfileTitleParts(): { name: string; headline: string } {
       continue;
     }
 
-    const parts = title.split(/\s[-–]\s/).map(cleanText).filter(Boolean);
+    const parts = title
+      .split(/\s[-–]\s/)
+      .map(cleanText)
+      .filter(Boolean);
 
     if (parts.length > 0) {
       return {
@@ -753,34 +772,41 @@ function getProfileHeadline(fullName: string): string {
 
 // Detect page type from URL
 export function getLinkedInPageType(url: string): 'person' | 'company' | null {
-  if (url.includes('linkedin.com/in/')) {
-    return 'person';
-  }
-  if (url.includes('linkedin.com/company/')) {
-    return 'company';
-  }
-  return null;
+  const pageType = url.match(LINKEDIN_PAGE_URL_PATTERN)?.[1]?.toLowerCase();
+
+  return pageType === 'in'
+    ? 'person'
+    : pageType === 'company'
+      ? 'company'
+      : null;
 }
 
 // Extract LinkedIn profile identifier from URL
 export function getLinkedInIdentifier(url: string): string | null {
-  const personMatch = url.match(/linkedin\.com\/in\/([^/?]+)/);
-  if (personMatch) return personMatch[1];
-  
-  const companyMatch = url.match(/linkedin\.com\/company\/([^/?]+)/);
-  if (companyMatch) return companyMatch[1];
-  
-  return null;
+  return url.match(LINKEDIN_PAGE_URL_PATTERN)?.[2] || null;
+}
+
+export function getCanonicalLinkedInPageUrl(url: string): string | null {
+  const pageType = getLinkedInPageType(url);
+  const identifier = getLinkedInIdentifier(url);
+
+  if (!pageType || !identifier) {
+    return null;
+  }
+
+  const path = pageType === 'person' ? 'in' : 'company';
+
+  return `https://www.linkedin.com/${path}/${identifier}`;
 }
 
 // Scrape person profile data from LinkedIn page
 export function scrapePersonProfile(): LinkedInProfileData | null {
   try {
-    const linkedinUrl = window.location.href.split('?')[0];
+    const linkedinUrl = getCanonicalLinkedInPageUrl(window.location.href);
 
     const fullName = getProfileName();
 
-    if (!fullName) {
+    if (!linkedinUrl || !fullName) {
       console.warn('Could not find profile name from DOM or page title');
       return null;
     }
@@ -823,10 +849,9 @@ export function scrapePersonProfile(): LinkedInProfileData | null {
     const scrapedCompanyData = companyCandidates.find((companyCandidate) =>
       sanitizeCompanyName(companyCandidate?.name || '', jobTitle),
     );
-    const currentCompany = sanitizeCompanyName(
-      scrapedCompanyData?.name || '',
-      jobTitle,
-    ) || undefined;
+    const currentCompany =
+      sanitizeCompanyName(scrapedCompanyData?.name || '', jobTitle) ||
+      undefined;
     const currentCompanyLinkedInUrl = scrapedCompanyData?.linkedinUrl;
 
     console.log('Scraped structured position:', structuredPosition);
@@ -835,18 +860,22 @@ export function scrapePersonProfile(): LinkedInProfileData | null {
     console.log('Scraped top card company:', topCardCompanyData);
     console.log('Scraped company data:', scrapedCompanyData);
     console.log('Current company:', currentCompany);
-    
+
     // Get profile image - try to get high quality version
     const profileImageUrl = scrapeProfileImage();
-    
+
     // Get location - span with location info
-    const locationElement = 
-      document.querySelector('span.text-body-small.inline.t-black--light.break-words') ||
-      document.querySelector('.text-body-small.inline.t-black--light.break-words') ||
+    const locationElement =
+      document.querySelector(
+        'span.text-body-small.inline.t-black--light.break-words',
+      ) ||
+      document.querySelector(
+        '.text-body-small.inline.t-black--light.break-words',
+      ) ||
       document.querySelector('.pv-top-card--list-bullet li:last-child');
     const location = getElementCleanText(locationElement);
     console.log('Scraped location:', location);
-    
+
     const result = {
       type: 'person' as const,
       linkedinUrl,
@@ -859,7 +888,7 @@ export function scrapePersonProfile(): LinkedInProfileData | null {
       profileImageUrl: profileImageUrl || undefined,
       location: location || undefined,
     };
-    
+
     console.log('Scraped profile data:', {
       fullName,
       firstName: result.firstName,
@@ -867,7 +896,7 @@ export function scrapePersonProfile(): LinkedInProfileData | null {
       jobTitle: result.jobTitle,
       headline: result.headline,
     });
-    
+
     return result;
   } catch (error) {
     console.error('Error scraping person profile:', error);
@@ -879,15 +908,15 @@ export function scrapePersonProfile(): LinkedInProfileData | null {
 function scrapeProfileImage(): string {
   // Try multiple selectors - LinkedIn changes DOM frequently
   const selectors = [
-    '.pv-top-card-profile-picture__container img',  // New format with button wrapper
-    '.pv-top-card-profile-picture__image',          // Old format
+    '.pv-top-card-profile-picture__container img', // New format with button wrapper
+    '.pv-top-card-profile-picture__image', // Old format
     'img.profile-photo-edit__preview',
     '.pv-top-card__photo img',
-    'button[aria-label*="image"] img',              // Button with image label
-    '.EntityPhoto-circle-9 img',                    // Entity photo class
-    'img[title]',                                   // Fallback: img with title (usually name)
+    'button[aria-label*="image"] img', // Button with image label
+    '.EntityPhoto-circle-9 img', // Entity photo class
+    'img[title]', // Fallback: img with title (usually name)
   ];
-  
+
   for (const selector of selectors) {
     const img = document.querySelector(selector) as HTMLImageElement;
     if (img?.src && !img.src.includes('ghost') && img.src.includes('profile')) {
@@ -896,7 +925,7 @@ function scrapeProfileImage(): string {
       return img.src;
     }
   }
-  
+
   return '';
 }
 
@@ -909,8 +938,9 @@ function getExperienceSection(): Element | null {
   }
 
   return (
-    Array.from(document.querySelectorAll('main section')).find(isExperienceSection) ||
-    null
+    Array.from(document.querySelectorAll('main section')).find(
+      isExperienceSection,
+    ) || null
   );
 }
 
@@ -953,32 +983,33 @@ function scrapeCurrentPositionFromExperience(): CurrentPositionData | null {
   const parsedPositions: Array<{
     position: CurrentPositionData;
     isCurrent: boolean;
-  }> = getExperienceItemCandidates(experienceSection)
-    .flatMap((candidate) => {
-      const lines = getElementTextLines(candidate);
-      const companyData = getCompanyDataFromElement(candidate);
-      const position = parseCurrentPositionFromLines(
-        lines,
-        companyData?.linkedinUrl || getCompanyLinkedInUrlFromElement(candidate),
-        companyData?.name,
-      );
+  }> = getExperienceItemCandidates(experienceSection).flatMap((candidate) => {
+    const lines = getElementTextLines(candidate);
+    const companyData = getCompanyDataFromElement(candidate);
+    const position = parseCurrentPositionFromLines(
+      lines,
+      companyData?.linkedinUrl || getCompanyLinkedInUrlFromElement(candidate),
+      companyData?.name,
+    );
 
-      if (!position) {
-        return [];
-      }
+    if (!position) {
+      return [];
+    }
 
-      const logoImg = candidate.querySelector('img');
-      const companyLogoUrl = companyData?.logoUrl || logoImg?.src || undefined;
+    const logoImg = candidate.querySelector('img');
+    const companyLogoUrl = companyData?.logoUrl || logoImg?.src || undefined;
 
-      return [{
+    return [
+      {
         position: {
           ...position,
           companyName: position.companyName || companyData?.name,
           companyLogoUrl,
         },
         isCurrent: lines.some(isCurrentDateRangeLine),
-      }];
-    });
+      },
+    ];
+  });
 
   return (
     parsedPositions.find(
@@ -1014,7 +1045,7 @@ function scrapeCurrentCompanyFromProfile(
 
       return isCurrentCompanyLabel(labelPrefix);
     });
-    
+
     if (companyButton) {
       const ariaLabel = companyButton.getAttribute('aria-label') || '';
       const companyNameCandidate =
@@ -1024,7 +1055,7 @@ function scrapeCurrentCompanyFromProfile(
         companyButton.closest('section') || companyButton.parentElement,
         jobTitle,
       );
-      
+
       if (name) {
         console.log('Found company from current-company label:', {
           name,
@@ -1038,25 +1069,29 @@ function scrapeCurrentCompanyFromProfile(
         };
       }
     }
-    
+
     // Fallback: Try to find company link in the top card only.
-    const companyLink = 
-      topCardElement.querySelector('.pv-text-details__right-panel-item-text a[href*="/company/"]') ||
-      topCardElement.querySelector('.pv-text-details__right-panel a[href*="/company/"]') ||
+    const companyLink =
+      topCardElement.querySelector(
+        '.pv-text-details__right-panel-item-text a[href*="/company/"]',
+      ) ||
+      topCardElement.querySelector(
+        '.pv-text-details__right-panel a[href*="/company/"]',
+      ) ||
       topCardElement.querySelector('a[href*="/company/"]');
-    
+
     if (companyLink) {
       const companyData = getCompanyDataFromElement(companyLink, jobTitle);
       const companyNameLine =
         getElementTextLines(companyLink).find(
           (line) => !isDateRangeLine(line) && !isCompanyMetadataLine(line),
         ) || getElementCleanText(companyLink);
-      
+
       const name =
         sanitizeCompanyName(companyNameLine, jobTitle) ||
         companyData?.name ||
         '';
-      
+
       if (name) {
         return {
           name,
@@ -1067,23 +1102,26 @@ function scrapeCurrentCompanyFromProfile(
         };
       }
     }
-    
+
     // Last fallback: just get company name without URL
-    const companyElement = 
+    const companyElement =
       topCardElement.querySelector('.pv-text-details__right-panel-item-text') ||
       Array.from(topCardElement.querySelectorAll('[aria-label]')).find(
         (element) =>
           isCurrentCompanyLabel(element.getAttribute('aria-label') || ''),
       );
-    
+
     if (companyElement) {
-      const name = sanitizeCompanyName(getElementCleanText(companyElement), jobTitle);
+      const name = sanitizeCompanyName(
+        getElementCleanText(companyElement),
+        jobTitle,
+      );
 
       if (name) {
         return { name };
       }
     }
-    
+
     return null;
   } catch (error) {
     console.error('Error scraping company from profile:', error);
@@ -1091,52 +1129,140 @@ function scrapeCurrentCompanyFromProfile(
   }
 }
 
+function getCompanyDefinitionValue(label: string): string {
+  const normalizedLabel = normalizeForComparison(label);
+  const termElement = Array.from(document.querySelectorAll('main dt')).find(
+    (element) =>
+      normalizeForComparison(getElementCleanText(element)) === normalizedLabel,
+  );
+
+  return getElementCleanText(termElement?.nextElementSibling);
+}
+
+function getCompanyName(): string {
+  const nameElement =
+    document.querySelector('h1.org-top-card-summary__title') ||
+    document.querySelector('main h1.top-card-layout__title') ||
+    document.querySelector('main h1');
+  const name = getElementCleanText(nameElement);
+
+  if (name) {
+    return name;
+  }
+
+  return getMetaContent('meta[property="og:title"]').replace(
+    /\s*[|–-]\s*LinkedIn$/,
+    '',
+  );
+}
+
+function getCompanyWebsite(): string {
+  const websiteElement =
+    document.querySelector('a[data-control-name="top_card_link_website"]') ||
+    document.querySelector('a[href*="trk=about_website"]') ||
+    document.querySelector(
+      '.link-without-visited-state.org-top-card-primary-actions__action',
+    );
+
+  if (!websiteElement) {
+    return '';
+  }
+
+  const websiteFromText =
+    getElementCleanText(websiteElement).match(/https?:\/\/[^\s]+/i)?.[0];
+
+  if (websiteFromText) {
+    return websiteFromText;
+  }
+
+  const href = websiteElement.getAttribute('href');
+
+  if (!href) {
+    return '';
+  }
+
+  try {
+    const websiteUrl = new URL(href, window.location.href);
+
+    if (
+      websiteUrl.hostname.endsWith('linkedin.com') &&
+      websiteUrl.pathname.includes('/redir/redirect')
+    ) {
+      return websiteUrl.searchParams.get('url') || '';
+    }
+
+    return websiteUrl.hostname.endsWith('linkedin.com')
+      ? ''
+      : websiteUrl.toString();
+  } catch {
+    return '';
+  }
+}
+
+function getCompanyEmployeeCount(): string {
+  const exactEmployeeCountElement = document.querySelector(
+    'main a[href*="facetCurrentCompany"]',
+  );
+  const exactEmployeeCount = getElementCleanText(
+    exactEmployeeCountElement,
+  ).match(/[\d,.]+\s+employees?/i)?.[0];
+
+  if (exactEmployeeCount) {
+    return exactEmployeeCount;
+  }
+
+  const summaryEmployeeCount = Array.from(
+    document.querySelectorAll('.org-top-card-summary-info-list__info-item'),
+  )
+    .map((element) => getElementCleanText(element))
+    .find((value) => /\bemployees?\b/i.test(value));
+
+  return (
+    summaryEmployeeCount ||
+    getCompanyDefinitionValue('Company size').match(
+      /[\d,.]+\s*[-–]\s*[\d,.]+\s+employees?/i,
+    )?.[0] ||
+    ''
+  );
+}
+
 // Scrape company page data from LinkedIn
 export function scrapeCompanyPage(): LinkedInCompanyData | null {
   try {
-    const linkedinUrl = window.location.href.split('?')[0];
-    
-    // Company name
-    const nameElement = 
-      document.querySelector('h1.org-top-card-summary__title') ||
-      document.querySelector('.org-top-card-summary-info-list__info-item') ||
-      document.querySelector('h1[title]');
-    
-    if (!nameElement) {
-      console.warn('Could not find company name element');
+    const linkedinUrl = getCanonicalLinkedInPageUrl(window.location.href);
+    const name = getCompanyName();
+
+    if (!linkedinUrl || !name) {
+      console.warn('Could not find company name or LinkedIn URL');
       return null;
     }
-    
-    const name = nameElement.textContent?.trim() || '';
-    
-    // Industry
-    const industryElement = document.querySelector('.org-top-card-summary-info-list__info-item');
-    const industry = industryElement?.textContent?.trim() || '';
-    
-    // Employee count
-    const employeeElements = document.querySelectorAll('.org-top-card-summary-info-list__info-item');
-    let employeeCount = '';
-    employeeElements.forEach((el) => {
-      const text = el.textContent || '';
-      if (text.includes('employees') || text.includes('employee')) {
-        employeeCount = text.trim();
-      }
-    });
-    
-    // Website - look in the about section or sidebar
-    const websiteElement = 
-      document.querySelector('a[data-control-name="top_card_link_website"]') ||
-      document.querySelector('.link-without-visited-state.org-top-card-primary-actions__action');
-    const website = websiteElement?.getAttribute('href') || '';
-    
-    // Logo
-    const logoElement = document.querySelector('.org-top-card-primary-content__logo');
-    const logoUrl = logoElement?.getAttribute('src') || '';
-    
-    // Description/tagline
-    const descElement = document.querySelector('.org-top-card-summary__tagline');
-    const description = descElement?.textContent?.trim() || '';
-    
+
+    const industry =
+      getElementCleanText(
+        document.querySelector('.org-top-card-summary-info-list__info-item'),
+      ) ||
+      getElementCleanText(
+        document.querySelector('main h2.top-card-layout__headline'),
+      ) ||
+      getCompanyDefinitionValue('Industry');
+    const employeeCount = getCompanyEmployeeCount();
+    const website = getCompanyWebsite();
+    const logoElement =
+      document.querySelector('.org-top-card-primary-content__logo') ||
+      document.querySelector('main img.top-card-layout__entity-image');
+    const logoUrl =
+      logoElement?.getAttribute('src') ||
+      logoElement?.getAttribute('data-delayed-url') ||
+      getMetaContent('meta[property="og:image"]');
+    const description =
+      getElementCleanText(
+        document.querySelector('.org-top-card-summary__tagline'),
+      ) ||
+      getElementCleanText(
+        document.querySelector('main .top-card-layout__second-subline'),
+      ) ||
+      getMetaContent('meta[property="og:description"]');
+
     return {
       type: 'company',
       linkedinUrl,
@@ -1156,34 +1282,37 @@ export function scrapeCompanyPage(): LinkedInCompanyData | null {
 // Main scraper function that detects page type and scrapes accordingly
 export function scrapeCurrentPage(): LinkedInData | null {
   const pageType = getLinkedInPageType(window.location.href);
-  
+
   if (pageType === 'person') {
     return scrapePersonProfile();
   }
-  
+
   if (pageType === 'company') {
     return scrapeCompanyPage();
   }
-  
+
   return null;
 }
 
 // Helper to parse full name into first and last name
-function parseFullName(fullName: string): { firstName: string; lastName: string } {
+function parseFullName(fullName: string): {
+  firstName: string;
+  lastName: string;
+} {
   const parts = fullName.trim().split(/\s+/);
-  
+
   if (parts.length === 0) {
     return { firstName: '', lastName: '' };
   }
-  
+
   if (parts.length === 1) {
     return { firstName: parts[0], lastName: '' };
   }
-  
+
   // Handle cases like "John van der Berg" - take first as firstName, rest as lastName
   const firstName = parts[0];
   const lastName = parts.slice(1).join(' ');
-  
+
   return { firstName, lastName };
 }
 
@@ -1198,7 +1327,7 @@ function extractPositionFromHeadline(headline: string): CurrentPositionData {
     /^(.+?)\s+\ben\s+(.+?)(?:\s*[|•]|$)/i, // Spanish: "Role en Company"
     /^(.+?)\s+@\s*(.+?)(?:\s*[|•]|$)/i, // Symbol: "Role @ Company"
   ];
-  
+
   for (const pattern of patterns) {
     const match = headline.match(pattern);
 
@@ -1218,6 +1347,6 @@ function extractPositionFromHeadline(headline: string): CurrentPositionData {
       };
     }
   }
-  
+
   return {};
 }

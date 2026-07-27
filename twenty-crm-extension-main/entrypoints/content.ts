@@ -1,5 +1,6 @@
 import {
   scrapeCurrentPage,
+  getCanonicalLinkedInPageUrl,
   getLinkedInPageType,
 } from '../utils/linkedin-scraper';
 import type {
@@ -417,6 +418,8 @@ export default defineContentScript({
     let newRecordListName = '';
     let isCreatingRecordList = false;
     let isAddingToRecordLists = false;
+    let currentPageUrl = getCanonicalLinkedInPageUrl(window.location.href);
+    let pageGeneration = 0;
 
     // DOM elements
     let container: HTMLDivElement | null = null;
@@ -432,17 +435,30 @@ export default defineContentScript({
       // Create container for floating button
       container = document.createElement('div');
       container.id = 'twenty-capture-root';
+      container.hidden = currentPageUrl === null;
       document.body.appendChild(container);
 
       // Initial render
       render();
 
       // Check for existing record after a short delay
-      setTimeout(checkExisting, 1500);
+      ctx.setTimeout(() => void checkExisting(), 1500);
     }
 
-    async function scrapeCurrentPageWithRetry(): Promise<LinkedInData | null> {
+    async function scrapeCurrentPageWithRetry(
+      expectedPageUrl = currentPageUrl,
+    ): Promise<LinkedInData | null> {
+      if (!expectedPageUrl) {
+        return null;
+      }
+
       for (let attempt = 0; attempt < 8; attempt += 1) {
+        if (
+          getCanonicalLinkedInPageUrl(window.location.href) !== expectedPageUrl
+        ) {
+          return null;
+        }
+
         const data = scrapeCurrentPage();
 
         if (data) {
@@ -457,7 +473,11 @@ export default defineContentScript({
 
     // Check for existing record
     async function checkExisting() {
-      const pageType = getLinkedInPageType(window.location.href);
+      const checkedPageUrl = getCanonicalLinkedInPageUrl(window.location.href);
+      const checkedPageGeneration = pageGeneration;
+      const pageType = checkedPageUrl
+        ? getLinkedInPageType(checkedPageUrl)
+        : null;
       console.log(
         'Checking page type:',
         pageType,
@@ -465,7 +485,7 @@ export default defineContentScript({
         window.location.href,
       );
 
-      if (!pageType) {
+      if (!pageType || !checkedPageUrl) {
         console.log('Not a profile or company page');
         return;
       }
@@ -473,14 +493,19 @@ export default defineContentScript({
       setState({ status: 'loading' });
 
       // Scrape page data first for better duplicate matching
-      const scrapedData = await scrapeCurrentPageWithRetry();
+      const scrapedData = await scrapeCurrentPageWithRetry(checkedPageUrl);
+
+      if (checkedPageGeneration !== pageGeneration) {
+        return;
+      }
+
       console.log('Scraped data for duplicate check:', scrapedData);
 
       try {
         const response = (await browser.runtime.sendMessage({
           type: 'CHECK_DUPLICATE',
           payload: {
-            linkedinUrl: window.location.href.split('?')[0],
+            linkedinUrl: checkedPageUrl,
             pageType,
             scrapedData,
           },
@@ -491,6 +516,10 @@ export default defineContentScript({
         }>;
 
         console.log('Check duplicate response:', response);
+
+        if (checkedPageGeneration !== pageGeneration) {
+          return;
+        }
 
         if (!response.success) {
           if (
@@ -520,10 +549,21 @@ export default defineContentScript({
             },
           });
         } else {
+          if (!scrapedData) {
+            const recordTypeLabel =
+              pageType === 'company' ? 'company' : 'profile';
+
+            setState({
+              status: 'error',
+              error: `Could not read ${recordTypeLabel} data`,
+            });
+            return;
+          }
+
           console.log('No duplicate found, ready to add');
           setState({
             status: 'ready',
-            data: scrapedData || undefined,
+            data: scrapedData,
           });
         }
       } catch (error) {
@@ -538,7 +578,7 @@ export default defineContentScript({
 
       const data = state.data || (await scrapeCurrentPageWithRetry());
       if (!data) {
-        showToast('Could not extract profile data');
+        showToast('Could not extract LinkedIn data');
         return;
       }
 
@@ -602,7 +642,7 @@ export default defineContentScript({
       }
     }
 
-    // Search CRM for contacts
+    // Search CRM for records matching the current LinkedIn page type
     async function searchCRM(query: string) {
       if (!query.trim()) {
         searchResults = [];
@@ -638,7 +678,7 @@ export default defineContentScript({
     async function linkToRecord(record: SearchResult) {
       const data = state.data || (await scrapeCurrentPageWithRetry());
       if (!data) {
-        showToast('Could not extract profile data');
+        showToast('Could not extract LinkedIn data');
         return;
       }
 
@@ -894,7 +934,7 @@ export default defineContentScript({
 
       const data = await scrapeCurrentPageWithRetry();
       if (!data) {
-        showToast('Could not extract profile data');
+        showToast('Could not extract LinkedIn data');
         return;
       }
 
@@ -950,6 +990,12 @@ export default defineContentScript({
     function render() {
       if (!container) return;
 
+      const recordTypeLabel =
+        getLinkedInPageType(window.location.href) === 'company'
+          ? 'company'
+          : 'contact';
+      const recordTypePlural =
+        recordTypeLabel === 'company' ? 'companies' : 'contacts';
       const wrapper = document.createElement('div');
       wrapper.className = 'twenty-capture-container';
 
@@ -997,7 +1043,7 @@ export default defineContentScript({
           // Link to existing option when ready to add
           const linkItem = document.createElement('button');
           linkItem.className = 'twenty-menu-item';
-          linkItem.innerHTML = `${ICONS.search}<span>Link to existing contact</span>`;
+          linkItem.innerHTML = `${ICONS.search}<span>Link to existing ${recordTypeLabel}</span>`;
           linkItem.addEventListener('click', () => handleMenuOption('link'));
           dropdown.appendChild(linkItem);
         }
@@ -1014,7 +1060,7 @@ export default defineContentScript({
         const header = document.createElement('div');
         header.className = 'twenty-search-header';
         header.innerHTML = `
-          <span class="twenty-search-title">Link to existing contact</span>
+          <span class="twenty-search-title">Link to existing ${recordTypeLabel}</span>
         `;
         const closeBtn = document.createElement('button');
         closeBtn.className = 'twenty-search-close';
@@ -1046,8 +1092,7 @@ export default defineContentScript({
           resultsDiv.innerHTML =
             '<div class="twenty-search-loading">Searching...</div>';
         } else if (searchQuery && searchResults.length === 0) {
-          resultsDiv.innerHTML =
-            '<div class="twenty-search-empty">No contacts found</div>';
+          resultsDiv.innerHTML = `<div class="twenty-search-empty">No ${recordTypePlural} found</div>`;
         } else if (searchResults.length > 0) {
           searchResults.forEach((result) => {
             const item = document.createElement('div');
@@ -1199,28 +1244,38 @@ export default defineContentScript({
       container.appendChild(wrapper);
     }
 
-    // Watch for URL changes (LinkedIn SPA navigation)
-    let lastUrl = window.location.href;
-    const urlObserver = new MutationObserver(() => {
-      if (window.location.href !== lastUrl) {
-        lastUrl = window.location.href;
-        console.log('URL changed to:', lastUrl);
-        const pageType = getLinkedInPageType(lastUrl);
-        if (pageType) {
-          state = {
-            status: 'idle',
-            showListPanel: false,
-            data: undefined,
-            existingRecord: undefined,
-            error: undefined,
-          };
-          showMenuDropdown = false;
-          showSearchPanel = false;
-          render();
-          setTimeout(checkExisting, 1500);
-        }
+    function handleLocationChange(newUrl: URL) {
+      const nextPageUrl = getCanonicalLinkedInPageUrl(newUrl.href);
+
+      if (nextPageUrl === currentPageUrl) {
+        return;
       }
-    });
+
+      console.log('LinkedIn page changed to:', newUrl.href);
+      currentPageUrl = nextPageUrl;
+      pageGeneration += 1;
+      state = {
+        status: 'idle',
+        showListPanel: false,
+        data: undefined,
+        existingRecord: undefined,
+        error: undefined,
+      };
+      showMenuDropdown = false;
+      showSearchPanel = false;
+      searchQuery = '';
+      searchResults = [];
+
+      if (container) {
+        container.hidden = nextPageUrl === null;
+      }
+
+      render();
+
+      if (nextPageUrl) {
+        ctx.setTimeout(() => void checkExisting(), 1500);
+      }
+    }
 
     // Close dropdown when clicking outside
     function handleDocumentClick(e: Event) {
@@ -1236,14 +1291,13 @@ export default defineContentScript({
     // Initialize on load
     init();
     document.addEventListener('click', handleDocumentClick);
-
-    // Start observing URL changes
-    urlObserver.observe(document.body, { childList: true, subtree: true });
+    ctx.addEventListener(window, 'wxt:locationchange', ({ newUrl }) =>
+      handleLocationChange(newUrl),
+    );
 
     // Cleanup on context invalidation
     ctx.onInvalidated(() => {
       console.log('Content script invalidated, cleaning up');
-      urlObserver.disconnect();
       document.removeEventListener('click', handleDocumentClick);
       container?.remove();
       styleEl?.remove();

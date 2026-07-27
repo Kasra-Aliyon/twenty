@@ -6,6 +6,9 @@ All notable changes to Twenty CRM LinkedIn Capture Extension.
 
 ### Changed
 
+- Restored **Add to Twenty** on current LinkedIn company pages, including
+  company-specific duplicate matching, website, employee count, and industry
+  capture across signed-in and public layouts.
 - Replaced start/pause harvesting with manual **Sync now** and automatic
   30-minute sync dispatch.
 - Made connection history resumable and retained incremental thread/message

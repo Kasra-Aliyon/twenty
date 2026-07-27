@@ -124,6 +124,7 @@ account. The extension minimizes activity instead of trying to conceal it:
 - ✅ LinkedIn URL
 - ✅ Website (when available)
 - ✅ Employee count
+- ✅ Industry
 - ✅ Company logo
 
 ---
