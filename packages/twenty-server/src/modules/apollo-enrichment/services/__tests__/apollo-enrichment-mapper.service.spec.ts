@@ -40,6 +40,33 @@ describe('ApolloEnrichmentMapperService', () => {
     ).toBe('https://www.linkedin.com/in/jane-doe');
   });
 
+  it('uses all available identifiers for Apollo person matching', () => {
+    const input = mapper.buildPersonMatchInput(
+      buildPerson({
+        name: {
+          firstName: 'Jane',
+          lastName: 'Doe',
+        },
+        emails: {
+          primaryEmail: 'Jane@Example.com',
+          additionalEmails: null,
+        },
+        linkedinLink: {
+          primaryLinkLabel: '',
+          primaryLinkUrl: 'https://www.linkedin.com/in/jane/?trk=profile',
+          secondaryLinks: null,
+        },
+      }),
+    );
+
+    expect(input).toEqual({
+      email: 'jane@example.com',
+      firstName: 'Jane',
+      lastName: 'Doe',
+      linkedinUrl: 'https://www.linkedin.com/in/jane',
+    });
+  });
+
   it('maps Apollo person data into empty Twenty person fields', () => {
     const person = buildPerson();
     const apolloPerson: ApolloPerson = {
@@ -125,6 +152,38 @@ describe('ApolloEnrichmentMapperService', () => {
     });
 
     expect(update).toEqual({});
+  });
+
+  it('maps only a missing phone for phone-only enrichment', () => {
+    const person = buildPerson({
+      emails: {
+        primaryEmail: 'existing@example.com',
+        additionalEmails: null,
+      },
+      jobTitle: 'Existing title',
+    });
+
+    expect(
+      mapper.mapApolloPersonPhoneToTwentyUpdate({
+        person,
+        apolloPerson: {
+          email: 'apollo@example.com',
+          title: 'Apollo title',
+          phone_numbers: [
+            {
+              sanitized_number: '+14155550100',
+            },
+          ],
+        },
+      }),
+    ).toEqual({
+      phones: {
+        primaryPhoneNumber: '+14155550100',
+        primaryPhoneCountryCode: '',
+        primaryPhoneCallingCode: '',
+        additionalPhones: null,
+      },
+    });
   });
 
   it('refreshes existing primary email for auto-created contact records', () => {
@@ -253,6 +312,42 @@ describe('ApolloEnrichmentMapperService', () => {
       },
       employees: 42,
     });
+  });
+
+  it('maps Apollo company firmographic data without company phone data', () => {
+    const mappedCompany = mapper.mapApolloOrganization({
+      name: 'Acme',
+      primary_domain: 'acme.com',
+      industry: 'Software',
+      keywords: ['crm', ' sales '],
+      current_technologies: [{ name: 'TypeScript' }, { name: 'Postgres' }],
+      estimated_num_employees: 42,
+      annual_revenue: '1,250,000',
+      street_address: '1 Main Street',
+      city: 'Helsinki',
+      country: 'Finland',
+      latitude: '60.1699',
+      longitude: '24.9384',
+    });
+
+    expect(mappedCompany).toMatchObject({
+      employees: 42,
+      industry: 'Software',
+      keywords: ['crm', 'sales'],
+      technologies: ['TypeScript', 'Postgres'],
+      annualRevenue: {
+        amountMicros: 1_250_000_000_000,
+        currencyCode: 'USD',
+      },
+      address: {
+        addressStreet1: '1 Main Street',
+        addressCity: 'Helsinki',
+        addressCountry: 'Finland',
+        addressLat: 60.1699,
+        addressLng: 24.9384,
+      },
+    });
+    expect(mappedCompany).not.toHaveProperty('companyPhone');
   });
 
   it('only triggers updates on new identity input', () => {

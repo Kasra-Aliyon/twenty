@@ -6,10 +6,12 @@ import { TwentyConfigModule } from 'src/engine/core-modules/twenty-config/twenty
 import { WorkspaceEntity } from 'src/engine/core-modules/workspace/workspace.entity';
 import { WorkspaceDataSourceModule } from 'src/engine/workspace-datasource/workspace-datasource.module';
 import { ApolloEnrichmentBackfillCommand } from 'src/modules/apollo-enrichment/commands/apollo-enrichment-backfill.command';
+import { ApolloEnrichmentWebhookController } from 'src/modules/apollo-enrichment/controllers/apollo-enrichment-webhook.controller';
 import { ApolloEnrichmentBackfillCronCommand } from 'src/modules/apollo-enrichment/crons/commands/apollo-enrichment-backfill.cron.command';
 import { ApolloEnrichmentBackfillCronJob } from 'src/modules/apollo-enrichment/crons/jobs/apollo-enrichment-backfill.cron.job';
 import { ApolloEnrichPersonJob } from 'src/modules/apollo-enrichment/jobs/apollo-enrich-person.job';
 import { ApolloEnrichmentPersonListener } from 'src/modules/apollo-enrichment/listeners/apollo-enrichment-person.listener';
+import { ApolloEnrichmentResolver } from 'src/modules/apollo-enrichment/resolvers/apollo-enrichment.resolver';
 import { ApolloClientService } from 'src/modules/apollo-enrichment/services/apollo-client.service';
 import { ApolloEnrichmentMapperService } from 'src/modules/apollo-enrichment/services/apollo-enrichment-mapper.service';
 import { ApolloEnrichmentQueueService } from 'src/modules/apollo-enrichment/services/apollo-enrichment-queue.service';
@@ -22,6 +24,7 @@ import { ApolloEnrichmentService } from 'src/modules/apollo-enrichment/services/
     WorkspaceDataSourceModule,
     TypeOrmModule.forFeature([WorkspaceEntity]),
   ],
+  controllers: [ApolloEnrichmentWebhookController],
   providers: [
     ApolloClientService,
     ApolloEnrichmentService,
@@ -32,6 +35,7 @@ import { ApolloEnrichmentService } from 'src/modules/apollo-enrichment/services/
     ApolloEnrichmentBackfillCronJob,
     ApolloEnrichmentBackfillCronCommand,
     ApolloEnrichmentBackfillCommand,
+    ApolloEnrichmentResolver,
   ],
   exports: [
     ApolloEnrichmentBackfillCronCommand,

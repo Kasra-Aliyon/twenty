@@ -756,6 +756,7 @@ describe('SequenceExecutorService', () => {
     expect(enrichPerson).toHaveBeenCalledWith({
       workspaceId,
       personId: person.id,
+      mode: 'phone',
     });
     expect(enrollmentRepository.update).toHaveBeenCalledWith(
       expect.objectContaining({ id: enrollmentId }),

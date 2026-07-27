@@ -60,6 +60,8 @@ describe('ApolloEnrichmentService', () => {
   };
   const configValues: Partial<ConfigVariables> = {
     APOLLO_ENRICHMENT_ENABLED: true,
+    APOLLO_REVEAL_PERSONAL_EMAILS: false,
+    APOLLO_REVEAL_PHONE_NUMBER: false,
     APOLLO_ENRICHMENT_BACKFILL_ENABLED: true,
     APOLLO_ENRICHMENT_BACKFILL_LIMIT: 50,
     APOLLO_ENRICHMENT_RETRY_SECONDS: 3600,
@@ -174,6 +176,121 @@ describe('ApolloEnrichmentService', () => {
         additionalPhones: null,
       },
     });
+  });
+
+  it('excludes phone numbers from general person enrichment', async () => {
+    apolloClientService.enrichPerson.mockResolvedValue({
+      person: {
+        email: 'jane@example.com',
+        sanitized_phone: '+14155550100',
+      },
+    });
+
+    const result = await service.enrichPerson({
+      workspaceId,
+      personId,
+      mode: 'general',
+    });
+
+    expect(result).toBe('updated');
+    expect(apolloClientService.enrichPerson).toHaveBeenCalledWith(
+      {
+        linkedinUrl: 'https://www.linkedin.com/in/jane',
+      },
+      {
+        revealPersonalEmails: false,
+        revealPhoneNumber: false,
+      },
+    );
+    expect(personRepository.update).toHaveBeenCalledWith(personId, {
+      emails: {
+        primaryEmail: 'jane@example.com',
+        additionalEmails: null,
+      },
+    });
+  });
+
+  it('updates only the phone during phone enrichment', async () => {
+    apolloClientService.enrichPerson.mockResolvedValue({
+      person: {
+        email: 'jane@example.com',
+        sanitized_phone: '+14155550100',
+        title: 'VP Sales',
+      },
+    });
+
+    const result = await service.enrichPerson({
+      workspaceId,
+      personId,
+      mode: 'phone',
+    });
+
+    expect(result).toBe('updated');
+    expect(apolloClientService.enrichPerson).toHaveBeenCalledWith(
+      {
+        linkedinUrl: 'https://www.linkedin.com/in/jane',
+      },
+      {
+        revealPersonalEmails: false,
+        revealPhoneNumber: true,
+      },
+    );
+    expect(personRepository.update).toHaveBeenCalledWith(personId, {
+      phones: {
+        primaryPhoneNumber: '+14155550100',
+        primaryPhoneCountryCode: '',
+        primaryPhoneCallingCode: '',
+        additionalPhones: null,
+      },
+    });
+  });
+
+  it('enriches empty company fields without updating company phone data', async () => {
+    companyRepository.findOne.mockResolvedValue({
+      id: 'company-id',
+      name: 'Acme',
+      domainName: {
+        primaryLinkLabel: '',
+        primaryLinkUrl: 'https://acme.com',
+        secondaryLinks: null,
+      },
+      linkedinLink: null,
+      employees: null,
+      industry: null,
+      keywords: null,
+      technologies: null,
+      annualRevenue: null,
+      address: null,
+      deletedAt: null,
+    } as unknown as CompanyWorkspaceEntity);
+    apolloClientService.enrichOrganization.mockResolvedValue({
+      organization: {
+        name: 'Acme',
+        primary_domain: 'acme.com',
+        linkedin_url: 'https://www.linkedin.com/company/acme',
+        estimated_num_employees: 42,
+        industry: 'Software',
+      },
+    });
+
+    const result = await service.enrichCompany({
+      workspaceId,
+      companyId: 'company-id',
+    });
+
+    expect(result).toBe('updated');
+    expect(companyRepository.update).toHaveBeenCalledWith('company-id', {
+      linkedinLink: {
+        primaryLinkLabel: '',
+        primaryLinkUrl: 'https://www.linkedin.com/company/acme',
+        secondaryLinks: null,
+      },
+      employees: 42,
+      industry: 'Software',
+    });
+    expect(companyRepository.update.mock.calls[0][1]).not.toHaveProperty(
+      'companyPhone',
+    );
   });
 
   it('refreshes existing email for restored auto-created contact records', async () => {

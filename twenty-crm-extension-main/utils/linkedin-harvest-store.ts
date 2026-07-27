@@ -12,6 +12,8 @@ import type { TwentyApiClient } from './twenty-api';
 
 const TWENTY_BATCH_SIZE = 200;
 const LINKEDIN_MESSAGE_PREVIEW_MAX_LENGTH = 200;
+// LinkedIn thread activity can trail message delivery by a few milliseconds.
+const LINKEDIN_MESSAGE_ACTIVITY_TIMESTAMP_TOLERANCE_MILLISECONDS = 100;
 
 type WriteResult = { received: number; alreadyKnown: number };
 
@@ -79,6 +81,32 @@ type MessageThreadsResult = {
     }>;
     pageInfo: { hasNextPage: boolean; endCursor: string | null };
   };
+};
+
+const getTimestamp = (value: string): number => {
+  const timestamp = Date.parse(value);
+
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+};
+
+const hasMessageActivityAfterCheckpoint = (
+  candidate: LinkedInMessageSyncCandidate,
+): boolean => {
+  if (candidate.maxMessageTime === null) {
+    return true;
+  }
+
+  const lastMessageTimestamp = getTimestamp(candidate.lastMessageTime);
+  const maxMessageTimestamp = getTimestamp(candidate.maxMessageTime);
+
+  if (lastMessageTimestamp === 0 || maxMessageTimestamp === 0) {
+    return true;
+  }
+
+  return (
+    lastMessageTimestamp - maxMessageTimestamp >
+    LINKEDIN_MESSAGE_ACTIVITY_TIMESTAMP_TOLERANCE_MILLISECONDS
+  );
 };
 
 const chunk = <TValue>(values: TValue[], size: number): TValue[][] => {
@@ -440,6 +468,7 @@ const getMessageSyncCandidatesWithClient = async (
         ) {
           linkedinMessageThreads(
             filter: { ownerLinkedinId: { eq: $ownerLinkedinId } }
+            orderBy: [{ lastMessageTime: DescNullsLast }]
             first: 200
             after: $after
           ) {
@@ -501,16 +530,17 @@ const getMessageSyncCandidatesWithClient = async (
       ...batchCandidates
         .filter(
           ({ summaryIsStale, syncCandidate }) =>
-            !syncCandidate.maxMessageTime ||
-            summaryIsStale ||
-            new Date(syncCandidate.lastMessageTime).getTime() >
-              new Date(syncCandidate.maxMessageTime).getTime(),
+            summaryIsStale || hasMessageActivityAfterCheckpoint(syncCandidate),
         )
         .map(({ syncCandidate }) => syncCandidate),
     );
   }
 
-  return candidates;
+  return candidates.sort(
+    (firstCandidate, secondCandidate) =>
+      getTimestamp(secondCandidate.lastMessageTime) -
+      getTimestamp(firstCandidate.lastMessageTime),
+  );
 };
 
 export const getLinkedInSyncTotalsWithClient = async (

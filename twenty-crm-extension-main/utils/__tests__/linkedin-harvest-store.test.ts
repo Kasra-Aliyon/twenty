@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { GraphQLResponse } from '../../types';
 import {
   handleLinkedInHarvestStoreRequest,
+  type LinkedInMessageSyncCandidate,
   type LinkedInThreadWriteResult,
 } from '../linkedin-harvest-store';
 import type { TwentyApiClient } from '../twenty-api';
@@ -246,5 +247,142 @@ describe('LinkedIn harvest standard object writes', () => {
         messageCount: 12,
       },
     });
+  });
+
+  it('ignores LinkedIn activity timestamp drift below the tolerance', async () => {
+    const { client } = createClient([
+      {
+        data: {
+          linkedinMessageThreads: {
+            edges: [
+              {
+                node: {
+                  id: 'drift-thread-id',
+                  threadId: 'linkedin-drift-thread-id',
+                  lastMessageTime: '2026-07-22T10:00:00.050Z',
+                  messageCount: 1,
+                },
+              },
+              {
+                node: {
+                  id: 'new-message-thread-id',
+                  threadId: 'linkedin-new-message-thread-id',
+                  lastMessageTime: '2026-07-22T10:00:00.101Z',
+                  messageCount: 1,
+                },
+              },
+            ],
+            pageInfo: { hasNextPage: false, endCursor: null },
+          },
+        },
+      },
+      {
+        data: {
+          linkedinMessages: {
+            edges: [{ node: { deliveredAt: '2026-07-22T10:00:00.000Z' } }],
+            totalCount: 1,
+          },
+        },
+      },
+      {
+        data: {
+          linkedinMessages: {
+            edges: [{ node: { deliveredAt: '2026-07-22T10:00:00.000Z' } }],
+            totalCount: 1,
+          },
+        },
+      },
+    ]);
+
+    const result = (await handleLinkedInHarvestStoreRequest(client, {
+      action: 'GET_MESSAGE_SYNC_CANDIDATES',
+      ownerLinkedinId: 'owner-id',
+    })) as LinkedInMessageSyncCandidate[];
+
+    expect(result).toEqual([
+      {
+        twentyThreadId: 'new-message-thread-id',
+        threadId: 'linkedin-new-message-thread-id',
+        lastMessageTime: '2026-07-22T10:00:00.101Z',
+        maxMessageTime: '2026-07-22T10:00:00.000Z',
+      },
+    ]);
+  });
+
+  it('prioritizes the newest missing-message threads', async () => {
+    const { client, graphqlRequest } = createClient([
+      {
+        data: {
+          linkedinMessageThreads: {
+            edges: [
+              {
+                node: {
+                  id: 'old-thread-id',
+                  threadId: 'linkedin-old-thread-id',
+                  lastMessageTime: '2026-07-20T10:00:00.000Z',
+                  messageCount: 0,
+                },
+              },
+              {
+                node: {
+                  id: 'new-thread-id',
+                  threadId: 'linkedin-new-thread-id',
+                  lastMessageTime: '2026-07-22T10:00:00.000Z',
+                  messageCount: 0,
+                },
+              },
+              {
+                node: {
+                  id: 'middle-thread-id',
+                  threadId: 'linkedin-middle-thread-id',
+                  lastMessageTime: '2026-07-21T10:00:00.000Z',
+                  messageCount: 0,
+                },
+              },
+            ],
+            pageInfo: { hasNextPage: false, endCursor: null },
+          },
+        },
+      },
+      {
+        data: {
+          linkedinMessages: {
+            edges: [],
+            totalCount: 0,
+          },
+        },
+      },
+      {
+        data: {
+          linkedinMessages: {
+            edges: [],
+            totalCount: 0,
+          },
+        },
+      },
+      {
+        data: {
+          linkedinMessages: {
+            edges: [],
+            totalCount: 0,
+          },
+        },
+      },
+    ]);
+
+    const result = (await handleLinkedInHarvestStoreRequest(client, {
+      action: 'GET_MESSAGE_SYNC_CANDIDATES',
+      ownerLinkedinId: 'owner-id',
+    })) as LinkedInMessageSyncCandidate[];
+    const candidateQuery = graphqlRequest.mock.calls[0]?.[0];
+
+    expect(candidateQuery).toContain(
+      'orderBy: [{ lastMessageTime: DescNullsLast }]',
+    );
+    expect(result.map(({ twentyThreadId }) => twentyThreadId)).toEqual([
+      'new-thread-id',
+      'middle-thread-id',
+      'old-thread-id',
+    ]);
   });
 });

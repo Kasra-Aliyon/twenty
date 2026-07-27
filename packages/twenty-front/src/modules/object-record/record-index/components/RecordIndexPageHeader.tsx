@@ -1,3 +1,4 @@
+import { ApolloEnrichmentAction } from '@/apollo-enrichment/components/ApolloEnrichmentAction';
 import { RecordIndexCommandMenu } from '@/command-menu-item/components/RecordIndexCommandMenu';
 import { MAIN_CONTEXT_STORE_INSTANCE_ID } from '@/context-store/constants/MainContextStoreInstanceId';
 import { contextStoreCurrentViewIdComponentState } from '@/context-store/states/contextStoreCurrentViewIdComponentState';
@@ -91,6 +92,7 @@ export const RecordIndexPageHeader = () => {
         isDefined(contextStoreCurrentViewId) ? (
           <>
             {pageActions}
+            <ApolloEnrichmentAction objectNameSingular={objectNameSingular} />
             {!isDefined(requiredFilter) && (
               <AddToRecordListAction objectNameSingular={objectNameSingular} />
             )}

@@ -73,6 +73,7 @@ import { SubscriptionsModule } from 'src/engine/subscriptions/subscriptions.modu
 import { CodeInterpreterSessionCleanupModule } from 'src/engine/core-modules/code-interpreter/crons/code-interpreter-session-cleanup.module';
 import { TrashCleanupModule } from 'src/engine/trash-cleanup/trash-cleanup.module';
 import { WorkspaceEventEmitterModule } from 'src/engine/workspace-event-emitter/workspace-event-emitter.module';
+import { ApolloEnrichmentModule } from 'src/modules/apollo-enrichment/apollo-enrichment.module';
 import { ChannelSyncModule } from 'src/modules/connected-account/channel-sync/channel-sync.module';
 import { DashboardModule } from 'src/modules/dashboard/dashboard.module';
 import { SendEmailModule } from 'src/modules/messaging/message-outbound-manager/send-email.module';
@@ -128,6 +129,7 @@ import { FileModule } from './file/file.module';
     GeoMapModule,
     SubscriptionsModule,
     ImapSmtpCaldavModule,
+    ApolloEnrichmentModule,
     ChannelSyncModule,
     SendEmailModule,
     FileStorageModule.forRoot(),

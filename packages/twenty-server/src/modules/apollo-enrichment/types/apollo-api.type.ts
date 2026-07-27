@@ -4,6 +4,10 @@ export type ApolloPhoneNumber = {
   type?: string | null;
 };
 
+export type ApolloTechnology = {
+  name?: string | null;
+};
+
 export type ApolloOrganization = {
   id?: string | null;
   name?: string | null;
@@ -16,6 +20,20 @@ export type ApolloOrganization = {
   estimated_num_employees?: number | string | null;
   employees?: number | string | null;
   num_employees?: number | string | null;
+  industry?: string | null;
+  keywords?: string[] | null;
+  technologies?: string[] | null;
+  current_technologies?: ApolloTechnology[] | null;
+  annual_revenue?: number | string | null;
+  organization_revenue?: number | string | null;
+  street_address?: string | null;
+  raw_address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  postal_code?: string | null;
+  country?: string | null;
+  latitude?: number | string | null;
+  longitude?: number | string | null;
 };
 
 export type ApolloPerson = {
@@ -32,6 +50,7 @@ export type ApolloPerson = {
   phone?: string | null;
   sanitized_phone?: string | null;
   phone_numbers?: ApolloPhoneNumber[] | null;
+  personal_emails?: string[] | null;
   organization?: ApolloOrganization | null;
   company?: ApolloOrganization | null;
 };
@@ -39,10 +58,20 @@ export type ApolloPerson = {
 export type ApolloPersonMatchResponse = {
   person?: ApolloPerson | null;
   organization?: ApolloOrganization | null;
+  request_id?: number | string | null;
 };
 
 export type ApolloOrganizationEnrichResponse = {
   organization?: ApolloOrganization | null;
+};
+
+export type ApolloWebhookResultResponse = {
+  request_id?: string | null;
+  webhook_status?: 'failed' | 'in_progress' | 'success' | string | null;
+  failure_reason?: string | null;
+  webhook_result?: {
+    people?: ApolloPerson[] | null;
+  } | null;
 };
 
 export type ApolloPersonMatchInput = {
@@ -58,4 +87,9 @@ export type ApolloOrganizationMatchInput = {
   linkedinUrl?: string;
   name?: string;
   website?: string;
+};
+
+export type ApolloPersonEnrichmentOptions = {
+  revealPersonalEmails: boolean;
+  revealPhoneNumber: boolean;
 };

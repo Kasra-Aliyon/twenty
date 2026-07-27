@@ -26,7 +26,7 @@ import {
   type SequenceWithdrawConnectionRequestStepSettings,
 } from 'twenty-shared/types';
 import { isDefined } from 'twenty-shared/utils';
-import { In, IsNull, LessThanOrEqual } from 'typeorm';
+import { IsNull, LessThanOrEqual } from 'typeorm';
 
 import { type WorkspaceEntityManager } from 'src/engine/twenty-orm/entity-manager/workspace-entity-manager';
 import { GlobalWorkspaceOrmManager } from 'src/engine/twenty-orm/global-workspace-datasource/global-workspace-orm.manager';
@@ -709,6 +709,7 @@ export class SequenceExecutorService {
       const result = await this.apolloEnrichmentService.enrichPerson({
         workspaceId,
         personId: person.id,
+        mode: 'phone',
       });
 
       if (result === 'disabled') {

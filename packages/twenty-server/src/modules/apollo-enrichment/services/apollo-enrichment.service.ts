@@ -4,17 +4,24 @@ import { FieldActorSource, type ActorMetadata } from 'twenty-shared/types';
 import { isDefined } from 'twenty-shared/utils';
 import { type DeepPartial, ILike } from 'typeorm';
 
+import { type WorkspaceAuthContext } from 'src/engine/core-modules/auth/types/workspace-auth-context.type';
 import { TwentyConfigService } from 'src/engine/core-modules/twenty-config/twenty-config.service';
 import { GlobalWorkspaceOrmManager } from 'src/engine/twenty-orm/global-workspace-datasource/global-workspace-orm.manager';
 import { type WorkspaceRepository } from 'src/engine/twenty-orm/repository/workspace.repository';
+import { getWorkspaceContext } from 'src/engine/twenty-orm/storage/orm-workspace-context.storage';
+import { type RolePermissionConfig } from 'src/engine/twenty-orm/types/role-permission-config';
 import { buildSystemAuthContext } from 'src/engine/twenty-orm/utils/build-system-auth-context.util';
+import { resolveRolePermissionConfig } from 'src/engine/twenty-orm/utils/resolve-role-permission-config.util';
 import { ApolloClientService } from 'src/modules/apollo-enrichment/services/apollo-client.service';
 import {
   type ApolloCompanyMappedFields,
   ApolloEnrichmentMapperService,
   hasText,
 } from 'src/modules/apollo-enrichment/services/apollo-enrichment-mapper.service';
-import { type ApolloOrganization } from 'src/modules/apollo-enrichment/types/apollo-api.type';
+import {
+  type ApolloOrganization,
+  type ApolloPersonEnrichmentOptions,
+} from 'src/modules/apollo-enrichment/types/apollo-api.type';
 import { CompanyWorkspaceEntity } from 'src/modules/company/standard-objects/company.workspace-entity';
 import { PersonWorkspaceEntity } from 'src/modules/person/standard-objects/person.workspace-entity';
 
@@ -24,6 +31,20 @@ export type ApolloEnrichmentResult =
   | 'not-found'
   | 'not-matched'
   | 'updated';
+
+export type ApolloPersonEnrichmentMode = 'automatic' | 'general' | 'phone';
+
+export type ApolloEnrichmentBatchResult = {
+  requestedCount: number;
+  updatedCount: number;
+  skippedCount: number;
+  notMatchedCount: number;
+  notFoundCount: number;
+  failedCount: number;
+  disabled: boolean;
+};
+
+const APOLLO_ENRICHMENT_BATCH_CONCURRENCY = 10;
 
 @Injectable()
 export class ApolloEnrichmentService {
@@ -40,25 +61,27 @@ export class ApolloEnrichmentService {
   async enrichPerson({
     workspaceId,
     personId,
+    mode = 'automatic',
+    authContext = buildSystemAuthContext(workspaceId),
   }: {
     workspaceId: string;
     personId: string;
+    mode?: ApolloPersonEnrichmentMode;
+    authContext?: WorkspaceAuthContext;
   }): Promise<ApolloEnrichmentResult> {
     if (!this.twentyConfigService.get('APOLLO_ENRICHMENT_ENABLED')) {
       return 'disabled';
     }
 
-    const authContext = buildSystemAuthContext(workspaceId);
-
     return this.globalWorkspaceOrmManager.executeInWorkspaceContext(
       async () => {
+        const rolePermissionConfig =
+          this.resolveRolePermissionConfig(authContext);
         const personRepository =
           await this.globalWorkspaceOrmManager.getRepository(
             workspaceId,
             PersonWorkspaceEntity,
-            {
-              shouldBypassPermissionChecks: true,
-            },
+            rolePermissionConfig,
           );
 
         const person = await personRepository.findOne({
@@ -69,7 +92,7 @@ export class ApolloEnrichmentService {
           return 'not-found';
         }
 
-        if (!this.apolloEnrichmentMapperService.shouldEnrichPerson(person)) {
+        if (!this.shouldEnrichPersonForMode(person, mode)) {
           return 'skipped';
         }
 
@@ -80,12 +103,32 @@ export class ApolloEnrichmentService {
           return 'skipped';
         }
 
-        const apolloResponse =
-          await this.apolloClientService.enrichPerson(matchInput);
+        const apolloResponse = await this.apolloClientService.enrichPerson(
+          matchInput,
+          this.getPersonEnrichmentOptions(mode),
+        );
         const apolloPerson = apolloResponse.person;
 
         if (!isDefined(apolloPerson)) {
           return 'not-matched';
+        }
+
+        if (mode === 'phone') {
+          const phoneUpdate =
+            this.apolloEnrichmentMapperService.mapApolloPersonPhoneToTwentyUpdate(
+              {
+                person,
+                apolloPerson,
+              },
+            );
+
+          if (Object.keys(phoneUpdate).length === 0) {
+            return 'not-matched';
+          }
+
+          await personRepository.update(person.id, phoneUpdate);
+
+          return 'updated';
         }
 
         const apolloOrganization =
@@ -98,6 +141,7 @@ export class ApolloEnrichmentService {
           : await this.findOrCreateCompanyFromApolloOrganization({
               workspaceId,
               apolloOrganization,
+              rolePermissionConfig,
             });
         const personUpdate =
           this.apolloEnrichmentMapperService.mapApolloPersonToTwentyUpdate({
@@ -105,6 +149,10 @@ export class ApolloEnrichmentService {
             apolloPerson,
             companyId,
           });
+
+        if (mode === 'general') {
+          delete personUpdate.phones;
+        }
 
         if (Object.keys(personUpdate).length === 0) {
           return 'skipped';
@@ -116,6 +164,124 @@ export class ApolloEnrichmentService {
       },
       authContext,
     );
+  }
+
+  async enrichPeople({
+    workspaceId,
+    personIds,
+    mode,
+    authContext,
+  }: {
+    workspaceId: string;
+    personIds: string[];
+    mode: Exclude<ApolloPersonEnrichmentMode, 'automatic'>;
+    authContext: WorkspaceAuthContext;
+  }): Promise<ApolloEnrichmentBatchResult> {
+    if (!this.twentyConfigService.get('APOLLO_ENRICHMENT_ENABLED')) {
+      return this.buildDisabledBatchResult(personIds.length);
+    }
+
+    const results = await this.runBatchWithConcurrency(
+      personIds,
+      async (personId) =>
+        this.enrichPerson({
+          workspaceId,
+          personId,
+          mode,
+          authContext,
+        }),
+    );
+
+    return this.summarizeBatchResults(results);
+  }
+
+  async enrichCompany({
+    workspaceId,
+    companyId,
+    authContext = buildSystemAuthContext(workspaceId),
+  }: {
+    workspaceId: string;
+    companyId: string;
+    authContext?: WorkspaceAuthContext;
+  }): Promise<ApolloEnrichmentResult> {
+    if (!this.twentyConfigService.get('APOLLO_ENRICHMENT_ENABLED')) {
+      return 'disabled';
+    }
+
+    return this.globalWorkspaceOrmManager.executeInWorkspaceContext(
+      async () => {
+        const rolePermissionConfig =
+          this.resolveRolePermissionConfig(authContext);
+        const companyRepository =
+          await this.globalWorkspaceOrmManager.getRepository(
+            workspaceId,
+            CompanyWorkspaceEntity,
+            rolePermissionConfig,
+          );
+        const company = await companyRepository.findOne({
+          where: { id: companyId },
+        });
+
+        if (!isDefined(company)) {
+          return 'not-found';
+        }
+
+        const matchInput =
+          this.apolloEnrichmentMapperService.buildOrganizationMatchInput(
+            company,
+          );
+
+        if (!isDefined(matchInput)) {
+          return 'skipped';
+        }
+
+        const apolloResponse =
+          await this.apolloClientService.enrichOrganization(matchInput);
+        const mappedCompany =
+          this.apolloEnrichmentMapperService.mapApolloOrganization(
+            apolloResponse.organization,
+          );
+
+        if (!isDefined(mappedCompany)) {
+          return 'not-matched';
+        }
+
+        const didUpdate = await this.fillEmptyCompanyFields({
+          companyRepository,
+          company,
+          mappedCompany,
+        });
+
+        return didUpdate ? 'updated' : 'skipped';
+      },
+      authContext,
+    );
+  }
+
+  async enrichCompanies({
+    workspaceId,
+    companyIds,
+    authContext,
+  }: {
+    workspaceId: string;
+    companyIds: string[];
+    authContext: WorkspaceAuthContext;
+  }): Promise<ApolloEnrichmentBatchResult> {
+    if (!this.twentyConfigService.get('APOLLO_ENRICHMENT_ENABLED')) {
+      return this.buildDisabledBatchResult(companyIds.length);
+    }
+
+    const results = await this.runBatchWithConcurrency(
+      companyIds,
+      async (companyId) =>
+        this.enrichCompany({
+          workspaceId,
+          companyId,
+          authContext,
+        }),
+    );
+
+    return this.summarizeBatchResults(results);
   }
 
   async findBackfillCandidatePersonIds({
@@ -189,9 +355,11 @@ export class ApolloEnrichmentService {
   private async findOrCreateCompanyFromApolloOrganization({
     workspaceId,
     apolloOrganization,
+    rolePermissionConfig,
   }: {
     workspaceId: string;
     apolloOrganization: ApolloOrganization | null | undefined;
+    rolePermissionConfig: RolePermissionConfig | undefined;
   }): Promise<string | undefined> {
     const mappedCompany =
       await this.mapAndMaybeEnrichApolloOrganization(apolloOrganization);
@@ -204,9 +372,7 @@ export class ApolloEnrichmentService {
       await this.globalWorkspaceOrmManager.getRepository(
         workspaceId,
         CompanyWorkspaceEntity,
-        {
-          shouldBypassPermissionChecks: true,
-        },
+        rolePermissionConfig,
       );
 
     const existingCompany =
@@ -214,7 +380,7 @@ export class ApolloEnrichmentService {
       (await this.findCompanyByName(companyRepository, mappedCompany));
 
     if (isDefined(existingCompany)) {
-      await this.restoreAndFillEmptyCompanyFields({
+      await this.fillEmptyCompanyFields({
         companyRepository,
         company: existingCompany,
         mappedCompany,
@@ -318,7 +484,7 @@ export class ApolloEnrichmentService {
     return company ?? undefined;
   }
 
-  private async restoreAndFillEmptyCompanyFields({
+  private async fillEmptyCompanyFields({
     companyRepository,
     company,
     mappedCompany,
@@ -326,7 +492,7 @@ export class ApolloEnrichmentService {
     companyRepository: WorkspaceRepository<CompanyWorkspaceEntity>;
     company: CompanyWorkspaceEntity;
     mappedCompany: ApolloCompanyMappedFields;
-  }): Promise<void> {
+  }): Promise<boolean> {
     const companyUpdate: DeepPartial<CompanyWorkspaceEntity> = {};
 
     if (isDefined(company.deletedAt)) {
@@ -351,11 +517,49 @@ export class ApolloEnrichmentService {
       companyUpdate.linkedinLink = mappedCompany.linkedinLink;
     }
 
+    if (!isDefined(company.employees) && isDefined(mappedCompany.employees)) {
+      companyUpdate.employees = mappedCompany.employees;
+    }
+
+    if (!hasText(company.industry) && hasText(mappedCompany.industry)) {
+      companyUpdate.industry = mappedCompany.industry;
+    }
+
+    if (
+      (company.keywords?.length ?? 0) === 0 &&
+      (mappedCompany.keywords?.length ?? 0) > 0
+    ) {
+      companyUpdate.keywords = mappedCompany.keywords;
+    }
+
+    if (
+      (company.technologies?.length ?? 0) === 0 &&
+      (mappedCompany.technologies?.length ?? 0) > 0
+    ) {
+      companyUpdate.technologies = mappedCompany.technologies;
+    }
+
+    if (
+      !isDefined(company.annualRevenue) &&
+      isDefined(mappedCompany.annualRevenue)
+    ) {
+      companyUpdate.annualRevenue = mappedCompany.annualRevenue;
+    }
+
+    if (
+      this.isAddressEmpty(company.address) &&
+      isDefined(mappedCompany.address)
+    ) {
+      companyUpdate.address = mappedCompany.address;
+    }
+
     if (Object.keys(companyUpdate).length === 0) {
-      return;
+      return false;
     }
 
     await companyRepository.update(company.id, companyUpdate);
+
+    return true;
   }
 
   private async createCompany({
@@ -376,6 +580,12 @@ export class ApolloEnrichmentService {
         secondaryLinks: null,
       },
       linkedinLink: mappedCompany.linkedinLink ?? null,
+      employees: mappedCompany.employees ?? null,
+      industry: mappedCompany.industry ?? null,
+      keywords: mappedCompany.keywords ?? null,
+      technologies: mappedCompany.technologies ?? null,
+      annualRevenue: mappedCompany.annualRevenue ?? null,
+      address: mappedCompany.address,
       position: lastCompanyPosition + 1,
       createdBy: systemActor,
       updatedBy: systemActor,
@@ -400,6 +610,181 @@ export class ApolloEnrichmentService {
       this.twentyConfigService.get('APOLLO_ENRICHMENT_RETRY_SECONDS') * 1000;
 
     return Date.now() - lastAttemptedAt < retryCooldownMs;
+  }
+
+  private shouldEnrichPersonForMode(
+    person: PersonWorkspaceEntity,
+    mode: ApolloPersonEnrichmentMode,
+  ): boolean {
+    switch (mode) {
+      case 'general':
+        return this.apolloEnrichmentMapperService.shouldEnrichPersonGeneral(
+          person,
+        );
+      case 'phone':
+        return this.apolloEnrichmentMapperService.shouldEnrichPersonPhone(
+          person,
+        );
+      case 'automatic':
+        return this.apolloEnrichmentMapperService.shouldEnrichPerson(person);
+    }
+  }
+
+  private getPersonEnrichmentOptions(
+    mode: ApolloPersonEnrichmentMode,
+  ): ApolloPersonEnrichmentOptions {
+    if (mode === 'phone') {
+      return {
+        revealPersonalEmails: false,
+        revealPhoneNumber: true,
+      };
+    }
+
+    if (mode === 'general') {
+      return {
+        revealPersonalEmails:
+          this.twentyConfigService.get('APOLLO_REVEAL_PERSONAL_EMAILS') ??
+          false,
+        revealPhoneNumber: false,
+      };
+    }
+
+    return {
+      revealPersonalEmails:
+        this.twentyConfigService.get('APOLLO_REVEAL_PERSONAL_EMAILS') ?? false,
+      revealPhoneNumber:
+        this.twentyConfigService.get('APOLLO_REVEAL_PHONE_NUMBER') ?? false,
+    };
+  }
+
+  private resolveRolePermissionConfig(
+    authContext: WorkspaceAuthContext,
+  ): RolePermissionConfig | undefined {
+    if (authContext.type === 'system') {
+      return { shouldBypassPermissionChecks: true };
+    }
+
+    const workspaceContext = getWorkspaceContext();
+
+    return (
+      resolveRolePermissionConfig({
+        authContext: workspaceContext.authContext,
+        userWorkspaceRoleMap: workspaceContext.userWorkspaceRoleMap,
+        apiKeyRoleMap: workspaceContext.apiKeyRoleMap,
+      }) ?? undefined
+    );
+  }
+
+  private summarizeBatchResults(
+    results: PromiseSettledResult<ApolloEnrichmentResult>[],
+  ): ApolloEnrichmentBatchResult {
+    const summary: ApolloEnrichmentBatchResult = {
+      requestedCount: results.length,
+      updatedCount: 0,
+      skippedCount: 0,
+      notMatchedCount: 0,
+      notFoundCount: 0,
+      failedCount: 0,
+      disabled: false,
+    };
+
+    for (const result of results) {
+      if (result.status === 'rejected') {
+        summary.failedCount += 1;
+        this.logger.warn(`Apollo enrichment failed: ${String(result.reason)}`);
+        continue;
+      }
+
+      switch (result.value) {
+        case 'updated':
+          summary.updatedCount += 1;
+          break;
+        case 'skipped':
+          summary.skippedCount += 1;
+          break;
+        case 'not-matched':
+          summary.notMatchedCount += 1;
+          break;
+        case 'not-found':
+          summary.notFoundCount += 1;
+          break;
+        case 'disabled':
+          summary.disabled = true;
+          break;
+      }
+    }
+
+    return summary;
+  }
+
+  private async runBatchWithConcurrency<TItem>(
+    items: TItem[],
+    callback: (item: TItem) => Promise<ApolloEnrichmentResult>,
+  ): Promise<PromiseSettledResult<ApolloEnrichmentResult>[]> {
+    const results: PromiseSettledResult<ApolloEnrichmentResult>[] = new Array(
+      items.length,
+    );
+    let nextItemIndex = 0;
+
+    const worker = async () => {
+      while (nextItemIndex < items.length) {
+        const itemIndex = nextItemIndex;
+
+        nextItemIndex += 1;
+
+        try {
+          results[itemIndex] = {
+            status: 'fulfilled',
+            value: await callback(items[itemIndex]),
+          };
+        } catch (reason) {
+          results[itemIndex] = {
+            status: 'rejected',
+            reason,
+          };
+        }
+      }
+    };
+
+    await Promise.all(
+      Array.from(
+        {
+          length: Math.min(APOLLO_ENRICHMENT_BATCH_CONCURRENCY, items.length),
+        },
+        worker,
+      ),
+    );
+
+    return results;
+  }
+
+  private buildDisabledBatchResult(
+    requestedCount: number,
+  ): ApolloEnrichmentBatchResult {
+    return {
+      requestedCount,
+      updatedCount: 0,
+      skippedCount: 0,
+      notMatchedCount: 0,
+      notFoundCount: 0,
+      failedCount: 0,
+      disabled: true,
+    };
+  }
+
+  private isAddressEmpty(
+    address: CompanyWorkspaceEntity['address'] | null | undefined,
+  ): boolean {
+    return (
+      !hasText(address?.addressStreet1) &&
+      !hasText(address?.addressStreet2) &&
+      !hasText(address?.addressCity) &&
+      !hasText(address?.addressState) &&
+      !hasText(address?.addressZipCode) &&
+      !hasText(address?.addressCountry) &&
+      !address?.addressLat &&
+      !address?.addressLng
+    );
   }
 
   private buildBackfillAttemptKey(workspaceId: string, personId: string) {
