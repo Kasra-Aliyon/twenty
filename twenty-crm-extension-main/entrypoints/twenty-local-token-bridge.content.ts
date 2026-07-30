@@ -25,7 +25,12 @@ function parseTokenPair(rawTokenPair: string | null): TwentyTokenPair | null {
 }
 
 export default defineContentScript({
-  matches: ['http://localhost:3001/*', 'http://127.0.0.1:3001/*'],
+  matches: [
+    'http://localhost:2001/*',
+    'http://127.0.0.1:2001/*',
+    'http://localhost:3001/*',
+    'http://127.0.0.1:3001/*',
+  ],
   runAt: 'document_idle',
 
   main() {
@@ -41,12 +46,15 @@ export default defineContentScript({
       lastSyncedRawTokenPair = rawTokenPair;
 
       try {
-        await browser.runtime.sendMessage({
+        (await browser.runtime.sendMessage({
           type: 'SYNC_TWENTY_TOKEN_PAIR',
           payload: parseTokenPair(rawTokenPair),
-        }) as ExtensionResponse;
+        })) as ExtensionResponse;
       } catch (error) {
-        console.error('[Twenty Extension] Failed to sync local token pair:', error);
+        console.error(
+          '[Twenty Extension] Failed to sync local token pair:',
+          error,
+        );
       }
     }
 

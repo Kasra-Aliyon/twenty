@@ -85,7 +85,7 @@ export const signUpInWorkspaceAndGetAccessToken = async (
 
   const origin =
     signUpPayload.workspace.workspaceUrls?.subdomainUrl ??
-    'http://localhost:3001';
+    'http://localhost:2001';
 
   const {
     data: { getAuthTokensFromLoginToken: authTokensData },

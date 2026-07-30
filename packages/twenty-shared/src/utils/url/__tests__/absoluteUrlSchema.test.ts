@@ -14,8 +14,8 @@ describe('absoluteUrlSchema', () => {
     expect(absoluteUrlSchema.parse('https://www.example.com?query=123')).toBe(
       'https://www.example.com?query=123',
     );
-    expect(absoluteUrlSchema.parse('http://localhost:3000')).toBe(
-      'http://localhost:3000',
+    expect(absoluteUrlSchema.parse('http://localhost:2000')).toBe(
+      'http://localhost:2000',
     );
   });
 

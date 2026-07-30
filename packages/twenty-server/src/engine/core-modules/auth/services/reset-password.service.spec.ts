@@ -278,7 +278,7 @@ describe('ResetPasswordService', () => {
         .mockResolvedValue({ id: 'workspace-id' } as WorkspaceEntity);
       jest
         .spyOn(twentyConfigService, 'get')
-        .mockReturnValue('http://localhost:3000');
+        .mockReturnValue('http://localhost:2000');
       jest
         .spyOn(workspaceDomainsService, 'buildWorkspaceURL')
         .mockReturnValue(

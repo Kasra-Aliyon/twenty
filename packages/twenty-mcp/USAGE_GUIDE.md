@@ -66,8 +66,8 @@ Twenty API key. The key is not an OpenAI key, an Anthropic key, the Twenty
 In this repository's default development configuration:
 
 ```text
-Twenty backend/API: http://localhost:3000
-Twenty frontend/UI: http://localhost:3001
+Twenty backend/API: http://localhost:2000
+Twenty frontend/UI: http://localhost:2001
 ```
 
 You can verify the backend URL in:
@@ -80,17 +80,17 @@ grep '^REACT_APP_SERVER_BASE_URL=' \
 The current value in this checkout is:
 
 ```text
-REACT_APP_SERVER_BASE_URL=http://localhost:3000
+REACT_APP_SERVER_BASE_URL=http://localhost:2000
 ```
 
 Always give the MCP that backend value:
 
 ```bash
-export TWENTY_BASE_URL="http://localhost:3000"
+export TWENTY_BASE_URL="http://localhost:2000"
 ```
 
-If you intentionally changed the ports so your backend really listens on 3001,
-use `http://localhost:3001` instead. Do not point the MCP at the frontend.
+If you override `NODE_PORT`, use that backend origin instead. Do not point the
+MCP at the frontend.
 
 Start the normal local development environment in one terminal:
 
@@ -124,7 +124,7 @@ makes rotation, auditing, and revocation much easier.
 The required environment variables are:
 
 ```bash
-export TWENTY_BASE_URL="http://localhost:3000"
+export TWENTY_BASE_URL="http://localhost:2000"
 export TWENTY_API_KEY="replace-with-your-role-scoped-key"
 ```
 
@@ -227,7 +227,7 @@ you deliberately want Codex startup to depend on Twenty.
 If you launch Codex from a shell, export the variables in that shell first:
 
 ```bash
-export TWENTY_BASE_URL="http://localhost:3000"
+export TWENTY_BASE_URL="http://localhost:2000"
 export TWENTY_API_KEY="replace-me"
 codex
 ```
@@ -244,7 +244,7 @@ simple alternative is an owner-readable environment file and a wrapper.
 Create `~/.config/twenty-mcp/env`:
 
 ```bash
-TWENTY_BASE_URL='http://localhost:3000'
+TWENTY_BASE_URL='http://localhost:2000'
 TWENTY_API_KEY='replace-me'
 TWENTY_ENABLE_ADVANCED='false'
 ```
@@ -310,8 +310,8 @@ If Codex reports `required MCP servers failed to initialize`:
 2. Fully quit and reopen Codex.
 3. Confirm the wrapper's environment file contains `TWENTY_API_KEY` and that
    `TWENTY_BASE_URL` points to the backend API. In the standard local Twenty
-   setup, the API is `http://localhost:3000` and the frontend is
-   `http://localhost:3001`.
+   setup, the API is `http://localhost:2000` and the frontend is
+   `http://localhost:2001`.
 4. Re-enable the server and restart Codex.
 
 An error ending in `connection closed: initialize response` means the MCP

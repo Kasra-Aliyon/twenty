@@ -29,7 +29,7 @@ describe('readConfig', () => {
 
   it('reads optional HTTP and user-scoped settings', () => {
     const config = readConfig({
-      TWENTY_BASE_URL: 'http://localhost:3000/base',
+      TWENTY_BASE_URL: 'http://localhost:2000/base',
       TWENTY_API_KEY: 'test-api-key',
       TWENTY_USER_TOKEN: 'test-user-token',
       TWENTY_ENABLE_ADVANCED: 'true',

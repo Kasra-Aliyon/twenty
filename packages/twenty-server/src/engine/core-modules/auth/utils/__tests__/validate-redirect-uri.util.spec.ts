@@ -12,7 +12,7 @@ describe('validateRedirectUri', () => {
   });
 
   it('should accept localhost HTTP', () => {
-    const result = validateRedirectUri('http://localhost:3000/callback');
+    const result = validateRedirectUri('http://localhost:2000/callback');
 
     expect(result.valid).toBe(true);
   });

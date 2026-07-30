@@ -14,7 +14,7 @@ describe('getUrlHostnameOrThrow', () => {
     expect(getUrlHostnameOrThrow('https://www.example.com?query=123')).toBe(
       'www.example.com',
     );
-    expect(getUrlHostnameOrThrow('http://localhost:3000')).toBe('localhost');
+    expect(getUrlHostnameOrThrow('http://localhost:2000')).toBe('localhost');
     expect(getUrlHostnameOrThrow('example.com')).toBe('example.com');
     expect(getUrlHostnameOrThrow('www.subdomain.example.com')).toBe(
       'www.subdomain.example.com',

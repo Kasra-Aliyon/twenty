@@ -13,7 +13,7 @@ Usage: setup-mcp.sh [--name server-name] [--force-login] [--print-url] <workspac
 Examples:
   setup-mcp.sh acme.twenty.com
   setup-mcp.sh --force-login https://crm.example.com
-  setup-mcp.sh --name twenty-local acme.localhost:3001
+  setup-mcp.sh --name twenty-local acme.localhost:2000
   setup-mcp.sh --name twenty-prod https://crm.example.com/mcp
 
 OAuth:

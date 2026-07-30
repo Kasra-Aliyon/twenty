@@ -523,7 +523,7 @@ setup, and each agent spawns its own instance independently.
         "command": "node",
         "args": ["packages/twenty-mcp/dist/index.js"],
         "env": {
-          "TWENTY_BASE_URL": "http://localhost:3000",
+          "TWENTY_BASE_URL": "http://localhost:2000",
           "TWENTY_API_KEY": "...",
         },
       },

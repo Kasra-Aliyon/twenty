@@ -30,7 +30,7 @@ export default defineConfig(({ mode }) => {
 
   const port = isNonEmptyString(REACT_APP_PORT)
     ? parseInt(REACT_APP_PORT)
-    : 3001;
+    : 2001;
 
   const CHUNK_SIZE_WARNING_LIMIT = 1024 * 1024; // 1MB
   // Please don't increase this limit for main index chunk
@@ -49,7 +49,8 @@ export default defineConfig(({ mode }) => {
     cacheDir: '../../node_modules/.vite/packages/twenty-front',
 
     server: {
-      port: port,
+      port,
+      strictPort: true,
       ...(VITE_HOST ? { host: VITE_HOST } : {}),
       ...(SSL_KEY_PATH && SSL_CERT_PATH
         ? {
@@ -68,6 +69,9 @@ export default defineConfig(({ mode }) => {
           '**/@blocknote/core/src/fonts/**',
         ],
       },
+    },
+    preview: {
+      strictPort: true,
     },
 
     plugins: [
@@ -264,9 +268,15 @@ export default defineConfig(({ mode }) => {
         // wyw-in-js 1.x resolves modules in its CSS evaluator via vite's
         // resolve.alias (it no longer picks up vite-tsconfig-paths), so the
         // `@/` and `~/` tsconfig path aliases must be mirrored here.
-        { find: /^@\//, replacement: path.resolve(__dirname, 'src/modules') + '/' },
+        {
+          find: /^@\//,
+          replacement: path.resolve(__dirname, 'src/modules') + '/',
+        },
         { find: /^~\//, replacement: path.resolve(__dirname, 'src') + '/' },
-        { find: 'path', replacement: 'rollup-plugin-node-polyfills/polyfills/path' },
+        {
+          find: 'path',
+          replacement: 'rollup-plugin-node-polyfills/polyfills/path',
+        },
       ],
     },
   };

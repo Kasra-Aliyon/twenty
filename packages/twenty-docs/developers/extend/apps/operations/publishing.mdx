@@ -146,11 +146,11 @@ Deploys your app to a configured Twenty server on every push to `main`, and opti
 
 | Setting | Where | Purpose |
 |---------|-------|---------|
-| `TWENTY_DEPLOY_URL` | `env` in `cd.yml` (defaults to `http://localhost:3000`) | The Twenty server to deploy to. Change this to your real server URL before first use. |
+| `TWENTY_DEPLOY_URL` | `env` in `cd.yml` (defaults to `http://localhost:2000`) | The Twenty server to deploy to. Change this to your real server URL before first use. |
 | `TWENTY_DEPLOY_API_KEY` | GitHub repo **Settings → Secrets and variables → Actions** | API key with deploy permission on the target server. |
 
 <Note>
-The default `TWENTY_DEPLOY_URL` of `http://localhost:3000` is a placeholder — it will not reach anything from a GitHub-hosted runner. Update it to your server's public URL (or use a self-hosted runner with network access) before enabling CD.
+The default `TWENTY_DEPLOY_URL` of `http://localhost:2000` is a placeholder — it will not reach anything from a GitHub-hosted runner. Update it to your server's public URL (or use a self-hosted runner with network access) before enabling CD.
 </Note>
 
 **Triggering a preview deploy from a PR:**

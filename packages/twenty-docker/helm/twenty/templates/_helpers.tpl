@@ -154,9 +154,9 @@ false
 {{- end -}}
 {{- end -}}
 
-{{/* Server container port */}}
+{{/* Server container port: explicit NODE_PORT wins, then the service port. */}}
 {{- define "twenty.server.containerPort" -}}
-{{- .Values.server.service.port | default 3000 -}}
+{{- .Values.server.env.NODE_PORT | default (.Values.server.service.port | default 3000) -}}
 {{- end -}}
 
 {{/* Storage type: prefer top-level storage.type, else legacy server.env.STORAGE_TYPE, else local */}}

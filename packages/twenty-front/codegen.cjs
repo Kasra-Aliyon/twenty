@@ -2,7 +2,7 @@ process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
 module.exports = {
   schema:
-    (process.env.REACT_APP_SERVER_BASE_URL ?? 'http://localhost:3000') +
+    (process.env.REACT_APP_SERVER_BASE_URL ?? 'http://localhost:2000') +
     '/graphql',
   documents: [
     './src/modules/workflow/**/graphql/**/*.{ts,tsx}',

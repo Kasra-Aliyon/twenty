@@ -155,7 +155,7 @@ supported.
    target workspace from the request's `Host` header, so the URL must match
    the workspace's public domain — `localhost` is not valid in the
    Fireflies UI. For local development, expose your dev server with a
-   tunnel like `ngrok http 3000` and paste the HTTPS forwarding URL here,
+   tunnel like `ngrok http 2000` and paste the HTTPS forwarding URL here,
    or skip the Fireflies UI entirely and POST a signed payload directly to
    your local endpoint (see [Local webhook testing](#local-webhook-testing)
    in the developer section below).
@@ -230,7 +230,7 @@ Fireflies' Webhooks V2 UI only accepts a publicly reachable HTTPS URL, so
 pointing it at `http://localhost:*` directly is not possible. Two paths:
 
 **End-to-end via tunnel.** Run a tunnel that fronts your local server with
-a public HTTPS URL (`ngrok http 3000`, `cloudflared tunnel`, etc.), paste
+a public HTTPS URL (`ngrok http 2000`, `cloudflared tunnel`, etc.), paste
 the HTTPS forwarding URL into the Fireflies webhook UI as the **Webhook
 URL**, and exercise the integration by ending a real Fireflies meeting.
 
@@ -247,7 +247,7 @@ SIG=$(printf '%s' "$BODY" \
   | openssl dgst -sha256 -hmac "$FIREFLIES_WEBHOOK_SECRET" \
   | awk '{print $NF}')
 
-curl -X POST http://localhost:3000/webhook/fireflies \
+curl -X POST http://localhost:2000/webhook/fireflies \
   -H 'Content-Type: application/json' \
   -H "x-hub-signature: sha256=$SIG" \
   --data-binary "$BODY"
@@ -256,7 +256,7 @@ curl -X POST http://localhost:3000/webhook/fireflies \
 `--data-binary` (not `--data`) is important: it preserves the bytes
 verbatim so the HMAC the server computes matches the one `openssl`
 computed above. Twenty resolves the workspace from the `Host` header, so
-the default dev workspace (mapped to `localhost:3000` in a standard
+the default dev workspace (mapped to `localhost:2000` in a standard
 `yarn start` setup) receives the request.
 
 To match a real `CalendarEvent`, the transcript ID you pass must belong to

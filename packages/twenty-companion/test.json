@@ -27,7 +27,7 @@
         "fileId": "4b91d422-9081-49a3-8db2-99e687f33770",
         "label": "video.mp4",
         "extension": ".mp4",
-        "url": "http://localhost:3000/file/files-field/4b91d422-9081-49a3-8db2-99e687f33770?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3Jrc3BhY2VJZCI6IjIwMjAyMDIwLTFjMjUtNGQwMi1iZjI1LTZhZWNjZjdlYTQxOSIsImZpbGVJZCI6IjRiOTFkNDIyLTkwODEtNDlhMy04ZGIyLTk5ZTY4N2YzMzc3MCIsInN1YiI6IjIwMjAyMDIwLTFjMjUtNGQwMi1iZjI1LTZhZWNjZjdlYTQxOSIsInR5cGUiOiJGSUxFIiwiaWF0IjoxNzcyMTIxODA1LCJleHAiOjE3NzIyMDgyMDV9.nncA5m4Pux6ExsqzalWQsNY3OjRsGjE0XqaIzoP3RxM",
+        "url": "http://localhost:2000/file/files-field/4b91d422-9081-49a3-8db2-99e687f33770?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3Jrc3BhY2VJZCI6IjIwMjAyMDIwLTFjMjUtNGQwMi1iZjI1LTZhZWNjZjdlYTQxOSIsImZpbGVJZCI6IjRiOTFkNDIyLTkwODEtNDlhMy04ZGIyLTk5ZTY4N2YzMzc3MCIsInN1YiI6IjIwMjAyMDIwLTFjMjUtNGQwMi1iZjI1LTZhZWNjZjdlYTQxOSIsInR5cGUiOiJGSUxFIiwiaWF0IjoxNzcyMTIxODA1LCJleHAiOjE3NzIyMDgyMDV9.nncA5m4Pux6ExsqzalWQsNY3OjRsGjE0XqaIzoP3RxM",
         "__typename": "FileObject"
       }
     ],
@@ -51,7 +51,7 @@
         "fileId": "6a819428-6d0d-4a8a-9160-6be98b2d753c",
         "label": "diarized-processed1.1.json",
         "extension": ".json",
-        "url": "http://localhost:3000/file/files-field/6a819428-6d0d-4a8a-9160-6be98b2d753c?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3Jrc3BhY2VJZCI6IjIwMjAyMDIwLTFjMjUtNGQwMi1iZjI1LTZhZWNjZjdlYTQxOSIsImZpbGVJZCI6IjZhODE5NDI4LTZkMGQtNGE4YS05MTYwLTZiZTk4YjJkNzUzYyIsInN1YiI6IjIwMjAyMDIwLTFjMjUtNGQwMi1iZjI1LTZhZWNjZjdlYTQxOSIsInR5cGUiOiJGSUxFIiwiaWF0IjoxNzcyMTIxODA1LCJleHAiOjE3NzIyMDgyMDV9.ToTCCCIsyH0OzhEl7mGngRtXBNPkmT4XslnUilPqzcA",
+        "url": "http://localhost:2000/file/files-field/6a819428-6d0d-4a8a-9160-6be98b2d753c?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3Jrc3BhY2VJZCI6IjIwMjAyMDIwLTFjMjUtNGQwMi1iZjI1LTZhZWNjZjdlYTQxOSIsImZpbGVJZCI6IjZhODE5NDI4LTZkMGQtNGE4YS05MTYwLTZiZTk4YjJkNzUzYyIsInN1YiI6IjIwMjAyMDIwLTFjMjUtNGQwMi1iZjI1LTZhZWNjZjdlYTQxOSIsInR5cGUiOiJGSUxFIiwiaWF0IjoxNzcyMTIxODA1LCJleHAiOjE3NzIyMDgyMDV9.ToTCCCIsyH0OzhEl7mGngRtXBNPkmT4XslnUilPqzcA",
         "__typename": "FileObject"
       }
     ],

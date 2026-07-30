@@ -256,7 +256,7 @@ describe('ApolloEnrichmentService', () => {
 
   it('rejects phone enrichment without a public HTTPS webhook base URL', async () => {
     configValues.APOLLO_PHONE_ENRICHMENT_WEBHOOK_BASE_URL = undefined;
-    configValues.SERVER_URL = 'http://localhost:3000';
+    configValues.SERVER_URL = 'http://localhost:2000';
 
     await expect(
       service.enrichPerson({

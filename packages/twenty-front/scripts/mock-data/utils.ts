@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
 const SERVER_BASE_URL =
-  process.env.REACT_APP_SERVER_BASE_URL ?? 'http://localhost:3000';
+  process.env.REACT_APP_SERVER_BASE_URL ?? 'http://localhost:2000';
 const AUTH_EMAIL = 'jane.austen@apple.dev';
 const AUTH_PASSWORD = 'tim@apple.dev';
 const WORKSPACE_SUBDOMAIN = 'apple';

@@ -82,5 +82,6 @@ helm install my-twenty ./packages/twenty-docker/helm/twenty -f values-secrets.ya
 ## Production Tips
 
 - **Image versioning:** The chart defaults to `Chart.yaml`'s `appVersion` (currently v1.14.0). Override via `image.tag` in values to pin a different version or use `latest` for rolling updates.
+- **Server listener port:** Set `server.env.NODE_PORT`; do not put `NODE_PORT` in `server.extraEnv`, because the chart uses the resolved listener for the container port, health probes, and Service target.
 - **Keep secrets secure:** Avoid `--set` for sensitive values; use `-f values-secrets.yaml` or reference existing Kubernetes Secrets via `server.extraEnvFrom`.
   - S3 credentials can be referenced via `storage.s3.secretName + accessKeyIdKey/secretAccessKeyKey` to avoid embedding them in pod specs.

@@ -159,10 +159,10 @@ describe('SecureHttpClientService', () => {
     it('should pass through axios config like baseURL', () => {
       const service = new SecureHttpClientService(createMockConfigService());
       const client = service.getInternalHttpClient({
-        baseURL: 'http://localhost:3000',
+        baseURL: 'http://localhost:2000',
       });
 
-      expect(client.defaults.baseURL).toBe('http://localhost:3000');
+      expect(client.defaults.baseURL).toBe('http://localhost:2000');
     });
   });
 

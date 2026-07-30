@@ -209,7 +209,7 @@ jobs:
       - name: Waiting for server starting...
         run: |
           for i in {1..10}; do
-            if curl -f http://localhost:3000/healthz; then
+            if curl -f http://localhost:2000/healthz; then
               echo "Server ready!"
               exit 0
             fi
@@ -351,7 +351,7 @@ jobs:
           echo "BILLING_STRIPE_API_KEY=test-api-key" >> .env.test
           echo "BILLING_STRIPE_BASE_PLAN_PRODUCT_ID=test-base-plan-product-id" >> .env.test
           echo "BILLING_STRIPE_WEBHOOK_SECRET=test-webhook-secret" >> .env.test
-          echo "BILLING_PLAN_REQUIRED_LINK=http://localhost:3001/stripe-redirection" >> .env.test
+          echo "BILLING_PLAN_REQUIRED_LINK=http://localhost:2001/stripe-redirection" >> .env.test
       - name: Restore server build cache
         uses: ./.github/actions/restore-cache
         with:

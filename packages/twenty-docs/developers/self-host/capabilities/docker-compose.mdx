@@ -91,18 +91,21 @@ docker compose up -d
 
 ### Step 4: Access the Application
 
-If you host twentyCRM on your own computer, open your browser and navigate to [http://localhost:3000](http://localhost:3000).
+If you host twentyCRM on your own computer, open your browser and navigate to [http://localhost:2000](http://localhost:2000).
 
 If you host it on a server, check that the server is running and that everything is ok with
 ```bash
-curl http://localhost:3000
+curl http://localhost:2000
 ```
 
 ## Configuration
 
 ### Expose Twenty to External Access
 
-By default, Twenty runs on `localhost` at port `3000`. To access it via an external domain or IP address, you need to configure the `SERVER_URL` in your `.env` file.
+By default, Docker Compose exposes Twenty on `localhost` at port `2000`. Set
+`SERVER_PORT` to change the host port and keep `SERVER_URL` aligned with the
+public URL. The container continues to use its internal port `3000`, so reverse
+proxies and container health checks should target that internal port.
 
 #### Understanding `SERVER_URL`
 
@@ -127,7 +130,8 @@ We strongly recommend setting up Twenty behind a reverse proxy with SSL terminat
 
         If you're accessing the application directly without a reverse proxy:
         ```ini
-        SERVER_URL=http://your-domain-or-ip:3000
+        SERVER_PORT=2000
+        SERVER_URL=http://your-domain-or-ip:2000
         ```
 
     - **With Reverse Proxy (Standard Ports):**
@@ -146,16 +150,18 @@ We strongly recommend setting up Twenty behind a reverse proxy with SSL terminat
 
 2. **Update the `.env` File**
 
-    Open your `.env` file and update the `SERVER_URL`:
+    Open your `.env` file and update both the host port and public URL:
 
     ```ini
+    SERVER_PORT=your-port
     SERVER_URL=http(s)://your-domain-or-ip:your-port
     ```
 
     **Examples:**
     - Direct access without SSL:
         ```ini
-        SERVER_URL=http://123.45.67.89:3000
+        SERVER_PORT=2000
+        SERVER_URL=http://123.45.67.89:2000
         ```
     - Access via domain with SSL:
         ```ini
@@ -240,4 +246,3 @@ docker compose up -d
 ## Troubleshooting
 
 If you encounter any problem, check [Troubleshooting](/developers/self-host/capabilities/troubleshooting) for solutions.
-

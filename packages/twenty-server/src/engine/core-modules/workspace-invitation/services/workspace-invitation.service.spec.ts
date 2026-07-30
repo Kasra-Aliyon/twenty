@@ -72,7 +72,7 @@ describe('WorkspaceInvitationService', () => {
           useValue: {
             buildWorkspaceURL: jest
               .fn()
-              .mockResolvedValue(new URL('http://localhost:3001')),
+              .mockResolvedValue(new URL('http://localhost:2001')),
           },
         },
         {
@@ -205,7 +205,7 @@ describe('WorkspaceInvitationService', () => {
       } as AppTokenEntity);
       jest
         .spyOn(twentyConfigService, 'get')
-        .mockReturnValue('http://localhost:3000');
+        .mockReturnValue('http://localhost:2000');
       jest.spyOn(emailService, 'send').mockResolvedValue({} as any);
       jest
         .spyOn(onboardingService, 'setOnboardingInviteTeamPending')

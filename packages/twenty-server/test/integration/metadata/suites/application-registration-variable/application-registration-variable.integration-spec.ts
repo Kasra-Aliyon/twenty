@@ -27,7 +27,7 @@ const insertRegistrationDirect = async (
       universalIdentifier,
       name,
       oAuthClientId,
-      ['http://localhost:3000/callback'],
+      ['http://localhost:2000/callback'],
       ['read'],
       TEST_WORKSPACE_ID,
     ],

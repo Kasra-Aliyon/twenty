@@ -69,7 +69,7 @@
       "dependsOn": ["build"],
       "options": {
         "cwd": "packages/twenty-server",
-        "command": "curl -f -s http://localhost:3000/healthz > /dev/null 2>&1 && echo '✅ Server already running' || (echo '🚀 Server not running, starting...' && nohup nest start &)"
+        "command": "curl -f -s http://localhost:2000/healthz > /dev/null 2>&1 && echo '✅ Server already running' || (echo '🚀 Server not running, starting...' && nohup nest start &)"
       }
     },
     "start:debug": {

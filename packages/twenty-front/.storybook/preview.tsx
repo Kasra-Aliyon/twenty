@@ -62,7 +62,7 @@ initialize(
         return;
       }
 
-      if (request.url.startsWith('http://localhost:3000/files/')) {
+      if (request.url.startsWith('http://localhost:2000/files/')) {
         return;
       }
 

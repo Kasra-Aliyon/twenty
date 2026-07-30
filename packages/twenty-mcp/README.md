@@ -71,7 +71,7 @@ Required:
 
 | Variable          | Description                                                                                                                           |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `TWENTY_BASE_URL` | Twenty backend origin, without `/rest` or `/graphql`. Local default: `http://localhost:3000`; Twenty Cloud: `https://api.twenty.com`. |
+| `TWENTY_BASE_URL` | Twenty backend origin, without `/rest` or `/graphql`. Local default: `http://localhost:2000`; Twenty Cloud: `https://api.twenty.com`. |
 | `TWENTY_API_KEY`  | Role-scoped Twenty API key.                                                                                                           |
 
 Optional:

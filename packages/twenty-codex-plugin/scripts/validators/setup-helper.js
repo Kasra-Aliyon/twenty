@@ -4,7 +4,7 @@ const { spawnSync } = require('node:child_process');
 const { PLUGIN_ROOT } = require('./lib');
 
 const URL_NORMALIZATION_CASES = [
-  ['myworkspace.localhost:3001', 'http://myworkspace.localhost:3001/mcp'],
+  ['myworkspace.localhost:2000', 'http://myworkspace.localhost:2000/mcp'],
   ['crm.example.com', 'https://crm.example.com/mcp'],
   ['https://crm.example.com/mcp', 'https://crm.example.com/mcp'],
 ];

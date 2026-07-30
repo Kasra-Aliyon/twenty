@@ -1,1 +1,1 @@
-Run `yarn dev` while server running on port `3000`
+Run `yarn dev` while the server is running on port `2000`.

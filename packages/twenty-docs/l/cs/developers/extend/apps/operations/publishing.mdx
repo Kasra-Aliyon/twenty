@@ -146,11 +146,11 @@ Nasazuje vaši aplikaci na nakonfigurovaný server Twenty při každém pushi do
 
 | Nastavení               | Kde                                                             | Účel                                                                                                 |
 | ----------------------- | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `TWENTY_DEPLOY_URL`     | `env` v `cd.yml` (výchozí `http://localhost:3000`)              | Server Twenty, na který se nasazuje. Před prvním použitím to změňte na skutečnou URL vašeho serveru. |
+| `TWENTY_DEPLOY_URL`     | `env` v `cd.yml` (výchozí `http://localhost:2000`)              | Server Twenty, na který se nasazuje. Před prvním použitím to změňte na skutečnou URL vašeho serveru. |
 | `TWENTY_DEPLOY_API_KEY` | GitHub repozitář **Settings → Secrets and variables → Actions** | API klíč s oprávněním k nasazení na cílovém serveru.                                                 |
 
 <Note>
-Výchozí `TWENTY_DEPLOY_URL` `http://localhost:3000` je pouze zástupná hodnota — z runneru hostovaného GitHubem tato adresa nebude dosažitelná. Před povolením CD ji aktualizujte na veřejnou URL vašeho serveru (nebo použijte self-hosted runner s přístupem do sítě).
+Výchozí `TWENTY_DEPLOY_URL` `http://localhost:2000` je pouze zástupná hodnota — z runneru hostovaného GitHubem tato adresa nebude dosažitelná. Před povolením CD ji aktualizujte na veřejnou URL vašeho serveru (nebo použijte self-hosted runner s přístupem do sítě).
 </Note>
 
 **Spuštění náhledového nasazení z PR:**

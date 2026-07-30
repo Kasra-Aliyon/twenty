@@ -53,7 +53,7 @@ describe('McpCoreController', () => {
         },
         {
           provide: TwentyConfigService,
-          useValue: { get: jest.fn().mockReturnValue('http://localhost:3000') },
+          useValue: { get: jest.fn().mockReturnValue('http://localhost:2000') },
         },
         McpAuthGuard,
       ],

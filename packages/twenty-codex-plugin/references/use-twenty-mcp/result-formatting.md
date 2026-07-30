@@ -29,10 +29,11 @@ learn_tools -> execute_tool
 
 ## Workspace Origin
 
-Record links need a workspace origin, such as `https://example.twenty.com` or `http://workspace.localhost:3001`.
+Record links need a workspace origin, such as `https://example.twenty.com` or `http://workspace.localhost:2001`.
 
 - If the user provides the workspace URL, use that origin after removing any trailing `/mcp`.
 - If the selected MCP server URL is visible, derive the origin from it by removing the trailing `/mcp`.
+- For local development, map an MCP origin on port `2000` to the same hostname on frontend port `2001`; remote deployments remain same-origin after removing `/mcp`.
 - If the selected MCP server is configured locally but the URL is not in context, inspect that exact server configuration before formatting linked records.
 - If the origin is still unknown, do not invent a hostname. Explain that direct record links need the workspace URL.
 
@@ -54,7 +55,7 @@ Link records back to their original Twenty context whenever the workspace origin
 
 - Build record links with the Twenty show-page path: `/object/:objectNameSingular/:objectRecordId`.
 - For absolute links, combine the workspace origin with that path: `{workspaceOrigin}/object/{objectNameSingular}/{recordId}`.
-- Preserve the workspace scheme and port for local workspaces, for example `http://workspace.localhost:3001/object/person/record-id`.
+- Preserve the workspace scheme and port for local workspaces, for example `http://workspace.localhost:2001/object/person/record-id`.
 - Use `recordReferences` from MCP responses when available to get `objectNameSingular`, `recordId`, and `displayName`.
 - If `recordReferences` is missing, use the record's `id` and the object name from the tool that returned it.
 - If `recordReferences` and workspace origin are both available, the first record-name column or record heading MUST link the display name. Do not output unlinked record names in that case.

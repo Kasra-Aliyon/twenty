@@ -146,11 +146,11 @@ Despliega tu aplicación en un servidor de Twenty configurado en cada push a `ma
 
 | Configuración           | Dónde                                                                | Propósito                                                                                                     |
 | ----------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `TWENTY_DEPLOY_URL`     | `env` en `cd.yml` (por defecto `http://localhost:3000`)              | El servidor de Twenty al que se va a desplegar. Cámbialo por la URL real de tu servidor antes del primer uso. |
+| `TWENTY_DEPLOY_URL`     | `env` en `cd.yml` (por defecto `http://localhost:2000`)              | El servidor de Twenty al que se va a desplegar. Cámbialo por la URL real de tu servidor antes del primer uso. |
 | `TWENTY_DEPLOY_API_KEY` | Repositorio de GitHub **Settings → Secrets and variables → Actions** | Clave de API con permiso de despliegue en el servidor de destino.                                             |
 
 <Note>
-La `TWENTY_DEPLOY_URL` predeterminada de `http://localhost:3000` es un marcador de posición — no alcanzará nada desde un runner alojado por GitHub. Actualízala a la URL pública de tu servidor (o usa un runner autohospedado con acceso a la red) antes de habilitar CD.
+La `TWENTY_DEPLOY_URL` predeterminada de `http://localhost:2000` es un marcador de posición — no alcanzará nada desde un runner alojado por GitHub. Actualízala a la URL pública de tu servidor (o usa un runner autohospedado con acceso a la red) antes de habilitar CD.
 </Note>
 
 **Activar un despliegue de vista previa desde un PR:**

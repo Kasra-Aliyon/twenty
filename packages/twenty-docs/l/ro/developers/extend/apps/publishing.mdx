@@ -146,11 +146,11 @@ Implementează aplicația pe un server Twenty configurat la fiecare push pe `mai
 
 | Setare                  | Unde                                                       | Scop                                                                                                               |
 | ----------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `TWENTY_DEPLOY_URL`     | `env` în `cd.yml` (implicit `http://localhost:3000`)       | Serverul Twenty la care se face implementarea. Modifică-l la URL-ul real al serverului înainte de prima utilizare. |
+| `TWENTY_DEPLOY_URL`     | `env` în `cd.yml` (implicit `http://localhost:2000`)       | Serverul Twenty la care se face implementarea. Modifică-l la URL-ul real al serverului înainte de prima utilizare. |
 | `TWENTY_DEPLOY_API_KEY` | GitHub repo **Settings → Secrets and variables → Actions** | Cheie API cu permisiune de implementare pe serverul țintă.                                                         |
 
 <Note>
-Valoarea implicită a `TWENTY_DEPLOY_URL`, `http://localhost:3000`, este un placeholder — nu va putea accesa nimic dintr-un runner găzduit de GitHub. Actualizează-l la URL-ul public al serverului tău (sau folosește un runner self-hosted cu acces la rețea) înainte de a activa CD.
+Valoarea implicită a `TWENTY_DEPLOY_URL`, `http://localhost:2000`, este un placeholder — nu va putea accesa nimic dintr-un runner găzduit de GitHub. Actualizează-l la URL-ul public al serverului tău (sau folosește un runner self-hosted cu acces la rețea) înainte de a activa CD.
 </Note>
 
 **Declanșarea unei implementări de previzualizare dintr-un PR:**

@@ -97,19 +97,19 @@ docker compose up -d
 
 ### Krok 4: Přístup k aplikaci
 
-Pokud hostujete twentyCRM na svém vlastním počítači, otevřete svůj prohlížeč a přejděte na stránku [http://localhost:3000](http://localhost:3000).
+Pokud hostujete twentyCRM na svém vlastním počítači, otevřete svůj prohlížeč a přejděte na stránku [http://localhost:2000](http://localhost:2000).
 
 Pokud to hostujete na serveru, zkontrolujte, že server běží a že je vše v pořádku s
 
 ```bash
-curl http://localhost:3000
+curl http://localhost:2000
 ```
 
 ## Konfigurace
 
 ### Otevření Twenty pro Externí Přístup
 
-Ve výchozím nastavení běží Twenty na `localhost` na portu `3000`. Pro přístup přes externí doménu nebo IP adresu musíte nakonfigurovat `SERVER_URL` ve vašem `.env` souboru.
+Ve výchozím nastavení běží Twenty na `localhost` na portu `2000`. Pro přístup přes externí doménu nebo IP adresu musíte nakonfigurovat `SERVER_URL` ve vašem `.env` souboru.
 
 #### Porozumění `SERVER_URL`
 
@@ -135,7 +135,7 @@ Důrazně doporučujeme nastavit Twenty za reverzní proxy se SSL ukončením pr
      Pokud přistupujete k aplikaci přímo bez reverzní proxy:
 
      ```ini
-     SERVER_URL=http://vaše-doména-nebo-ip:3000
+     SERVER_URL=http://vaše-doména-nebo-ip:2000
      ```
 
    * **S Reverzní Proxy (Standardní Porty):**
@@ -156,9 +156,10 @@ Důrazně doporučujeme nastavit Twenty za reverzní proxy se SSL ukončením pr
 
 2. **Aktualizujte `.env` Soubor**
 
-   Otevřete svůj `.env` soubor a aktualizujte `SERVER_URL`:
+   Otevřete svůj `.env` soubor a aktualizujte hostitelský port i `SERVER_URL`:
 
    ```ini
+   SERVER_PORT=your-port
    SERVER_URL=http(s)://vaše-doména-nebo-ip:váš-port
    ```
 
@@ -166,7 +167,8 @@ Důrazně doporučujeme nastavit Twenty za reverzní proxy se SSL ukončením pr
 
    * Přímý přístup bez SSL:
      ```ini
-     SERVER_URL=http://123.45.67.89:3000
+     SERVER_PORT=2000
+     SERVER_URL=http://123.45.67.89:2000
      ```
    * Přístup přes doménu s SSL:
      ```ini

@@ -1,6 +1,6 @@
-interface ApolloPlaygroundOptions {
+type ApolloPlaygroundOptions = {
   path?: string;
-}
+};
 
 export const renderApolloPlayground = ({
   path = 'graphql',
@@ -16,7 +16,7 @@ export const renderApolloPlayground = ({
         target: "#sandbox",
         // Pass through your server href if you are embedding on an endpoint.
         // Otherwise, you can pass whatever endpoint you want Sandbox to start up with here.
-        initialEndpoint: "http://localhost:3000/${path}",
+        initialEndpoint: new URL("/${path}", window.location.origin).toString(),
       });
       // advanced options: https://www.apollographql.com/docs/studio/explorer/sandbox#embedding-sandbox
       </script>

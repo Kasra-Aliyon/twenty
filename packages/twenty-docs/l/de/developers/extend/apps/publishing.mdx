@@ -146,11 +146,11 @@ Stellt Ihre App bei jedem Push auf `main` auf einem konfigurierten Twenty-Server
 
 | Einstellung             | Wo                                                               | Zweck                                                                                                                      |
 | ----------------------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `TWENTY_DEPLOY_URL`     | `env` in `cd.yml` (standardmäßig `http://localhost:3000`)        | Der Twenty-Server, auf den bereitgestellt werden soll. Ändern Sie dies vor der ersten Verwendung auf die echte Server-URL. |
+| `TWENTY_DEPLOY_URL`     | `env` in `cd.yml` (standardmäßig `http://localhost:2000`)        | Der Twenty-Server, auf den bereitgestellt werden soll. Ändern Sie dies vor der ersten Verwendung auf die echte Server-URL. |
 | `TWENTY_DEPLOY_API_KEY` | GitHub-Repository **Settings → Secrets and variables → Actions** | API-Schlüssel mit Berechtigung zum Bereitstellen auf dem Zielserver.                                                       |
 
 <Note>
-Der Standardwert von `TWENTY_DEPLOY_URL` (`http://localhost:3000`) ist ein Platzhalter — von einem GitHub-gehosteten Runner ist er nicht erreichbar. Aktualisieren Sie sie auf die öffentliche URL Ihres Servers (oder verwenden Sie einen selbstgehosteten Runner mit Netzwerkzugriff), bevor Sie CD aktivieren.
+Der Standardwert von `TWENTY_DEPLOY_URL` (`http://localhost:2000`) ist ein Platzhalter — von einem GitHub-gehosteten Runner ist er nicht erreichbar. Aktualisieren Sie sie auf die öffentliche URL Ihres Servers (oder verwenden Sie einen selbstgehosteten Runner mit Netzwerkzugriff), bevor Sie CD aktivieren.
 </Note>
 
 **Eine Vorschau-Bereitstellung aus einem PR auslösen:**

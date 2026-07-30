@@ -14,18 +14,15 @@ import {
   getEnvironmentValue,
   isAllowedApolloWebhookRequest,
   isManagedQuickTunnelUrl,
+  resolveDevelopmentServerPort,
   setEnvironmentValue,
 } from './start-development-utils';
 
 const WORKSPACE_ROOT = resolve(
   fileURLToPath(new URL('../..', import.meta.url)),
 );
-const SERVER_ENV_PATH = resolve(
-  WORKSPACE_ROOT,
-  'packages/twenty-server/.env',
-);
-const WEBHOOK_BASE_URL_VARIABLE =
-  'APOLLO_PHONE_ENRICHMENT_WEBHOOK_BASE_URL';
+const SERVER_ENV_PATH = resolve(WORKSPACE_ROOT, 'packages/twenty-server/.env');
+const WEBHOOK_BASE_URL_VARIABLE = 'APOLLO_PHONE_ENRICHMENT_WEBHOOK_BASE_URL';
 const MAX_WEBHOOK_BODY_SIZE_IN_BYTES = 1_000_000;
 const TUNNEL_START_TIMEOUT_IN_MILLISECONDS = 60_000;
 const TUNNEL_RESTART_DELAY_IN_MILLISECONDS = 3_000;
@@ -45,7 +42,9 @@ const wait = (milliseconds: number): Promise<void> =>
     setTimeout(resolvePromise, milliseconds);
   });
 
-const waitForProcessExit = (childProcess: ChildProcess): Promise<ProcessExit> => {
+const waitForProcessExit = (
+  childProcess: ChildProcess,
+): Promise<ProcessExit> => {
   if (childProcess.exitCode !== null || childProcess.signalCode !== null) {
     return Promise.resolve({
       code: childProcess.exitCode,
@@ -100,6 +99,7 @@ const stopProcess = async (
 };
 
 const forwardApolloWebhook = (
+  serverPort: number,
   request: IncomingMessage,
   response: ServerResponse,
 ): void => {
@@ -139,7 +139,7 @@ const forwardApolloWebhook = (
     const proxyRequest = createHttpRequest(
       {
         hostname: '127.0.0.1',
-        port: 3000,
+        port: serverPort,
         path: request.url,
         method: 'POST',
         headers: {
@@ -176,11 +176,15 @@ const forwardApolloWebhook = (
   });
 };
 
-const startRestrictedWebhookProxy = async (): Promise<{
+const startRestrictedWebhookProxy = async (
+  serverPort: number,
+): Promise<{
   server: Server;
   port: number;
 }> => {
-  const server = createServer(forwardApolloWebhook);
+  const server = createServer((request, response) => {
+    forwardApolloWebhook(serverPort, request, response);
+  });
 
   await new Promise<void>((resolvePromise, reject) => {
     server.once('error', reject);
@@ -243,8 +247,9 @@ const startCloudflared = async (proxyPort: number): Promise<ManagedTunnel> => {
         publicBaseUrl ??= recentOutput.match(
           /https:\/\/[a-z0-9-]+\.trycloudflare\.com/i,
         )?.[0];
-        tunnelIsRegistered ||=
-          /Registered tunnel connection/.test(recentOutput);
+        tunnelIsRegistered ||= /Registered tunnel connection/.test(
+          recentOutput,
+        );
 
         if (publicBaseUrl && tunnelIsRegistered) {
           clearTimeout(timeout);
@@ -277,16 +282,21 @@ const startCloudflared = async (proxyPort: number): Promise<ManagedTunnel> => {
   }
 };
 
-const startApplication = (detached = true): ChildProcess =>
+const startApplication = (serverPort: number, detached = true): ChildProcess =>
   spawn('yarn', ['start:application'], {
     cwd: WORKSPACE_ROOT,
     detached: detached && process.platform !== 'win32',
-    env: process.env,
+    env: {
+      ...process.env,
+      NODE_PORT: String(serverPort),
+    },
     stdio: 'inherit',
   });
 
-const startApplicationWithoutTunnel = async (): Promise<number> => {
-  const applicationProcess = startApplication(false);
+const startApplicationWithoutTunnel = async (
+  serverPort: number,
+): Promise<number> => {
+  const applicationProcess = startApplication(serverPort, false);
   const { code } = await waitForProcessExit(applicationProcess);
 
   return code ?? 1;
@@ -299,6 +309,10 @@ const cloudflaredIsInstalled = (): boolean =>
 
 const runManagedDevelopment = async (): Promise<number> => {
   const serverEnvironment = await readFile(SERVER_ENV_PATH, 'utf8');
+  const serverPort = resolveDevelopmentServerPort(
+    serverEnvironment,
+    process.env.NODE_PORT,
+  );
   const configuredWebhookBaseUrl = getEnvironmentValue(
     serverEnvironment,
     WEBHOOK_BASE_URL_VARIABLE,
@@ -306,10 +320,7 @@ const runManagedDevelopment = async (): Promise<number> => {
   const tunnelIsDisabled =
     process.env.TWENTY_DISABLE_LOCAL_APOLLO_TUNNEL === 'true';
 
-  if (
-    tunnelIsDisabled ||
-    !isManagedQuickTunnelUrl(configuredWebhookBaseUrl)
-  ) {
+  if (tunnelIsDisabled || !isManagedQuickTunnelUrl(configuredWebhookBaseUrl)) {
     if (tunnelIsDisabled) {
       console.log(
         '[Apollo phone tunnel] Disabled by TWENTY_DISABLE_LOCAL_APOLLO_TUNNEL=true',
@@ -320,7 +331,7 @@ const runManagedDevelopment = async (): Promise<number> => {
       );
     }
 
-    return startApplicationWithoutTunnel();
+    return startApplicationWithoutTunnel(serverPort);
   }
 
   if (!cloudflaredIsInstalled()) {
@@ -331,11 +342,11 @@ const runManagedDevelopment = async (): Promise<number> => {
       '[Apollo phone tunnel] On macOS, install it once with: brew install cloudflared',
     );
 
-    return startApplicationWithoutTunnel();
+    return startApplicationWithoutTunnel(serverPort);
   }
 
   const { server: proxyServer, port: proxyPort } =
-    await startRestrictedWebhookProxy();
+    await startRestrictedWebhookProxy(serverPort);
 
   console.log(
     `[Apollo phone tunnel] Restricted webhook proxy listening on 127.0.0.1:${proxyPort}`,
@@ -409,7 +420,7 @@ const runManagedDevelopment = async (): Promise<number> => {
         '[Apollo phone tunnel] Only Apollo phone webhook requests are publicly forwarded.',
       );
 
-      activeApplicationProcess = startApplication();
+      activeApplicationProcess = startApplication(serverPort);
 
       const outcome = await Promise.race([
         waitForProcessExit(activeApplicationProcess).then((exit) => ({

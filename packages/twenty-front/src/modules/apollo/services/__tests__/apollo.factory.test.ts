@@ -91,7 +91,7 @@ const mockWorkspace = {
 };
 
 const createMockOptions = (): Options => ({
-  uri: 'http://localhost:3000',
+  uri: 'http://localhost:2000',
   currentWorkspaceMember: mockWorkspaceMember,
   currentWorkspace: mockWorkspace,
   cache: new InMemoryCache(),

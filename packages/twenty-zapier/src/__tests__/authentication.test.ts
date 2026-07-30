@@ -17,7 +17,7 @@ describe('custom auth', () => {
     const bundle = getBundleForTest();
     const bundleWithApiUrl = {
       ...bundle,
-      authData: { ...bundle.authData, apiUrl: 'http://localhost:3000' },
+      authData: { ...bundle.authData, apiUrl: 'http://localhost:2000' },
     };
     const response = await appTester(App.authentication.test, bundleWithApiUrl);
     expect(response.data).toHaveProperty('currentWorkspace');

@@ -49,9 +49,13 @@ server:
       memory: 1024Mi
 
   env:
+    # Keep the container listener on 3000 unless you intentionally override it.
+    NODE_PORT: 3000
     SIGN_IN_PREFILLED: "false"
     ACCESS_TOKEN_EXPIRES_IN: "7d"
     LOGIN_TOKEN_EXPIRES_IN: "1h"
+  # Do not define NODE_PORT here; use server.env.NODE_PORT so probes and the
+  # Service target stay aligned with the application listener.
   extraEnv: []
   # - name: EMAIL_DRIVER
   #   value: smtp

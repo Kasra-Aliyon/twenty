@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
-  MAIN_SERVER_PORT: 3000
+  MAIN_SERVER_PORT: 2000
   CURRENT_SERVER_PORT: 3002
 
 permissions:

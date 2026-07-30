@@ -18,6 +18,11 @@ export default defineConfig({
     ],
     host_permissions: [
       '*://*.linkedin.com/*',
+      'http://localhost:2000/*',
+      'http://localhost:2001/*',
+      'http://127.0.0.1:2000/*',
+      'http://127.0.0.1:2001/*',
+      // Keep the former local defaults during the port-migration window.
       'http://localhost:3000/*',
       'http://localhost:3001/*',
       'http://127.0.0.1:3000/*',

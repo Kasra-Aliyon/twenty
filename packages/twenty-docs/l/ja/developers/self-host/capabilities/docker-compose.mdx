@@ -94,19 +94,19 @@ docker compose up -d
 
 ### ステップ 4: アプリケーションにアクセス
 
-自分のコンピュータでtwentyCRMをホストしている場合は、ブラウザを開いて[http://localhost:3000](http://localhost:3000)にアクセスします。
+自分のコンピュータでtwentyCRMをホストしている場合は、ブラウザを開いて[http://localhost:2000](http://localhost:2000)にアクセスします。
 
 サーバーでホストしている場合、サーバーが稼働していてすべてが正常であるかを確認してください
 
 ```bash
-curl http://localhost:3000
+curl http://localhost:2000
 ```
 
 ## 構成
 
 ### Twentyを外部アクセスに公開
 
-デフォルトでは、Twentyはポート`3000`で`localhost`上で動作します。 外部ドメインまたはIPアドレス経由でアクセスするには、`.env`ファイルで`SERVER_URL`を構成する必要があります。 外部ドメインまたはIPアドレス経由でアクセスするには、`.env`ファイルで`SERVER_URL`を構成する必要があります。
+デフォルトでは、Twentyはポート`2000`で`localhost`上で動作します。 外部ドメインまたはIPアドレス経由でアクセスするには、`.env`ファイルで`SERVER_URL`を構成する必要があります。 外部ドメインまたはIPアドレス経由でアクセスするには、`.env`ファイルで`SERVER_URL`を構成する必要があります。
 
 #### `SERVER_URL`の理解
 
@@ -132,7 +132,7 @@ SSL（HTTPS）は、特定のブラウザ機能が正しく動作するために
      リバースプロキシなしでアプリケーションに直接アクセスする場合:
 
      ```ini
-     SERVER_URL=http://your-domain-or-ip:3000
+     SERVER_URL=http://your-domain-or-ip:2000
      ```
 
    * **リバースプロキシを使用する場合（標準ポート）:**
@@ -156,6 +156,7 @@ SSL（HTTPS）は、特定のブラウザ機能が正しく動作するために
    .env`ファイルを開き、`SERVER_URL\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\`を更新します:
 
    ```ini
+   SERVER_PORT=your-port
    SERVER_URL=http(s)://your-domain-or-ip:your-port
    ```
 
@@ -163,7 +164,8 @@ SSL（HTTPS）は、特定のブラウザ機能が正しく動作するために
 
    * SSLなしの直接アクセス:
      ```ini
-     SERVER_URL=http://123.45.67.89:3000
+     SERVER_PORT=2000
+     SERVER_URL=http://123.45.67.89:2000
      ```
    * ドメイン経由でSSLを使用してアクセス:
      ```ini

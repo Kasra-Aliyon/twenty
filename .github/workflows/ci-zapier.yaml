@@ -71,7 +71,7 @@ jobs:
         run: |
           npx nx run twenty-server:start:ci &
           echo "Waiting for server to be ready..."
-          timeout 60 bash -c 'until curl -sf http://localhost:3000/healthz; do sleep 2; done'
+          timeout 60 bash -c 'until curl -sf http://localhost:2000/healthz; do sleep 2; done'
 
       - name: Start worker
         working-directory: packages/twenty-server

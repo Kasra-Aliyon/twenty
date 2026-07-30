@@ -146,11 +146,11 @@ yarn twenty app:publish --private
 
 | 설정                      | 위치                                                        | 목적                                               |
 | ----------------------- | --------------------------------------------------------- | ------------------------------------------------ |
-| `TWENTY_DEPLOY_URL`     | `cd.yml`의 `env`(기본값 `http://localhost:3000`)              | 배포 대상 Twenty 서버입니다. 처음 사용하기 전에 실제 서버 URL로 변경하세요. |
+| `TWENTY_DEPLOY_URL`     | `cd.yml`의 `env`(기본값 `http://localhost:2000`)              | 배포 대상 Twenty 서버입니다. 처음 사용하기 전에 실제 서버 URL로 변경하세요. |
 | `TWENTY_DEPLOY_API_KEY` | GitHub 저장소 **Settings → Secrets and variables → Actions** | 대상 서버에서 배포 권한이 있는 API 키입니다.                      |
 
 <Note>
-기본 `TWENTY_DEPLOY_URL` 값 `http://localhost:3000`은 플레이스홀더이며 — GitHub 호스팅 러너에서는 아무 곳에도 도달하지 않습니다. CD를 활성화하기 전에 서버의 퍼블릭 URL로 업데이트하세요(또는 네트워크에 접근 가능한 셀프 호스티드 러너를 사용하세요).
+기본 `TWENTY_DEPLOY_URL` 값 `http://localhost:2000`은 플레이스홀더이며 — GitHub 호스팅 러너에서는 아무 곳에도 도달하지 않습니다. CD를 활성화하기 전에 서버의 퍼블릭 URL로 업데이트하세요(또는 네트워크에 접근 가능한 셀프 호스티드 러너를 사용하세요).
 </Note>
 
 **PR에서 프리뷰 배포 트리거하기:**

@@ -41,7 +41,7 @@ yarn twenty app:uninstall  # Uninstall app from workspace
 If your project includes the example integration test (`src/__tests__/app-install.integration-test.ts`), you can run it with:
 
 ```bash
-# Make sure a Twenty server is running at http://localhost:3000
+# Make sure a Twenty server is running at http://localhost:2000
 yarn test
 ```
 

@@ -12,7 +12,7 @@ import {
   type TypeRef,
 } from './introspection.interface';
 
-const GRAPHQL_URL = 'http://localhost:3000/graphql';
+const GRAPHQL_URL = 'http://localhost:2000/graphql';
 const BEARER_TOKEN =
   'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIyMDIwMjAyMC05ZTNiLTQ2ZDQtYTU1Ni04OGI5ZGRjMmIwMzQiLCJ3b3Jrc3BhY2VJZCI6IjIwMjAyMDIwLTFjMjUtNGQwMi1iZjI1LTZhZWNjZjdlYTQxOSIsIndvcmtzcGFjZU1lbWJlcklkIjoiMjAyMDIwMjAtMDY4Ny00YzQxLWI3MDctZWQxYmZjYTk3MmE3IiwiaWF0IjoxNzI2NDkyNTAyLCJleHAiOjEzMjQ1MDE2NTAyfQ.zM6TbfeOqYVH5Sgryc2zf02hd9uqUOSL1-iJlMgwzsI';
 const TEST_OUTPUT_DIR = './test/integration/graphql/suites/object-generated';

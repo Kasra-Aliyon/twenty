@@ -1,5 +1,7 @@
 const APOLLO_WEBHOOK_PATH_PATTERN =
   /^\/webhooks\/apollo\/enrichment\/[^/?]+(?:\?.*)?$/;
+const DEFAULT_DEVELOPMENT_SERVER_PORT = 2000;
+const MAXIMUM_TCP_PORT = 65_535;
 
 const escapeRegularExpression = (value: string): string =>
   value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -25,6 +27,29 @@ export const getEnvironmentValue = (
   return hasMatchingQuotes ? value.slice(1, -1) : value;
 };
 
+export const resolveDevelopmentServerPort = (
+  serverEnvironment: string,
+  processEnvironmentPort: string | undefined,
+): number => {
+  const rawPort =
+    processEnvironmentPort ??
+    getEnvironmentValue(serverEnvironment, 'NODE_PORT');
+
+  if (rawPort === undefined) {
+    return DEFAULT_DEVELOPMENT_SERVER_PORT;
+  }
+
+  const port = Number(rawPort);
+
+  if (!Number.isInteger(port) || port < 1 || port > MAXIMUM_TCP_PORT) {
+    throw new Error(
+      `NODE_PORT must be an integer between 1 and ${MAXIMUM_TCP_PORT}`,
+    );
+  }
+
+  return port;
+};
+
 export const setEnvironmentValue = (
   contents: string,
   variableName: string,
@@ -44,11 +69,8 @@ export const setEnvironmentValue = (
   return `${contents.trimEnd()}\n${nextLine}\n`;
 };
 
-export const isManagedQuickTunnelUrl = (
-  baseUrl: string | undefined,
-): boolean =>
-  !baseUrl ||
-  /^https:\/\/[a-z0-9-]+\.trycloudflare\.com\/?$/i.test(baseUrl);
+export const isManagedQuickTunnelUrl = (baseUrl: string | undefined): boolean =>
+  !baseUrl || /^https:\/\/[a-z0-9-]+\.trycloudflare\.com\/?$/i.test(baseUrl);
 
 export const isAllowedApolloWebhookRequest = (
   method: string | undefined,

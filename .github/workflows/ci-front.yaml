@@ -40,7 +40,7 @@ jobs:
     timeout-minutes: 30
     runs-on: ubuntu-latest-8-cores
     env:
-      REACT_APP_SERVER_BASE_URL: http://localhost:3000
+      REACT_APP_SERVER_BASE_URL: http://localhost:2000
     steps:
       - name: Fetch local actions
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -76,7 +76,7 @@ jobs:
         storybook_scope: ${{ github.event_name == 'push' && fromJSON('["modules", "pages"]') || fromJSON('["modules", "pages", "performance"]') }}
     env:
       SHARD_COUNTER: 4
-      REACT_APP_SERVER_BASE_URL: http://localhost:3000
+      REACT_APP_SERVER_BASE_URL: http://localhost:2000
       STORYBOOK_URL: http://localhost:6006
     steps:
       - name: Fetch local actions

@@ -13,10 +13,10 @@ Accept any of these forms:
 ```text
 myworkspace.twenty.com
 myworkspace.customdomain.com
-myworkspace.localhost:3001
+myworkspace.localhost:2000
 https://myworkspace.twenty.com
 https://myworkspace.customdomain.com/mcp
-http://myworkspace.localhost:3001/mcp
+http://myworkspace.localhost:2000/mcp
 ```
 
 Optional inputs:
@@ -44,7 +44,7 @@ Examples:
 myworkspace.twenty.com       -> https://myworkspace.twenty.com/mcp       name: twenty-myworkspace
 acme.example.com             -> https://acme.example.com/mcp             name: twenty-acme-example
 myworkspace.customdomain.com -> https://myworkspace.customdomain.com/mcp name: twenty-myworkspace-customdomain
-myworkspace.localhost:3001   -> http://myworkspace.localhost:3001/mcp   name: twenty-myworkspace-localhost-3001
+myworkspace.localhost:2000   -> http://myworkspace.localhost:2000/mcp   name: twenty-myworkspace-localhost-2000
 ```
 
 ## Setup Workflow
@@ -59,7 +59,7 @@ Use `--name <server-name>` when configuring multiple Twenty workspaces:
 
 ```bash
 bash packages/twenty-codex-plugin/scripts/setup-mcp.sh --name twenty-prod acme.twenty.com
-bash packages/twenty-codex-plugin/scripts/setup-mcp.sh --name twenty-local acme.localhost:3001
+bash packages/twenty-codex-plugin/scripts/setup-mcp.sh --name twenty-local acme.localhost:2000
 ```
 
 Use `--force-login` only when running from a normal terminal and Codex did not open OAuth automatically:
@@ -71,7 +71,7 @@ bash packages/twenty-codex-plugin/scripts/setup-mcp.sh --force-login acme.twenty
 Use `--print-url` to preview normalization without changing client config:
 
 ```bash
-bash packages/twenty-codex-plugin/scripts/setup-mcp.sh --print-url myworkspace.localhost:3001
+bash packages/twenty-codex-plugin/scripts/setup-mcp.sh --print-url myworkspace.localhost:2000
 ```
 
 The helper:
@@ -95,7 +95,7 @@ codex mcp login twenty-myworkspace
 For local development:
 
 ```bash
-codex mcp add twenty-local --url http://myworkspace.localhost:3001/mcp
+codex mcp add twenty-local --url http://myworkspace.localhost:2000/mcp
 codex mcp login twenty-local
 ```
 

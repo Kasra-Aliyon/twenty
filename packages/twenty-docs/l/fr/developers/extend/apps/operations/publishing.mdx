@@ -146,11 +146,11 @@ Déploie votre application vers un serveur Twenty configuré à chaque push sur 
 
 | Paramètre               | Où                                                          | Objectif                                                                                                                |
 | ----------------------- | ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `TWENTY_DEPLOY_URL`     | `env` dans `cd.yml` (par défaut `http://localhost:3000`)    | Le serveur Twenty vers lequel déployer. Remplacez ceci par l’URL réelle de votre serveur avant la première utilisation. |
+| `TWENTY_DEPLOY_URL`     | `env` dans `cd.yml` (par défaut `http://localhost:2000`)    | Le serveur Twenty vers lequel déployer. Remplacez ceci par l’URL réelle de votre serveur avant la première utilisation. |
 | `TWENTY_DEPLOY_API_KEY` | Dépôt GitHub **Settings → Secrets and variables → Actions** | Clé API avec la permission de déployer sur le serveur cible.                                                            |
 
 <Note>
-La valeur par défaut de `TWENTY_DEPLOY_URL`, `http://localhost:3000`, est un espace réservé — elle n’atteindra rien depuis un runner hébergé par GitHub. Remplacez-la par l’URL publique de votre serveur (ou utilisez un runner auto-hébergé avec accès réseau) avant d’activer la CD.
+La valeur par défaut de `TWENTY_DEPLOY_URL`, `http://localhost:2000`, est un espace réservé — elle n’atteindra rien depuis un runner hébergé par GitHub. Remplacez-la par l’URL publique de votre serveur (ou utilisez un runner auto-hébergé avec accès réseau) avant d’activer la CD.
 </Note>
 
 **Déclencher un déploiement de prévisualisation depuis une PR:**

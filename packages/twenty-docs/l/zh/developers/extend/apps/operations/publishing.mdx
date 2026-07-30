@@ -146,11 +146,11 @@ yarn twenty app:publish --private
 
 | 设置                      | 位置                                                       | 目的                                       |
 | ----------------------- | -------------------------------------------------------- | ---------------------------------------- |
-| `TWENTY_DEPLOY_URL`     | `cd.yml` 中的 `env`（默认值为 `http://localhost:3000`）          | 要部署到的 Twenty 服务器。 首次使用前将其更改为你真实的服务器 URL。 |
+| `TWENTY_DEPLOY_URL`     | `cd.yml` 中的 `env`（默认值为 `http://localhost:2000`）          | 要部署到的 Twenty 服务器。 首次使用前将其更改为你真实的服务器 URL。 |
 | `TWENTY_DEPLOY_API_KEY` | GitHub 仓库 **Settings → Secrets and variables → Actions** | 在目标服务器上具有部署权限的 API 密钥。                   |
 
 <Note>
-默认的 `TWENTY_DEPLOY_URL` 值 `http://localhost:3000` 只是占位符——从 GitHub 托管的 runner 无法访问任何资源。 在启用 CD 之前，将其更新为你服务器的公网 URL（或使用具有网络访问权限的自托管 runner）。
+默认的 `TWENTY_DEPLOY_URL` 值 `http://localhost:2000` 只是占位符——从 GitHub 托管的 runner 无法访问任何资源。 在启用 CD 之前，将其更新为你服务器的公网 URL（或使用具有网络访问权限的自托管 runner）。
 </Note>
 
 **从 PR 触发预览部署:**

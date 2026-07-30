@@ -72,7 +72,7 @@ Supported workspace forms:
 myworkspace.twenty.com       -> https://myworkspace.twenty.com/mcp       name: twenty-myworkspace
 acme.example.com             -> https://acme.example.com/mcp             name: twenty-acme-example
 myworkspace.customdomain.com -> https://myworkspace.customdomain.com/mcp name: twenty-myworkspace-customdomain
-myworkspace.localhost:3001   -> http://myworkspace.localhost:3001/mcp    name: twenty-myworkspace-localhost-3001
+myworkspace.localhost:2000   -> http://myworkspace.localhost:2000/mcp    name: twenty-myworkspace-localhost-2000
 ```
 
 ### App Declaration

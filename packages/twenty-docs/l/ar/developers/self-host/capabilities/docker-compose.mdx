@@ -97,19 +97,19 @@ docker compose up -d
 
 ### الخطوة 4: الوصول إلى التطبيق
 
-إذا كنت تستضيف twentyCRM على جهازك، فافتح المتصفح وانتقل إلى [http://localhost:3000](http://localhost:3000).
+إذا كنت تستضيف twentyCRM على جهازك، فافتح المتصفح وانتقل إلى [http://localhost:2000](http://localhost:2000).
 
 إذا كنت تستضيفه على خادم، فتحقق من أن الخادم يعمل وأن كل شيء على ما يرام باستخدام
 
 ```bash
-curl http://localhost:3000
+curl http://localhost:2000
 ```
 
 ## التكوين
 
 ### جعل Twenty متاحاً للوصول الخارجي
 
-افتراضياً، يعمل Twenty على `localhost` على المنفذ `3000`. للوصول إليه عبر نطاق خارجي أو عنوان IP، تحتاج إلى تكوين `SERVER_URL` في ملف `.env`.
+افتراضياً، يعمل Twenty على `localhost` على المنفذ `2000`. للوصول إليه عبر نطاق خارجي أو عنوان IP، تحتاج إلى تكوين `SERVER_URL` في ملف `.env`.
 
 #### فهم `SERVER_URL`
 
@@ -135,7 +135,7 @@ SSL (HTTPS) مطلوب لعمل ميزات معينة في المتصفح بشك
      إذا كنت تصل إلى التطبيق مباشرة بدون وكيل عكسي:
 
      ```ini
-     SERVER_URL=http://your-domain-or-ip:3000
+     SERVER_URL=http://your-domain-or-ip:2000
      ```
 
    * **مع وكيل عكسي (المنافذ القياسية):**
@@ -159,6 +159,7 @@ SSL (HTTPS) مطلوب لعمل ميزات معينة في المتصفح بشك
    افتح ملف `.env` وقم بتحديث `SERVER_URL`:
 
    ```ini
+   SERVER_PORT=your-port
    SERVER_URL=http(s)://your-domain-or-ip:your-port
    ```
 
@@ -166,7 +167,8 @@ SSL (HTTPS) مطلوب لعمل ميزات معينة في المتصفح بشك
 
    * الوصول المباشر بدون SSL:
      ```ini
-     SERVER_URL=http://123.45.67.89:3000
+     SERVER_PORT=2000
+     SERVER_URL=http://123.45.67.89:2000
      ```
    * الوصول عبر النطاق باستخدام SSL:
      ```ini

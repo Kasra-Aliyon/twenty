@@ -97,19 +97,19 @@ docker compose up -d
 
 ### 步骤4：访问应用程序
 
-如果您在自己的电脑上托管twentyCRM，打开浏览器并导航到[http://localhost:3000](http://localhost:3000)。
+如果您在自己的电脑上托管twentyCRM，打开浏览器并导航到[http://localhost:2000](http://localhost:2000)。
 
 如果您在服务器上托管它，请检查服务器是否正在运行并确保一切正常。
 
 ```bash
-curl http://localhost:3000
+curl http://localhost:2000
 ```
 
 ## 配置
 
 ### 将Twenty暴露给外部访问
 
-默认情况下，Twenty在`localhost`的端口`3000`上运行。 要通过外部域或IP地址访问它，您需要在`.env`文件中配置`SERVER_URL`。
+默认情况下，Twenty在`localhost`的端口`2000`上运行。 要通过外部域或IP地址访问它，您需要在`.env`文件中配置`SERVER_URL`。
 
 #### 理解`SERVER_URL`
 
@@ -135,7 +135,7 @@ curl http://localhost:3000
      如果您直接访问应用程序而没有反向代理：
 
      ```ini
-     SERVER_URL=http://your-domain-or-ip:3000
+     SERVER_URL=http://your-domain-or-ip:2000
      ```
 
    * **有反向代理（标准端口）：**
@@ -159,6 +159,7 @@ curl http://localhost:3000
    打开您的`.env`文件并更新`SERVER_URL`：
 
    ```ini
+   SERVER_PORT=your-port
    SERVER_URL=http(s)://your-domain-or-ip:your-port
    ```
 
@@ -166,7 +167,8 @@ curl http://localhost:3000
 
    * 无需SSL的直接访问：
      ```ini
-     SERVER_URL=http://123.45.67.89:3000
+     SERVER_PORT=2000
+     SERVER_URL=http://123.45.67.89:2000
      ```
    * 通过域名访问使用SSL：
      ```ini

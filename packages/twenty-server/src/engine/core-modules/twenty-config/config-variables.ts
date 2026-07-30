@@ -1229,7 +1229,7 @@ export class ConfigVariables {
   })
   @CastToPositiveNumber()
   @IsOptional()
-  NODE_PORT = 3000;
+  NODE_PORT = 2000;
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.SERVER_CONFIG,
@@ -1239,7 +1239,7 @@ export class ConfigVariables {
   })
   @IsUrl({ require_tld: false, require_protocol: true })
   @IsOptional()
-  SERVER_URL = 'http://localhost:3000';
+  SERVER_URL = 'http://localhost:2000';
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.SERVER_CONFIG,

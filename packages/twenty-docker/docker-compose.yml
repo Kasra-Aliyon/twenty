@@ -6,7 +6,9 @@ services:
     volumes:
       - server-local-data:/app/packages/twenty-server/.local-storage
     ports:
-      - "3000:3000"
+      # New installs use SERVER_PORT=2000 from .env.example. The 3000 fallback
+      # keeps existing .env files, created before SERVER_PORT existed, working.
+      - "${SERVER_PORT:-3000}:3000"
     environment:
       NODE_PORT: 3000
       PG_DATABASE_URL: postgres://${PG_DATABASE_USER:-postgres}:${PG_DATABASE_PASSWORD:-postgres}@${PG_DATABASE_HOST:-db}:${PG_DATABASE_PORT:-5432}/default
@@ -52,6 +54,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
+      # Health checks run inside the container, where NODE_PORT remains 3000.
       test: curl --fail http://localhost:3000/healthz
       interval: 5s
       timeout: 5s

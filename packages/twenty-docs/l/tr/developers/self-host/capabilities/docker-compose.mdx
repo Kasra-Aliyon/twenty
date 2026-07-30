@@ -97,19 +97,19 @@ docker compose up -d
 
 ### Adım 4: Uygulamaya Erişin
 
-Eğer twentyCRM'i kendi bilgisayarınızda barındırıyorsanız, tarayıcınızı açın ve [http://localhost:3000](http://localhost:3000) adresine gidin.
+Eğer twentyCRM'i kendi bilgisayarınızda barındırıyorsanız, tarayıcınızı açın ve [http://localhost:2000](http://localhost:2000) adresine gidin.
 
 Bir sunucuda barındırıyorsanız, sunucunun çalıştığını ve her şeyin yolunda olduğunu kontrol edin
 
 ```bash
-curl http://localhost:3000
+curl http://localhost:2000
 ```
 
 ## Yapılandırma
 
 ### Twenty'yi Dış Erişime Açma
 
-Varsayılan olarak, Twenty `localhost` üzerinde `3000` portunda çalışır. Harici bir alan adı veya IP adresi aracılığıyla erişim sağlamak için `.env` dosyanızda `SERVER_URL`'i yapılandırmanız gerekir.
+Varsayılan olarak, Twenty `localhost` üzerinde `2000` portunda çalışır. Harici bir alan adı veya IP adresi aracılığıyla erişim sağlamak için `.env` dosyanızda `SERVER_URL`'i yapılandırmanız gerekir.
 
 #### `SERVER_URL`'a Genel Bakış
 
@@ -135,7 +135,7 @@ Optimum güvenlik ve işlevsellik için Twenty'nin SSL sonlandırma ile bir ters
      Uygulamaya doğrudan bir ters proxy olmadan erişiyorsanız:
 
      ```ini
-     SERVER_URL=http://alan-adiniz-veya-ip:3000
+     SERVER_URL=http://alan-adiniz-veya-ip:2000
      ```
 
    * **Ters Proxy ile (Standart Portlar):**
@@ -156,9 +156,10 @@ Optimum güvenlik ve işlevsellik için Twenty'nin SSL sonlandırma ile bir ters
 
 2. **`.env` Dosyasını Güncelleyin**
 
-   `.env` dosyanızı açın ve `SERVER_URL`'i güncelleyin:
+   `.env` dosyanızı açın ve hem ana makine portunu hem de `SERVER_URL`'i güncelleyin:
 
    ```ini
+   SERVER_PORT=your-port
    SERVER_URL=http(s)://alan-adiniz-veya-ip:portunuz
    ```
 
@@ -166,7 +167,8 @@ Optimum güvenlik ve işlevsellik için Twenty'nin SSL sonlandırma ile bir ters
 
    * SSL olmadan doğrudan erişim:
      ```ini
-     SERVER_URL=http://123.45.67.89:3000
+     SERVER_PORT=2000
+     SERVER_URL=http://123.45.67.89:2000
      ```
    * SSL ile alan adı aracılığıyla erişim:
      ```ini

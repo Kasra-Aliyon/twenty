@@ -146,11 +146,11 @@ Gizli anahtar gerekmez — test örneği geçicidir ve yalnızca iş süresi boy
 
 | Ayar                    | Nerede                                                       | Amaç                                                                                                |
 | ----------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
-| `TWENTY_DEPLOY_URL`     | `cd.yml` içinde `env` (varsayılan: `http://localhost:3000`)  | Dağıtımın yapılacağı Twenty sunucusu. İlk kullanımdan önce bunu gerçek sunucu URL'nizle değiştirin. |
+| `TWENTY_DEPLOY_URL`     | `cd.yml` içinde `env` (varsayılan: `http://localhost:2000`)  | Dağıtımın yapılacağı Twenty sunucusu. İlk kullanımdan önce bunu gerçek sunucu URL'nizle değiştirin. |
 | `TWENTY_DEPLOY_API_KEY` | GitHub deposu **Settings → Secrets and variables → Actions** | Hedef sunucuda dağıtım iznine sahip API anahtarı.                                                   |
 
 <Note>
-Varsayılan `TWENTY_DEPLOY_URL` olan `http://localhost:3000` bir yer tutucudur — GitHub barındırmalı bir çalıştırıcıdan hiçbir yere erişemez. CD'yi etkinleştirmeden önce bunu sunucunuzun genel URL'siyle güncelleyin (veya ağ erişimi olan öz barındırılan bir çalıştırıcı kullanın).
+Varsayılan `TWENTY_DEPLOY_URL` olan `http://localhost:2000` bir yer tutucudur — GitHub barındırmalı bir çalıştırıcıdan hiçbir yere erişemez. CD'yi etkinleştirmeden önce bunu sunucunuzun genel URL'siyle güncelleyin (veya ağ erişimi olan öz barındırılan bir çalıştırıcı kullanın).
 </Note>
 
 **Bir PR'den bir önizleme dağıtımını tetikleme:**

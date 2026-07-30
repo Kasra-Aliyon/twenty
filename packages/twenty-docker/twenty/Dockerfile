@@ -103,7 +103,12 @@ WORKDIR /app/packages/twenty-server
 
 ARG APP_VERSION
 ENV APP_VERSION=$APP_VERSION
-ENV NODE_ENV=production
+# Preserve the published image's internal/bare-run contract. Compose, Helm,
+# and the Makefile map the migrated host port 2000 to this listener and set
+# their public SERVER_URL explicitly.
+ENV NODE_ENV=production \
+    NODE_PORT=3000 \
+    SERVER_URL=http://localhost:3000
 
 # Workspace root config
 COPY --chown=1000 --from=twenty-server-build /app/package.json /app/yarn.lock /app/.yarnrc.yml /app/

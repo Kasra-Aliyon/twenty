@@ -32,7 +32,7 @@ Twenty gives technical teams the building blocks for a custom CRM that meets com
 
 ### <img src="./packages/twenty-website/public/images/readme/code-icon.svg" width="14" height="14"/> Run locally
 
-Use this when you want the full CRM running on your machine. It starts the app services, prepares the database, and serves the CRM at [http://localhost:3001](http://localhost:3001).
+Use this when you want the full CRM running on your machine. It starts the app services, prepares the database, and serves the CRM at [http://localhost:2001](http://localhost:2001).
 
 ```bash
 # From the repository root
@@ -46,7 +46,30 @@ bash packages/twenty-utils/setup-dev-env.sh
 yarn start
 ```
 
-The frontend runs at [http://localhost:3001](http://localhost:3001), and the backend API runs at [http://localhost:3000](http://localhost:3000).
+The frontend runs at [http://localhost:2001](http://localhost:2001), and the backend API runs at [http://localhost:2000](http://localhost:2000).
+
+Existing `.env` files are preserved by the setup script. When upgrading an
+older checkout, update the frontend/API URLs and OAuth callbacks in
+`packages/twenty-front/.env` and `packages/twenty-server/.env`, then restart all
+Twenty processes. The frontend origin change requires a one-time browser
+sign-in. If Google or Microsoft authentication is enabled, add the new
+`localhost:2000` callback URLs to the provider allowlists before removing the
+old URLs.
+
+Database-backed callback overrides can be previewed and migrated
+idempotently through Twenty's configuration service:
+
+```bash
+# Dry-run first
+npx nx run twenty-server:command -- config:migrate-local-development-ports
+
+# Apply only exact localhost:3000/3001 matches
+npx nx run twenty-server:command -- config:migrate-local-development-ports --apply
+```
+
+This command intentionally does not rewrite custom domains or environment
+files. `NODE_PORT`, `SERVER_URL`, `FRONTEND_URL`, and provider allowlists still
+need to be aligned manually when they are environment- or provider-managed.
 
 When `cloudflared` is installed, `yarn start` also manages a restricted HTTPS
 tunnel for Apollo phone-enrichment callbacks. The generated URL is written to

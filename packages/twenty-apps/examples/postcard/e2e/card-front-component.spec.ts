@@ -35,7 +35,7 @@ const resolveWorkspaceUrl = (): string => {
       .trim()
       .replace(/\/$/, '');
   } catch {
-    return 'http://app.localhost:3001';
+    return 'http://app.localhost:2001';
   }
 };
 

@@ -21,7 +21,7 @@
     "serve": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "npx serve -s {projectRoot}/build"
+        "command": "npx serve -s {projectRoot}/build -l 2001"
       }
     },
     "start": {
@@ -35,7 +35,7 @@
       "executor": "@nx/vite:preview-server",
       "options": {
         "buildTarget": "twenty-front:build",
-        "port": 3001,
+        "port": 2001,
         "open": true
       }
     },

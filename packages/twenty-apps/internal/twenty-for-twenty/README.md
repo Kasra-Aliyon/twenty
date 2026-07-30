@@ -25,7 +25,7 @@ Two-way sync between Twenty and the [Resend](https://resend.com) email platform.
 yarn twenty dev
 ```
 
-This registers the app with your local Twenty instance at `http://localhost:3000/settings/applications`.
+This registers the app with your local Twenty instance at `http://localhost:2001/settings/applications`.
 
 ### 2. Configure app variables
 
@@ -74,7 +74,7 @@ resend login
 Start the webhook listener with forwarding to your local Twenty server:
 
 ```bash
-resend webhooks listen --forward-to http://localhost:3000/s/webhook/resend
+resend webhooks listen --forward-to http://localhost:2000/s/webhook/resend
 ```
 
 The CLI will:

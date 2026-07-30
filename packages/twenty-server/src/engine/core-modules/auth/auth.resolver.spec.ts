@@ -71,7 +71,7 @@ describe('AuthResolver', () => {
           useValue: {
             buildWorkspaceURL: jest
               .fn()
-              .mockResolvedValue(new URL('http://localhost:3001')),
+              .mockResolvedValue(new URL('http://localhost:2001')),
           },
         },
         {

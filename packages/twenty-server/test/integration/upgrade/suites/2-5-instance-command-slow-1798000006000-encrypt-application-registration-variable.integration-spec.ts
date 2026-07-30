@@ -112,7 +112,7 @@ describe('2-5 slow instance command 1798000006000 - EncryptApplicationRegistrati
         crypto.randomUUID(),
         `${TEST_REGISTRATION_NAME_PREFIX}${registrationId}`,
         crypto.randomUUID(),
-        ['http://localhost:3000/callback'],
+        ['http://localhost:2000/callback'],
         ['read'],
         workspaceId,
       ],

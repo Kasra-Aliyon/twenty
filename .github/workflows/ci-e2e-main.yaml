@@ -102,13 +102,13 @@ jobs:
         run: |
           npx nx start twenty-server &
           echo "Waiting for server to be ready..."
-          timeout 60 bash -c 'until curl -s http://localhost:3000/health; do sleep 2; done'
+          timeout 60 bash -c 'until curl -s http://localhost:2000/health; do sleep 2; done'
 
       - name: Start frontend
         run: |
-          npm_config_yes=true npx serve -s packages/twenty-front/build -l 3001 &
+          npm_config_yes=true npx serve -s packages/twenty-front/build -l 2001 &
           echo "Waiting for frontend to be ready..."
-          timeout 60 bash -c 'until curl -s http://localhost:3001; do sleep 2; done'
+          timeout 60 bash -c 'until curl -s http://localhost:2001; do sleep 2; done'
 
       - name: Start worker
         run: |

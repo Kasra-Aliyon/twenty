@@ -160,19 +160,19 @@ describe('ConfigValueConverterService', () => {
       });
 
       typeTransformers.string.toApp.mockReturnValueOnce(
-        'http://localhost:3000',
+        'http://localhost:2000',
       );
 
       const result = service.convertDbValueToAppValue(
-        'http://localhost:3000',
+        'http://localhost:2000',
         'FRONTEND_URL' as keyof ConfigVariables,
       );
 
       expect(typeTransformers.string.toApp).toHaveBeenCalledWith(
-        'http://localhost:3000',
+        'http://localhost:2000',
         undefined,
       );
-      expect(result).toBe('http://localhost:3000');
+      expect(result).toBe('http://localhost:2000');
     });
 
     it('should use array transformer for array type', () => {
@@ -340,19 +340,19 @@ describe('ConfigValueConverterService', () => {
       });
 
       typeTransformers.string.toStorage.mockReturnValueOnce(
-        'http://localhost:3000',
+        'http://localhost:2000',
       );
 
       const result = service.convertAppValueToDbValue(
-        'http://localhost:3000',
+        'http://localhost:2000',
         'FRONTEND_URL' as keyof ConfigVariables,
       );
 
       expect(typeTransformers.string.toStorage).toHaveBeenCalledWith(
-        'http://localhost:3000',
+        'http://localhost:2000',
         undefined,
       );
-      expect(result).toBe('http://localhost:3000');
+      expect(result).toBe('http://localhost:2000');
     });
 
     it('should use array transformer for array type', () => {

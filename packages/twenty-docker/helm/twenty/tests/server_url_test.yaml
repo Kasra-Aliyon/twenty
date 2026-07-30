@@ -27,9 +27,22 @@ tests:
       server.service.port: 3000
       server.env.SERVER_URL: ""
     asserts:
+      - equal:
+          path: spec.template.spec.containers[0].env[?(@.name=="NODE_PORT")].value
+          value: "3000"
       - matchRegex:
           path: spec.template.spec.containers[0].env[?(@.name=="SERVER_URL")].value
           pattern: ^http://my-twenty-twenty-server\.default\.svc\.cluster\.local:3000$
+  - it: keeps a custom container listener aligned with the pod
+    set:
+      server.env.NODE_PORT: 3100
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].env[?(@.name=="NODE_PORT")].value
+          value: "3100"
+      - equal:
+          path: spec.template.spec.containers[0].ports[0].containerPort
+          value: 3100
 ---
 suite: ingress configuration
 templates:

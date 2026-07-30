@@ -81,7 +81,7 @@ Both routes require an authenticated Twenty user and use the same shared Slack c
 3. Set the **Redirect URL** on the Slack app to
    `<YOUR_TWENTY_SERVER_URL>/auth/apps/callback` — the same origin your
    Twenty **server** uses for API routes (the callback is not served by the SPA
-   alone). Local monorepo dev often uses `http://localhost:3000` (confirm the
+   alone). Local monorepo dev often uses `http://localhost:2000` (confirm the
    port your `twenty-server` / `SERVER_URL` actually uses).
 
    **Slack “PKCE” app setting vs `localhost`:** If you turn on **PKCE** for the

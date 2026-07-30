@@ -1,8 +1,8 @@
 name: Spawn Twenty Docker Image
 description: >
   Starts a full Twenty instance (server, worker, database, redis) using Docker
-  Compose. The server is available at http://localhost:3000 for subsequent steps
-  in the caller's job.
+  Compose. The server URL is exposed through the server-url output for
+  subsequent steps in the caller's job.
   Accepts "latest" (pulls the latest Docker Hub image, checks out main) or a
   semver tag (e.g., v0.40.0).
   Designed to be consumed from external repositories (e.g., twenty-app).
@@ -23,7 +23,7 @@ inputs:
 outputs:
   server-url:
     description: 'URL where the Twenty server can be reached'
-    value: http://localhost:3000
+    value: ${{ steps.prepare.outputs.server-url }}
   access-token:
     description: 'Admin access token for the Twenty instance'
     value: ${{ steps.admin-token.outputs.access-token }}
@@ -59,14 +59,19 @@ runs:
         path: .twenty-spawn
 
     - name: Prepare environment
+      id: prepare
       shell: bash
       working-directory: ./.twenty-spawn/packages/twenty-docker
       run: |
         cp .env.example .env
+        SERVER_PORT=$(sed -n 's/^SERVER_PORT=//p' .env | tail -n 1)
+        SERVER_PORT=${SERVER_PORT:-3000}
+        SERVER_URL="http://localhost:${SERVER_PORT}"
         echo "" >> .env
         echo "TAG=${{ steps.resolve.outputs.docker-tag }}" >> .env
         echo "APP_SECRET=replace_me_with_a_random_string" >> .env
-        echo "SERVER_URL=http://localhost:3000" >> .env
+        echo "SERVER_URL=${SERVER_URL}" >> .env
+        echo "server-url=${SERVER_URL}" >> "$GITHUB_OUTPUT"
 
     - name: Start Twenty instance
       shell: bash
@@ -77,7 +82,7 @@ runs:
           docker compose logs
           exit 1
         }
-        echo "Twenty instance is ready at http://localhost:3000"
+        echo "Twenty instance is ready at ${{ steps.prepare.outputs.server-url }}"
 
     - name: Set admin access token
       id: admin-token

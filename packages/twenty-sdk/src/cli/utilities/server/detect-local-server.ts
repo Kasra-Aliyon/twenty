@@ -1,4 +1,4 @@
-const LOCAL_PORTS = [2020];
+const LOCAL_PORTS = [2020, 2000, 3000];
 
 export const checkServerHealth = async (port: number): Promise<boolean> => {
   const controller = new AbortController();

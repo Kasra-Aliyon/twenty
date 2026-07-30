@@ -18,10 +18,10 @@ describe('ApiClient — frontend URL resolution', () => {
   describe('getFrontendUrl', () => {
     it('returns origin of authorization_endpoint', async () => {
       vi.spyOn(client.client, 'get').mockResolvedValueOnce({
-        data: { authorization_endpoint: 'http://app.localhost:3001/authorize' },
+        data: { authorization_endpoint: 'http://app.localhost:2001/authorize' },
       });
 
-      expect(await client.getFrontendUrl()).toBe('http://app.localhost:3001');
+      expect(await client.getFrontendUrl()).toBe('http://app.localhost:2001');
     });
 
     it('returns null when authorization_endpoint is missing', async () => {
@@ -45,7 +45,7 @@ describe('ApiClient — frontend URL resolution', () => {
             currentWorkspace: {
               workspaceUrls: {
                 customUrl: 'https://crm.acme.com',
-                subdomainUrl: 'http://apple.localhost:3001',
+                subdomainUrl: 'http://apple.localhost:2001',
               },
             },
           },
@@ -63,7 +63,7 @@ describe('ApiClient — frontend URL resolution', () => {
           data: {
             currentWorkspace: {
               workspaceUrls: {
-                subdomainUrl: 'http://apple.localhost:3001',
+                subdomainUrl: 'http://apple.localhost:2001',
               },
             },
           },
@@ -71,7 +71,7 @@ describe('ApiClient — frontend URL resolution', () => {
       });
 
       expect(await client.getWorkspaceFrontendUrl()).toBe(
-        'http://apple.localhost:3001',
+        'http://apple.localhost:2001',
       );
     });
 
@@ -80,11 +80,11 @@ describe('ApiClient — frontend URL resolution', () => {
         data: { data: { currentWorkspace: null } },
       });
       vi.spyOn(client.client, 'get').mockResolvedValueOnce({
-        data: { authorization_endpoint: 'http://app.localhost:3001/authorize' },
+        data: { authorization_endpoint: 'http://app.localhost:2001/authorize' },
       });
 
       expect(await client.getWorkspaceFrontendUrl()).toBe(
-        'http://app.localhost:3001',
+        'http://app.localhost:2001',
       );
     });
   });

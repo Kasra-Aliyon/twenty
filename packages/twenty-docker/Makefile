@@ -21,7 +21,7 @@ prod-build:
 	@cd ../.. && docker build --target twenty -f ./packages/twenty-docker/twenty/Dockerfile --platform $(PLATFORM) --tag twenty:$(TAG) . && cd -
 
 prod-run:
-	@docker run -d -p 3000:3000 --name twenty twenty:$(TAG)
+	@docker run -d -p 2000:3000 -e NODE_PORT=3000 -e SERVER_URL=http://localhost:2000 --name twenty twenty:$(TAG)
 
 prod-postgres-run:
 	@docker run -d -p 5432:5432 -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres --name twenty-postgres twenty-postgres:$(TAG)

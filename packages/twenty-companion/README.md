@@ -32,7 +32,7 @@ OPENROUTER_KEY=<your key>
 To automatically create `callRecording` records in Twenty when a meeting starts (and mark them as ended when the meeting closes), configure:
 
 ```
-TWENTY_API_URL=http://localhost:3000
+TWENTY_API_URL=http://localhost:2000
 TWENTY_API_KEY=<your key>
 ```
 

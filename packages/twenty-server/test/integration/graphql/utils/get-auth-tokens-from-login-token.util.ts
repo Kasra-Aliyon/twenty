@@ -14,7 +14,7 @@ type GetAuthTokensFromLoginTokenUtilArgs = {
 
 export const getAuthTokensFromLoginToken = async ({
   loginToken,
-  origin = 'http://localhost:3001',
+  origin = 'http://localhost:2001',
   expectToFail,
 }: GetAuthTokensFromLoginTokenUtilArgs): CommonResponseBody<{
   getAuthTokensFromLoginToken: AuthTokens;

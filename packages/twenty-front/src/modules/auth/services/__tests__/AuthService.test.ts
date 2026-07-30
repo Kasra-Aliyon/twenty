@@ -26,7 +26,7 @@ describe('AuthService', () => {
       }),
     );
     await act(async () => {
-      const res = await renewToken('http://localhost:3000', tokens);
+      const res = await renewToken('http://localhost:2000', tokens);
       expect(res).toEqual(tokens);
     });
   });

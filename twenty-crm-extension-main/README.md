@@ -171,10 +171,10 @@ Load the unpacked extension from `.output/chrome-mv3-dev` for development. For a
 
 The extension defaults to:
 
-- Twenty App URL: `http://localhost:3001`
-- Twenty API URL: `http://localhost:3000`
+- Twenty App URL: `http://localhost:2001`
+- Twenty API URL: `http://localhost:2000`
 
-Log in to `http://localhost:3001` in the same browser profile. The extension syncs the local `tokenPairState` session from that page and uses `http://localhost:3000/graphql` directly.
+Log in to `http://localhost:2001` in the same browser profile. The extension syncs the local `tokenPairState` session from that page and uses `http://localhost:2000/graphql` directly.
 
 ---
 

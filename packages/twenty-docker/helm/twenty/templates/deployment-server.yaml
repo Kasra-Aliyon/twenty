@@ -1,4 +1,9 @@
 {{- if .Values.server.enabled }}
+{{- range .Values.server.extraEnv }}
+{{- if eq .name "NODE_PORT" }}
+{{- fail "server.extraEnv must not define NODE_PORT; use server.env.NODE_PORT so the listener, probes, and Service target remain aligned" }}
+{{- end }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -112,6 +117,10 @@ spec:
           image: {{ include "twenty.image.repository" $img }}:{{ include "twenty.image.tag" $img }}
           imagePullPolicy: {{ include "twenty.image.pullPolicy" $img }}
           env:
+            # Pin the listener to the chart-resolved container port so it stays
+            # aligned with the declared pod port, probes, and Service target.
+            - name: NODE_PORT
+              value: {{ include "twenty.server.containerPort" . | quote }}
             - name: SERVER_URL
               value: {{ include "twenty.serverUrl" . | quote }}
             {{- if eq (include "twenty.db.useExternalSecret" .) "true" }}

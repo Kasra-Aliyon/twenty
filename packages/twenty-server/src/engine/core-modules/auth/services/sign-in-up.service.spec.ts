@@ -36,7 +36,7 @@ const createSignInUpServiceForTests = () => {
   const mockConfigurationValues: MockConfigurationValues = {
     IS_MULTIWORKSPACE_ENABLED: true,
     IS_WORKSPACE_CREATION_LIMITED_TO_SERVER_ADMINS: false,
-    SERVER_URL: 'http://localhost:3000',
+    SERVER_URL: 'http://localhost:2000',
   };
 
   const mockTwentyConfigService = {

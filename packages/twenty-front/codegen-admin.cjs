@@ -1,6 +1,6 @@
 module.exports = {
   schema:
-    (process.env.REACT_APP_SERVER_BASE_URL ?? 'http://localhost:3000') +
+    (process.env.REACT_APP_SERVER_BASE_URL ?? 'http://localhost:2000') +
     '/admin-panel',
   documents: [
     './src/modules/settings/admin-panel/**/graphql/**/*.{ts,tsx}',

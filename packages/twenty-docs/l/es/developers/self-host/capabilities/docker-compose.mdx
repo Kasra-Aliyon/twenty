@@ -97,19 +97,19 @@ docker compose up -d
 
 ### Paso 4: Acceder a la aplicación
 
-Si alojas twentyCRM en tu propia computadora, abre tu navegador y navega a [http://localhost:3000](http://localhost:3000).
+Si alojas twentyCRM en tu propia computadora, abre tu navegador y navega a [http://localhost:2000](http://localhost:2000).
 
 Si lo alojas en un servidor, verifica que el servidor esté en funcionamiento y que todo esté bien con
 
 ```bash
-curl http://localhost:3000
+curl http://localhost:2000
 ```
 
 ## Configuración
 
 ### Exponer Twenty para acceso externo
 
-Por defecto, Twenty se ejecuta en `localhost` en el puerto `3000`. Para acceder a él mediante un dominio externo o dirección IP, necesitas configurar `SERVER_URL` en tu archivo `.env`.
+Por defecto, Twenty se ejecuta en `localhost` en el puerto `2000`. Para acceder a él mediante un dominio externo o dirección IP, necesitas configurar `SERVER_URL` en tu archivo `.env`.
 
 #### Entendiendo `SERVER_URL`
 
@@ -135,7 +135,7 @@ Recomendamos encarecidamente configurar Twenty detrás de un proxy inverso con t
      Si estás accediendo a la aplicación directamente sin un proxy inverso:
 
      ```ini
-     SERVER_URL=http://your-domain-or-ip:3000
+     SERVER_URL=http://your-domain-or-ip:2000
      ```
 
    * **Con proxy inverso (Puertos estándar):**
@@ -159,6 +159,7 @@ Recomendamos encarecidamente configurar Twenty detrás de un proxy inverso con t
    Abre tu archivo `.env` y actualiza el `SERVER_URL`:
 
    ```ini
+   SERVER_PORT=your-port
    SERVER_URL=http(s)://your-domain-or-ip:your-port
    ```
 
@@ -166,7 +167,8 @@ Recomendamos encarecidamente configurar Twenty detrás de un proxy inverso con t
 
    * Acceso directo sin SSL:
      ```ini
-     SERVER_URL=http://123.45.67.89:3000
+     SERVER_PORT=2000
+     SERVER_URL=http://123.45.67.89:2000
      ```
    * Acceso vía dominio con SSL:
      ```ini
