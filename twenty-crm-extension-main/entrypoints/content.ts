@@ -141,6 +141,9 @@ const FLOATING_BUTTON_STYLES = `
     border-radius: 8px;
     font-size: 14px;
     z-index: 100000;
+  }
+
+  .twenty-capture-toast--entering {
     animation: twenty-toast-in 0.3s ease;
   }
   
@@ -205,6 +208,9 @@ const FLOATING_BUTTON_STYLES = `
     box-shadow: 0 8px 32px rgba(0,0,0,0.2);
     z-index: 100001;
     overflow: hidden;
+  }
+
+  .twenty-search-panel--entering {
     animation: twenty-panel-in 0.2s ease;
   }
   
@@ -418,6 +424,7 @@ export default defineContentScript({
     let newRecordListName = '';
     let isCreatingRecordList = false;
     let isAddingToRecordLists = false;
+    let enteringOverlay: 'search-panel' | 'list-panel' | 'toast' | null = null;
     let currentPageUrl = getCanonicalLinkedInPageUrl(window.location.href);
     let pageGeneration = 0;
 
@@ -749,6 +756,7 @@ export default defineContentScript({
         recordLists = response.data.lists;
         selectedRecordListIds = new Set<string>();
         newRecordListName = '';
+        enteringOverlay = 'list-panel';
         setState({
           showListPanel: true,
           existingRecord: { id: recordId, type: recordType },
@@ -843,6 +851,7 @@ export default defineContentScript({
     // Show toast notification
     function showToast(message: string) {
       toastMessage = message;
+      enteringOverlay = 'toast';
       render();
 
       if (toastTimeout) clearTimeout(toastTimeout);
@@ -924,6 +933,7 @@ export default defineContentScript({
         state = { ...state, showListPanel: false };
         searchQuery = '';
         searchResults = [];
+        enteringOverlay = 'search-panel';
         render();
       }
     }
@@ -1054,7 +1064,11 @@ export default defineContentScript({
       // Search panel
       if (showSearchPanel) {
         const panel = document.createElement('div');
-        panel.className = 'twenty-search-panel';
+        panel.className = `twenty-search-panel${
+          enteringOverlay === 'search-panel'
+            ? ' twenty-search-panel--entering'
+            : ''
+        }`;
 
         // Header
         const header = document.createElement('div');
@@ -1118,7 +1132,11 @@ export default defineContentScript({
 
       if (state.showListPanel && state.existingRecord) {
         const panel = document.createElement('div');
-        panel.className = 'twenty-search-panel';
+        panel.className = `twenty-search-panel${
+          enteringOverlay === 'list-panel'
+            ? ' twenty-search-panel--entering'
+            : ''
+        }`;
 
         const header = document.createElement('div');
         header.className = 'twenty-search-header';
@@ -1235,13 +1253,16 @@ export default defineContentScript({
       // Toast
       if (toastMessage) {
         const toastEl = document.createElement('div');
-        toastEl.className = 'twenty-capture-toast';
+        toastEl.className = `twenty-capture-toast${
+          enteringOverlay === 'toast' ? ' twenty-capture-toast--entering' : ''
+        }`;
         toastEl.textContent = toastMessage;
         wrapper.appendChild(toastEl);
       }
 
       container.innerHTML = '';
       container.appendChild(wrapper);
+      enteringOverlay = null;
     }
 
     function handleLocationChange(newUrl: URL) {
@@ -1265,6 +1286,7 @@ export default defineContentScript({
       showSearchPanel = false;
       searchQuery = '';
       searchResults = [];
+      enteringOverlay = null;
 
       if (container) {
         container.hidden = nextPageUrl === null;
