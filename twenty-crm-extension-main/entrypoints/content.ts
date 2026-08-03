@@ -14,7 +14,7 @@ import type {
 const FLOATING_BUTTON_STYLES = `
   .twenty-capture-container {
     position: fixed;
-    bottom: 24px;
+    top: 68px;
     left: 24px;
     z-index: 99999;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
@@ -22,24 +22,23 @@ const FLOATING_BUTTON_STYLES = `
   
   .twenty-btn-group {
     display: flex;
-    align-items: stretch;
-    border-radius: 24px;
+    align-items: center;
+    border-radius: 10px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    overflow: hidden;
   }
   
   .twenty-btn-group .twenty-capture-btn {
-    border-radius: 24px;
-  }
-  
-  .twenty-btn-group.has-menu .twenty-capture-btn {
-    border-radius: 24px 0 0 24px;
+    border-radius: 10px;
   }
   
   .twenty-capture-btn {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 12px 20px;
+    justify-content: center;
+    height: 40px;
+    padding: 0;
+    width: 40px;
     border: none;
     font-size: 14px;
     font-weight: 600;
@@ -92,7 +91,12 @@ const FLOATING_BUTTON_STYLES = `
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 12px 12px;
+    height: 40px;
+    max-width: 0;
+    opacity: 0;
+    overflow: hidden;
+    padding: 0;
+    width: 0;
     border: none;
     border-left: 1px solid rgba(255,255,255,0.25);
     background: linear-gradient(135deg, #5558e6 0%, #7c5ce0 100%);
@@ -102,7 +106,19 @@ const FLOATING_BUTTON_STYLES = `
     font-weight: bold;
     letter-spacing: 1px;
     transition: filter 0.2s;
-    border-radius: 0 24px 24px 0;
+    border-radius: 0 10px 10px 0;
+  }
+
+  .twenty-btn-group.has-menu:hover .twenty-capture-btn,
+  .twenty-btn-group.has-menu:focus-within .twenty-capture-btn {
+    border-radius: 10px 0 0 10px;
+  }
+
+  .twenty-btn-group.has-menu:hover .twenty-menu-btn,
+  .twenty-btn-group.has-menu:focus-within .twenty-menu-btn {
+    max-width: 38px;
+    opacity: 1;
+    width: 38px;
   }
   
   .twenty-menu-btn--exists {
@@ -114,8 +130,8 @@ const FLOATING_BUTTON_STYLES = `
   }
   
   .twenty-capture-icon {
-    width: 18px;
-    height: 18px;
+    width: 24px;
+    height: 24px;
   }
   
   .twenty-capture-spinner {
@@ -133,7 +149,7 @@ const FLOATING_BUTTON_STYLES = `
   
   .twenty-capture-toast {
     position: fixed;
-    bottom: 80px;
+    top: 116px;
     left: 24px;
     background: #1f2937;
     color: white;
@@ -161,9 +177,9 @@ const FLOATING_BUTTON_STYLES = `
   /* Menu Dropdown */
   .twenty-menu-dropdown {
     position: absolute;
-    bottom: 100%;
+    top: 100%;
     left: 0;
-    margin-bottom: 8px;
+    margin-top: 8px;
     background: white;
     border-radius: 10px;
     box-shadow: 0 4px 20px rgba(0,0,0,0.15);
@@ -200,7 +216,7 @@ const FLOATING_BUTTON_STYLES = `
   /* Search Panel */
   .twenty-search-panel {
     position: fixed;
-    bottom: 80px;
+    top: 116px;
     left: 24px;
     width: 320px;
     background: white;
@@ -379,9 +395,8 @@ const FLOATING_BUTTON_STYLES = `
 
 // SVG Icons
 const ICONS = {
-  add: `<svg class="twenty-capture-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>`,
+  twenty: `<svg class="twenty-capture-icon" viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="4" fill="black"/><path d="M6.822 14.174c0-2.435 1.996-4.411 4.456-4.411h8.574c.125 0 .241.075.293.19a.31.31 0 0 1-.056.344l-1.88 2.023c-.326.35-.787.552-1.27.552H11.3c-.738 0-1.338.594-1.338 1.325v3.336a.78.78 0 0 1-.783.777H7.61a.78.78 0 0 1-.783-.777v-3.36zM33.5 25.553c0 2.434-1.996 4.411-4.456 4.411h-3.642c-2.46 0-4.454-1.977-4.454-4.411v-6.315c0-.43.16-.842.456-1.16l2.124-2.285a.33.33 0 0 1 .355-.081.32.32 0 0 1 .205.295v9.527c0 .73.598 1.322 1.337 1.322h3.6a1.33 1.33 0 0 0 1.337-1.322V14.197c0-.73-.599-1.325-1.337-1.325H24.84c-.481 0-.938.201-1.265.547L11.088 26.856h7.503a.78.78 0 0 1 .784.778v1.552a.78.78 0 0 1-.784.778H8.481a1.655 1.655 0 0 1-1.662-1.644v-.824c0-.412.156-.809.44-1.114l13.999-15.06a4.9 4.9 0 0 1 3.594-1.56h4.189c2.46 0 4.454 1.977 4.454 4.412v11.379z" fill="white"/></svg>`,
   check: `<svg class="twenty-capture-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>`,
-  link: `<svg class="twenty-capture-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/></svg>`,
   error: `<svg class="twenty-capture-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>`,
   close: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>`,
   menu: `•••`,
@@ -889,15 +904,15 @@ export default defineContentScript({
         case 'saving':
           return '<div class="twenty-capture-spinner"></div>';
         case 'ready':
-          return ICONS.add;
+          return ICONS.twenty;
         case 'exists':
-          return ICONS.link;
+          return ICONS.twenty;
         case 'saved':
           return ICONS.check;
         case 'error':
           return ICONS.error;
         default:
-          return ICONS.add;
+          return ICONS.twenty;
       }
     }
 
@@ -1017,7 +1032,9 @@ export default defineContentScript({
       // Main button
       const btn = document.createElement('button');
       btn.className = `twenty-capture-btn twenty-capture-btn--${state.status}`;
-      btn.innerHTML = `${getButtonIcon()}<span>${getButtonText()}</span>`;
+      btn.innerHTML = getButtonIcon();
+      btn.title = getButtonText();
+      btn.setAttribute('aria-label', getButtonText());
       btn.addEventListener('click', handleClick);
       btnGroup.appendChild(btn);
 

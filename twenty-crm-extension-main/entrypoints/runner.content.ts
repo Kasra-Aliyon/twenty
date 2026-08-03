@@ -54,10 +54,10 @@ const HARVEST_TOTALS_INTERVAL_MILLISECONDS = 30_000;
 
 const RUNNER_STYLES = `
   .twenty-linkedin-runner-root {
-    bottom: 24px;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     position: fixed;
     right: 24px;
+    top: 68px;
     z-index: 99998;
   }
 
@@ -65,7 +65,7 @@ const RUNNER_STYLES = `
     align-items: center;
     background: linear-gradient(135deg, #6366f1, #8b5cf6);
     border: none;
-    border-radius: 24px;
+    border-radius: 10px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
     color: white;
     cursor: pointer;
@@ -73,12 +73,12 @@ const RUNNER_STYLES = `
     font-size: 13px;
     font-weight: 700;
     gap: 8px;
-    padding: 11px 16px;
+    padding: 8px 12px 8px 8px;
   }
 
   .twenty-linkedin-runner-logo {
-    height: 18px;
-    width: 18px;
+    height: 24px;
+    width: 24px;
   }
 
   .twenty-linkedin-runner-dot {
@@ -95,7 +95,6 @@ const RUNNER_STYLES = `
   .twenty-linkedin-runner-panel {
     background: white;
     border-radius: 12px;
-    bottom: 52px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.22);
     color: #1f2937;
     max-height: calc(100vh - 88px);
@@ -103,6 +102,7 @@ const RUNNER_STYLES = `
     overflow-y: auto;
     position: absolute;
     right: 0;
+    top: 48px;
     width: 360px;
   }
 
@@ -992,11 +992,11 @@ export default defineContentScript({
       logo.setAttribute('viewBox', '0 0 40 40');
       logo.setAttribute('aria-hidden', 'true');
       logo.innerHTML =
-        '<rect width="40" height="40" rx="8" fill="white" fill-opacity="0.18"/><path d="M12 14h16v3H12zM12 20h12v3H12zM12 26h8v3H12z" fill="white"/>';
+        '<rect width="40" height="40" rx="4" fill="black"/><path d="M6.822 14.174c0-2.435 1.996-4.411 4.456-4.411h8.574c.125 0 .241.075.293.19a.31.31 0 0 1-.056.344l-1.88 2.023c-.326.35-.787.552-1.27.552H11.3c-.738 0-1.338.594-1.338 1.325v3.336a.78.78 0 0 1-.783.777H7.61a.78.78 0 0 1-.783-.777v-3.36zM33.5 25.553c0 2.434-1.996 4.411-4.456 4.411h-3.642c-2.46 0-4.454-1.977-4.454-4.411v-6.315c0-.43.16-.842.456-1.16l2.124-2.285a.33.33 0 0 1 .355-.081.32.32 0 0 1 .205.295v9.527c0 .73.598 1.322 1.337 1.322h3.6a1.33 1.33 0 0 0 1.337-1.322V14.197c0-.73-.599-1.325-1.337-1.325H24.84c-.481 0-.938.201-1.265.547L11.088 26.856h7.503a.78.78 0 0 1 .784.778v1.552a.78.78 0 0 1-.784.778H8.481a1.655 1.655 0 0 1-1.662-1.644v-.824c0-.412.156-.809.44-1.114l13.999-15.06a4.9 4.9 0 0 1 3.594-1.56h4.189c2.46 0 4.454 1.977 4.454 4.412v11.379z" fill="white"/>';
       dot.className = `twenty-linkedin-runner-dot${
         runnerState.enabled || isHarvestSyncing ? ' is-running' : ''
       }`;
-      button.append(logo, dot, document.createTextNode('Twenty runner'));
+      button.append(logo, dot, document.createTextNode('Runner'));
       button.addEventListener('click', () => {
         isPanelOpen = !isPanelOpen;
         render();
