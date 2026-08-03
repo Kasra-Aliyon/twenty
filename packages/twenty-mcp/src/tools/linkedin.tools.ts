@@ -5,7 +5,6 @@ import { LINKEDIN_ACTION_TYPES, STANDARD_OBJECTS } from '../constants.js';
 import { runTool } from '../formatting/format-tool-result.js';
 import {
   CONFIRMATION_DESCRIPTION,
-  depthSchema,
   listLimitSchema,
   recordIdSchema,
   responseFormatSchema,
@@ -13,8 +12,16 @@ import {
 } from '../schemas/common.schemas.js';
 import { combineFilters, filterCondition } from '../services/filter-builder.js';
 import { RecordsService } from '../services/records.service.js';
+import { requireUserToken } from '../services/user-auth.js';
 import type { ToolDependencies } from '../types.js';
 import { compactRecord } from './tool-data-builders.js';
+
+const linkedinDepthSchema = z
+  .number()
+  .int()
+  .min(0)
+  .max(1)
+  .describe('LinkedIn relation traversal depth. Twenty REST accepts 0 or 1.');
 
 const linkedinActionBaseSchema = z.object({
   person_id: recordIdSchema,
@@ -64,7 +71,7 @@ export const registerLinkedinTools = (
       inputSchema: z.object({
         person_id: z.string().optional(),
         limit: listLimitSchema,
-        depth: depthSchema,
+        depth: linkedinDepthSchema.default(0),
         response_format: responseFormatSchema,
       }),
       outputSchema: TOOL_OUTPUT_SCHEMA,
@@ -81,6 +88,7 @@ export const registerLinkedinTools = (
                 : filterCondition('personId', 'eq', person_id),
             limit,
             depth,
+            token: requireUserToken(dependencies.client),
           }),
         response_format,
       ),
@@ -93,7 +101,7 @@ export const registerLinkedinTools = (
       description: 'Gets one LinkedIn connection record.',
       inputSchema: z.object({
         connection_id: recordIdSchema,
-        depth: depthSchema,
+        depth: linkedinDepthSchema.default(0),
         response_format: responseFormatSchema,
       }),
       outputSchema: TOOL_OUTPUT_SCHEMA,
@@ -106,6 +114,7 @@ export const registerLinkedinTools = (
             object: STANDARD_OBJECTS.linkedinConnections,
             id: connection_id,
             depth,
+            token: requireUserToken(dependencies.client),
           }),
         response_format,
       ),
@@ -118,7 +127,7 @@ export const registerLinkedinTools = (
       description: 'Lists synced LinkedIn message threads.',
       inputSchema: z.object({
         limit: listLimitSchema,
-        depth: depthSchema,
+        depth: linkedinDepthSchema.default(0),
         response_format: responseFormatSchema,
       }),
       outputSchema: TOOL_OUTPUT_SCHEMA,
@@ -131,7 +140,8 @@ export const registerLinkedinTools = (
             object: STANDARD_OBJECTS.linkedinMessageThreads,
             limit,
             depth,
-            orderBy: 'lastMessageAt[DescNullsLast]',
+            orderBy: 'lastMessageTime[DescNullsLast]',
+            token: requireUserToken(dependencies.client),
           }),
         response_format,
       ),
@@ -145,7 +155,7 @@ export const registerLinkedinTools = (
         'Gets a LinkedIn thread with participants and messages through relation depth.',
       inputSchema: z.object({
         thread_id: recordIdSchema,
-        depth: depthSchema.default(2),
+        depth: linkedinDepthSchema.default(1),
         response_format: responseFormatSchema,
       }),
       outputSchema: TOOL_OUTPUT_SCHEMA,
@@ -158,6 +168,7 @@ export const registerLinkedinTools = (
             object: STANDARD_OBJECTS.linkedinMessageThreads,
             id: thread_id,
             depth,
+            token: requireUserToken(dependencies.client),
           }),
         response_format,
       ),
@@ -204,6 +215,7 @@ export const registerLinkedinTools = (
             noteText: message,
             scheduledAt: scheduled_at,
           }),
+          token: requireUserToken(dependencies.client),
         });
       }, response_format),
   );
@@ -249,6 +261,7 @@ export const registerLinkedinTools = (
             noteText: note,
             scheduledAt: scheduled_at,
           }),
+          token: requireUserToken(dependencies.client),
         });
       }, response_format),
   );
@@ -290,6 +303,7 @@ export const registerLinkedinTools = (
             type: LINKEDIN_ACTION_TYPES.withdrawConnectionRequest,
             scheduledAt: scheduled_at,
           }),
+          token: requireUserToken(dependencies.client),
         });
       }, response_format),
   );
@@ -313,7 +327,7 @@ export const registerLinkedinTools = (
           ])
           .optional(),
         limit: listLimitSchema,
-        depth: depthSchema,
+        depth: linkedinDepthSchema.default(0),
         response_format: responseFormatSchema,
       }),
       outputSchema: TOOL_OUTPUT_SCHEMA,
@@ -335,6 +349,7 @@ export const registerLinkedinTools = (
             orderBy: 'scheduledAt[DescNullsLast]',
             limit,
             depth,
+            token: requireUserToken(dependencies.client),
           }),
         response_format,
       ),

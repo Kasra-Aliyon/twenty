@@ -10,6 +10,7 @@ import {
   TOOL_OUTPUT_SCHEMA,
 } from '../schemas/common.schemas.js';
 import { RecordsService } from '../services/records.service.js';
+import { requireUserToken } from '../services/user-auth.js';
 import type { ToolDependencies } from '../types.js';
 
 const UNIBOX_THREADS_QUERY = `
@@ -64,8 +65,8 @@ const ADD_CONTACTS_MUTATION = `
   }
 `;
 
-const uniboxToken = (dependencies: ToolDependencies): 'api' | 'user' =>
-  dependencies.client.hasUserToken() ? 'user' : 'api';
+const uniboxToken = (dependencies: ToolDependencies): 'user' =>
+  requireUserToken(dependencies.client);
 
 const contactsFilterSchema = z.object({
   search: z.string().max(255).optional(),
@@ -93,7 +94,7 @@ export const registerUniboxTools = (
     {
       title: 'List Unibox threads',
       description:
-        'Lists email or LinkedIn Unibox threads with CRM/unread/search/date filters. Uses TWENTY_USER_TOKEN when configured.',
+        'Lists email or LinkedIn Unibox threads with CRM/unread/search/date filters. Requires TWENTY_USER_TOKEN.',
       inputSchema: z.object({
         channel: z.enum(['EMAIL', 'LINKEDIN']).default('EMAIL'),
         folder: z.enum(['INBOX', 'SENT', 'DRAFT']).default('INBOX'),
@@ -188,7 +189,8 @@ export const registerUniboxTools = (
                 ? STANDARD_OBJECTS.linkedinMessageThreads
                 : STANDARD_OBJECTS.messageThreads,
             id: thread_id,
-            depth: 2,
+            depth: 1,
+            token: uniboxToken(dependencies),
           }),
         response_format,
       ),
