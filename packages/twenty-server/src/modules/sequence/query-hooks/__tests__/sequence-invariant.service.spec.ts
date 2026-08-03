@@ -19,6 +19,7 @@ describe('SequenceInvariantService', () => {
   } as WorkspaceAuthContext;
   const sequence = {
     id: 'sequence-id',
+    deletedAt: null,
     status: SEQUENCE_STATUSES.PAUSED,
     senderConnectedAccountId: 'sender-id',
     settings: { stopOnReply: true },
@@ -29,6 +30,9 @@ describe('SequenceInvariantService', () => {
     status: SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
   } as SequenceEnrollmentWorkspaceEntity;
   let activeEnrollmentCount: number;
+  let sequenceRepository: {
+    find: jest.Mock;
+  };
   let service: SequenceInvariantService;
   const sequenceSenderService = {
     getReadySenderOrThrow: jest.fn(),
@@ -37,7 +41,7 @@ describe('SequenceInvariantService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     activeEnrollmentCount = 0;
-    const sequenceRepository = {
+    sequenceRepository = {
       find: jest.fn().mockResolvedValue([sequence]),
     };
     const stepRepository = {
@@ -100,6 +104,24 @@ describe('SequenceInvariantService', () => {
         sentEmailsByStepId: {},
       }),
     );
+  });
+
+  it('rejects enrollment in an archived sequence', async () => {
+    sequenceRepository.find.mockResolvedValueOnce([
+      { ...sequence, deletedAt: new Date() },
+    ]);
+
+    await expect(
+      service.normalizeEnrollmentCreates({
+        authContext,
+        data: [
+          {
+            sequenceId: sequence.id,
+            personId: 'person-id',
+          },
+        ],
+      }),
+    ).rejects.toThrow('archived sequence');
   });
 
   it('forces new sequences to start as drafts with empty counters', () => {
@@ -196,5 +218,58 @@ describe('SequenceInvariantService', () => {
         data: { status: SEQUENCE_STATUSES.ACTIVE },
       }),
     ).rejects.toThrow('Enable inbox sync');
+  });
+
+  it('allows an active sequence to be archived so its open work can be stopped', async () => {
+    sequenceRepository.find.mockResolvedValueOnce([
+      { ...sequence, status: SEQUENCE_STATUSES.ACTIVE },
+    ]);
+
+    await expect(
+      service.assertSequenceArchiveAllowed({
+        authContext,
+        sequenceId: sequence.id,
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it('only allows permanent deletion after a sequence is archived', async () => {
+    await expect(
+      service.assertSequenceDestroyAllowed({
+        authContext,
+        sequenceId: sequence.id,
+      }),
+    ).rejects.toThrow('Archive the sequence');
+
+    sequenceRepository.find.mockResolvedValueOnce([
+      { ...sequence, deletedAt: new Date() },
+    ]);
+
+    await expect(
+      service.assertSequenceDestroyAllowed({
+        authContext,
+        sequenceId: sequence.id,
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it('only allows archived sequences to be restored', async () => {
+    await expect(
+      service.assertSequenceRestoreAllowed({
+        authContext,
+        sequenceId: sequence.id,
+      }),
+    ).rejects.toThrow('Only an archived sequence');
+
+    sequenceRepository.find.mockResolvedValueOnce([
+      { ...sequence, deletedAt: new Date() },
+    ]);
+
+    await expect(
+      service.assertSequenceRestoreAllowed({
+        authContext,
+        sequenceId: sequence.id,
+      }),
+    ).resolves.toBeUndefined();
   });
 });

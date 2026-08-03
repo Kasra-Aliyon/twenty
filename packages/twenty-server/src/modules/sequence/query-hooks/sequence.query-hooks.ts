@@ -1,20 +1,27 @@
 import { Injectable } from '@nestjs/common';
 
 import { WorkspaceQueryHook } from 'src/engine/api/graphql/workspace-query-runner/workspace-query-hook/decorators/workspace-query-hook.decorator';
-import { type WorkspacePreQueryHookInstance } from 'src/engine/api/graphql/workspace-query-runner/workspace-query-hook/interfaces/workspace-query-hook.interface';
+import {
+  type WorkspacePostQueryHookInstance,
+  type WorkspacePreQueryHookInstance,
+} from 'src/engine/api/graphql/workspace-query-runner/workspace-query-hook/interfaces/workspace-query-hook.interface';
+import { WorkspaceQueryHookType } from 'src/engine/api/graphql/workspace-query-runner/workspace-query-hook/types/workspace-query-hook.type';
 import {
   type CreateManyResolverArgs,
   type CreateOneResolverArgs,
   type DeleteManyResolverArgs,
   type DeleteOneResolverArgs,
   type DestroyManyResolverArgs,
+  type DestroyOneResolverArgs,
   type MergeManyResolverArgs,
   type RestoreManyResolverArgs,
+  type RestoreOneResolverArgs,
   type UpdateManyResolverArgs,
   type UpdateOneResolverArgs,
 } from 'src/engine/api/graphql/workspace-resolver-builder/interfaces/workspace-resolvers-builder.interface';
 import { type WorkspaceAuthContext } from 'src/engine/core-modules/auth/types/workspace-auth-context.type';
 import { SequenceInvariantService } from 'src/modules/sequence/query-hooks/sequence-invariant.service';
+import { SequenceLifecycleService } from 'src/modules/sequence/query-hooks/sequence-lifecycle.service';
 import { type SequenceEnrollmentWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence-enrollment.workspace-entity';
 import { type SequenceStepWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence-step.workspace-entity';
 import { type SequenceWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence.workspace-entity';
@@ -186,23 +193,16 @@ export class SequenceUpdateManyPreQueryHook implements WorkspacePreQueryHookInst
 @Injectable()
 @WorkspaceQueryHook('*.deleteOne')
 export class SequenceDeleteOnePreQueryHook implements WorkspacePreQueryHookInstance {
-  constructor(private readonly invariantService: SequenceInvariantService) {}
+  constructor(
+    private readonly invariantService: SequenceInvariantService,
+    private readonly lifecycleService: SequenceLifecycleService,
+  ) {}
 
   async execute(
     authContext: WorkspaceAuthContext,
     objectName: string,
     payload: DeleteOneResolverArgs,
   ): Promise<DeleteOneResolverArgs> {
-    await this.assertMutationAllowed(authContext, objectName, payload.id);
-
-    return payload;
-  }
-
-  private async assertMutationAllowed(
-    authContext: WorkspaceAuthContext,
-    objectName: string,
-    id: string,
-  ): Promise<void> {
     if (objectName === 'sequenceEnrollment') {
       this.invariantService.throwEnrollmentDeletionUnsupported();
     }
@@ -210,32 +210,115 @@ export class SequenceDeleteOnePreQueryHook implements WorkspacePreQueryHookInsta
     if (objectName === 'sequenceStep') {
       await this.invariantService.assertStepMutationAllowed({
         authContext,
-        stepId: id,
+        stepId: payload.id,
       });
     }
 
     if (objectName === 'sequence') {
-      await this.invariantService.assertSequenceMutationAllowed({
+      await this.invariantService.assertSequenceArchiveAllowed({
         authContext,
-        sequenceId: id,
+        sequenceId: payload.id,
+      });
+      await this.lifecycleService.pauseBeforeArchive({
+        authContext,
+        sequenceId: payload.id,
       });
     }
+
+    return payload;
   }
 }
 
 @Injectable()
 @WorkspaceQueryHook('*.destroyOne')
-export class SequenceDestroyOnePreQueryHook extends SequenceDeleteOnePreQueryHook {
-  constructor(invariantService: SequenceInvariantService) {
-    super(invariantService);
+export class SequenceDestroyOnePreQueryHook implements WorkspacePreQueryHookInstance {
+  constructor(
+    private readonly invariantService: SequenceInvariantService,
+    private readonly lifecycleService: SequenceLifecycleService,
+  ) {}
+
+  async execute(
+    authContext: WorkspaceAuthContext,
+    objectName: string,
+    payload: DestroyOneResolverArgs,
+  ): Promise<DestroyOneResolverArgs> {
+    if (objectName === 'sequenceEnrollment') {
+      this.invariantService.throwEnrollmentDeletionUnsupported();
+    }
+
+    if (objectName === 'sequenceStep') {
+      await this.invariantService.assertStepMutationAllowed({
+        authContext,
+        stepId: payload.id,
+      });
+    }
+
+    if (objectName === 'sequence') {
+      await this.invariantService.assertSequenceDestroyAllowed({
+        authContext,
+        sequenceId: payload.id,
+      });
+      await this.lifecycleService.preparePermanentDeletion({
+        authContext,
+        sequenceId: payload.id,
+      });
+    }
+
+    return payload;
   }
 }
 
 @Injectable()
 @WorkspaceQueryHook('*.restoreOne')
-export class SequenceRestoreOnePreQueryHook extends SequenceDeleteOnePreQueryHook {
-  constructor(invariantService: SequenceInvariantService) {
-    super(invariantService);
+export class SequenceRestoreOnePreQueryHook implements WorkspacePreQueryHookInstance {
+  constructor(private readonly invariantService: SequenceInvariantService) {}
+
+  async execute(
+    authContext: WorkspaceAuthContext,
+    objectName: string,
+    payload: RestoreOneResolverArgs,
+  ): Promise<RestoreOneResolverArgs> {
+    if (objectName === 'sequenceEnrollment') {
+      this.invariantService.throwEnrollmentDeletionUnsupported();
+    }
+
+    if (objectName === 'sequenceStep') {
+      await this.invariantService.assertStepMutationAllowed({
+        authContext,
+        stepId: payload.id,
+      });
+    }
+
+    if (objectName === 'sequence') {
+      await this.invariantService.assertSequenceRestoreAllowed({
+        authContext,
+        sequenceId: payload.id,
+      });
+    }
+
+    return payload;
+  }
+}
+
+@Injectable()
+@WorkspaceQueryHook({
+  key: 'sequence.deleteOne',
+  type: WorkspaceQueryHookType.POST_HOOK,
+})
+export class SequenceDeleteOnePostQueryHook implements WorkspacePostQueryHookInstance {
+  constructor(private readonly lifecycleService: SequenceLifecycleService) {}
+
+  async execute(
+    authContext: WorkspaceAuthContext,
+    _objectName: string,
+    payload: SequenceWorkspaceEntity[],
+  ): Promise<void> {
+    for (const sequence of payload) {
+      await this.lifecycleService.finalizeArchive({
+        authContext,
+        sequenceId: sequence.id,
+      });
+    }
   }
 }
 

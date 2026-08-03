@@ -9,6 +9,7 @@ import {
 } from 'twenty-shared/types';
 
 export type SequenceRecord = ObjectRecord & {
+  deletedAt: string | null;
   name: string;
   status: SequenceStatus;
   senderConnectedAccountId: string | null;

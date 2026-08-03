@@ -6,11 +6,14 @@ import { ConnectedAccountEntity } from 'src/engine/metadata-modules/connected-ac
 import { MessageChannelEntity } from 'src/engine/metadata-modules/message-channel/entities/message-channel.entity';
 import { WorkspaceDataSourceModule } from 'src/engine/workspace-datasource/workspace-datasource.module';
 import { SequenceInvariantService } from 'src/modules/sequence/query-hooks/sequence-invariant.service';
+import { SequenceLifecycleService } from 'src/modules/sequence/query-hooks/sequence-lifecycle.service';
+import { SequenceMetricsService } from 'src/modules/sequence/services/sequence-metrics.service';
 import { SequenceSenderService } from 'src/modules/sequence/services/sequence-sender.service';
 import {
   SequenceCreateManyPreQueryHook,
   SequenceCreateOnePreQueryHook,
   SequenceDeleteManyPreQueryHook,
+  SequenceDeleteOnePostQueryHook,
   SequenceDeleteOnePreQueryHook,
   SequenceDestroyManyPreQueryHook,
   SequenceDestroyOnePreQueryHook,
@@ -32,12 +35,15 @@ import {
   ],
   providers: [
     SequenceInvariantService,
+    SequenceLifecycleService,
+    SequenceMetricsService,
     SequenceSenderService,
     SequenceCreateOnePreQueryHook,
     SequenceCreateManyPreQueryHook,
     SequenceUpdateOnePreQueryHook,
     SequenceUpdateManyPreQueryHook,
     SequenceDeleteOnePreQueryHook,
+    SequenceDeleteOnePostQueryHook,
     SequenceDeleteManyPreQueryHook,
     SequenceDestroyOnePreQueryHook,
     SequenceDestroyManyPreQueryHook,

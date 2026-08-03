@@ -10,20 +10,25 @@ import { PageContainer } from '@/ui/layout/page/components/PageContainer';
 import { useIsFeatureEnabled } from '@/workspace/hooks/useIsFeatureEnabled';
 import { styled } from '@linaria/react';
 import { t } from '@lingui/core/macro';
+import { useState } from 'react';
 import { generatePath, Link, Navigate } from 'react-router-dom';
 import {
   AppPath,
   FeatureFlagKey,
+  type RecordGqlOperationFilter,
   SEQUENCE_STATUSES,
 } from 'twenty-shared/types';
 import { IconPlus, IconSend } from 'twenty-ui/icon';
 import { Button, Toggle } from 'twenty-ui/input';
 import { themeCssVariables } from 'twenty-ui/theme-constants';
 
+import { SequenceActionsMenu } from './components/SequenceActionsMenu';
 import { StyledEmptyState, StyledPill } from './components/SequencePageStyles';
 import { type SequenceRecord } from './types/SequenceRecords';
 
 const SEQUENCES_PAGE_SIZE = 50;
+
+type SequencesPageTab = 'active' | 'archived';
 
 const StyledTableContainer = styled.div`
   flex: 1;
@@ -80,7 +85,37 @@ const StyledLoadMore = styled.div`
   padding: ${themeCssVariables.spacing[3]};
 `;
 
+const StyledTabs = styled.div`
+  align-items: flex-end;
+  border-bottom: 1px solid ${themeCssVariables.border.color.medium};
+  display: flex;
+  gap: ${themeCssVariables.spacing[4]};
+  min-height: 40px;
+  padding: 0 ${themeCssVariables.spacing[4]};
+`;
+
+const StyledTab = styled.button<{ isActive: boolean }>`
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid
+    ${({ isActive }) =>
+      isActive ? themeCssVariables.color.blue : 'transparent'};
+  color: ${({ isActive }) =>
+    isActive
+      ? themeCssVariables.font.color.primary
+      : themeCssVariables.font.color.tertiary};
+  cursor: pointer;
+  font-family: inherit;
+  height: 40px;
+  padding: 0;
+`;
+
+const StyledActionsCell = styled(StyledCell)`
+  width: 32px;
+`;
+
 const SequencesPageContent = () => {
+  const [activeTab, setActiveTab] = useState<SequencesPageTab>('active');
   const { objectMetadataItem: sequenceObjectMetadataItem } =
     useObjectMetadataItem({ objectNameSingular: 'sequence' });
   const sequencePermissions = useObjectPermissionsForObject(
@@ -88,6 +123,12 @@ const SequencesPageContent = () => {
   );
   const { updateOneRecord } = useUpdateOneRecord();
   const { enqueueErrorSnackBar } = useSnackBar();
+  const filter: RecordGqlOperationFilter | undefined =
+    activeTab === 'archived'
+      ? {
+          deletedAt: { is: 'NOT_NULL' },
+        }
+      : undefined;
   const {
     records: sequences,
     refetch,
@@ -96,9 +137,11 @@ const SequencesPageContent = () => {
     loading,
   } = useFindManyRecords<SequenceRecord>({
     objectNameSingular: 'sequence',
+    filter,
     orderBy: [{ name: 'AscNullsLast' }],
     recordGqlFields: {
       id: true,
+      deletedAt: true,
       name: true,
       status: true,
       senderConnectedAccountId: true,
@@ -110,6 +153,7 @@ const SequencesPageContent = () => {
       failedCount: true,
     },
     limit: SEQUENCES_PAGE_SIZE,
+    withSoftDeleted: activeTab === 'archived',
   });
 
   const updateStatus = async (sequence: SequenceRecord, active: boolean) => {
@@ -147,10 +191,30 @@ const SequencesPageContent = () => {
             }
           />
         }
+        secondaryBar={
+          <StyledTabs>
+            <StyledTab
+              type="button"
+              isActive={activeTab === 'active'}
+              onClick={() => setActiveTab('active')}
+            >
+              {t`Active`}
+            </StyledTab>
+            <StyledTab
+              type="button"
+              isActive={activeTab === 'archived'}
+              onClick={() => setActiveTab('archived')}
+            >
+              {t`Archived`}
+            </StyledTab>
+          </StyledTabs>
+        }
       >
         {sequences.length === 0 ? (
           <StyledEmptyState>
-            {t`Create a sequence to automate email follow-ups and queue manual work.`}
+            {activeTab === 'archived'
+              ? t`Archived sequences will appear here.`
+              : t`Create a sequence to automate email follow-ups and queue manual work.`}
           </StyledEmptyState>
         ) : (
           <StyledTableContainer>
@@ -165,6 +229,7 @@ const SequencesPageContent = () => {
                   <StyledHeaderCell>{t`Replied`}</StyledHeaderCell>
                   <StyledHeaderCell>{t`Failed`}</StyledHeaderCell>
                   <StyledHeaderCell>{t`Reply rate`}</StyledHeaderCell>
+                  <StyledHeaderCell aria-label={t`Actions`} />
                 </tr>
               </thead>
               <tbody>
@@ -190,17 +255,25 @@ const SequencesPageContent = () => {
                       </StyledNameCell>
                       <StyledCell onClick={(event) => event.stopPropagation()}>
                         <StyledStatusControl>
-                          <Toggle
-                            value={sequence.status === SEQUENCE_STATUSES.ACTIVE}
-                            onChange={(active) =>
-                              void updateStatus(sequence, active)
-                            }
-                            disabled={
-                              !sequencePermissions.canUpdateObjectRecords
-                            }
-                            toggleSize="small"
-                          />
-                          <StyledPill>{sequence.status}</StyledPill>
+                          {activeTab === 'active' && (
+                            <Toggle
+                              value={
+                                sequence.status === SEQUENCE_STATUSES.ACTIVE
+                              }
+                              onChange={(active) =>
+                                void updateStatus(sequence, active)
+                              }
+                              disabled={
+                                !sequencePermissions.canUpdateObjectRecords
+                              }
+                              toggleSize="small"
+                            />
+                          )}
+                          <StyledPill>
+                            {activeTab === 'archived'
+                              ? t`Archived`
+                              : sequence.status}
+                          </StyledPill>
                         </StyledStatusControl>
                       </StyledCell>
                       <StyledCell>{sequence.enrolledCount}</StyledCell>
@@ -209,6 +282,26 @@ const SequencesPageContent = () => {
                       <StyledCell>{sequence.repliedCount}</StyledCell>
                       <StyledCell>{sequence.failedCount}</StyledCell>
                       <StyledCell>{replyRate}%</StyledCell>
+                      <StyledActionsCell>
+                        <SequenceActionsMenu
+                          sequence={sequence}
+                          canArchive={
+                            sequencePermissions.canSoftDeleteObjectRecords
+                          }
+                          canDestroy={
+                            sequencePermissions.canDestroyObjectRecords
+                          }
+                          onArchived={async () => {
+                            await refetch();
+                          }}
+                          onDestroyed={async () => {
+                            await refetch();
+                          }}
+                          onRestored={async () => {
+                            await refetch();
+                          }}
+                        />
+                      </StyledActionsCell>
                     </StyledRow>
                   );
                 })}

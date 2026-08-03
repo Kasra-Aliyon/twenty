@@ -85,6 +85,12 @@ export class SequenceInvariantService {
         this.throwBadRequest('The sequence for this enrollment was not found');
       }
 
+      if (sequence.deletedAt) {
+        this.throwBadRequest(
+          'People cannot be enrolled in an archived sequence',
+        );
+      }
+
       return {
         id: input.id,
         sequenceId: input.sequenceId,
@@ -298,17 +304,57 @@ export class SequenceInvariantService {
     }
   }
 
-  async assertSequenceMutationAllowed({
+  async assertSequenceArchiveAllowed({
     authContext,
     sequenceId,
   }: {
     authContext: WorkspaceAuthContext;
     sequenceId: string;
   }): Promise<void> {
-    await this.assertSequencesEditable({
+    const sequence = await this.getSequenceOrThrow({
       authContext,
-      sequenceIds: [sequenceId],
+      sequenceId,
     });
+
+    if (sequence.deletedAt) {
+      this.throwBadRequest('The sequence is already archived');
+    }
+  }
+
+  async assertSequenceDestroyAllowed({
+    authContext,
+    sequenceId,
+  }: {
+    authContext: WorkspaceAuthContext;
+    sequenceId: string;
+  }): Promise<void> {
+    const sequence = await this.getSequenceOrThrow({
+      authContext,
+      sequenceId,
+    });
+
+    if (!sequence.deletedAt) {
+      this.throwBadRequest(
+        'Archive the sequence before permanently deleting it',
+      );
+    }
+  }
+
+  async assertSequenceRestoreAllowed({
+    authContext,
+    sequenceId,
+  }: {
+    authContext: WorkspaceAuthContext;
+    sequenceId: string;
+  }): Promise<void> {
+    const sequence = await this.getSequenceOrThrow({
+      authContext,
+      sequenceId,
+    });
+
+    if (!sequence.deletedAt) {
+      this.throwBadRequest('Only an archived sequence can be restored');
+    }
   }
 
   throwBulkMutationUnsupported(objectName: string): never {
@@ -376,6 +422,25 @@ export class SequenceInvariantService {
       authContext,
       { lite: true },
     );
+  }
+
+  private async getSequenceOrThrow({
+    authContext,
+    sequenceId,
+  }: {
+    authContext: WorkspaceAuthContext;
+    sequenceId: string;
+  }): Promise<SequenceWorkspaceEntity> {
+    const [sequence] = await this.getSequences({
+      authContext,
+      sequenceIds: [sequenceId],
+    });
+
+    if (!sequence) {
+      this.throwBadRequest('The sequence was not found');
+    }
+
+    return sequence;
   }
 
   private async getSteps({

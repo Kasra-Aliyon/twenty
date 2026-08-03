@@ -13,7 +13,7 @@ import { useIsFeatureEnabled } from '@/workspace/hooks/useIsFeatureEnabled';
 import { styled } from '@linaria/react';
 import { t } from '@lingui/core/macro';
 import { useEffect, useState } from 'react';
-import { Navigate, useParams } from 'react-router-dom';
+import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import {
   AppPath,
   FeatureFlagKey,
@@ -24,6 +24,7 @@ import { IconPlayerPause, IconPlayerPlay, IconSend } from 'twenty-ui/icon';
 import { Button } from 'twenty-ui/input';
 import { themeCssVariables } from 'twenty-ui/theme-constants';
 
+import { SequenceActionsMenu } from './components/SequenceActionsMenu';
 import { SequenceContactsTable } from './components/SequenceContactsTable';
 import { StyledPageContent, StyledPill } from './components/SequencePageStyles';
 import { SequenceSettingsSection } from './components/SequenceSettingsSection';
@@ -62,8 +63,22 @@ const StyledTab = styled.button<{ isActive: boolean }>`
   padding: 0;
 `;
 
+const StyledHeaderActions = styled.div`
+  align-items: center;
+  display: flex;
+  gap: ${themeCssVariables.spacing[2]};
+`;
+
+const StyledArchivedNotice = styled.div`
+  background: ${themeCssVariables.background.transparent.lighter};
+  border-bottom: 1px solid ${themeCssVariables.border.color.light};
+  color: ${themeCssVariables.font.color.secondary};
+  padding: ${themeCssVariables.spacing[3]} ${themeCssVariables.spacing[4]};
+`;
+
 const SequencePageContent = () => {
   const { sequenceId } = useParams();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<SequenceTab>('steps');
   const { objectMetadataItem: sequenceObjectMetadataItem } =
     useObjectMetadataItem({ objectNameSingular: 'sequence' });
@@ -89,8 +104,10 @@ const SequencePageContent = () => {
   } = useFindOneRecord<SequenceRecord>({
     objectNameSingular: 'sequence',
     objectRecordId: sequenceId,
+    withSoftDeleted: true,
     recordGqlFields: {
       id: true,
+      deletedAt: true,
       name: true,
       status: true,
       senderConnectedAccountId: true,
@@ -116,11 +133,11 @@ const SequencePageContent = () => {
     },
     recordGqlFields: { id: true },
     limit: 1,
-    skip: !sequenceId,
+    skip: !sequenceId || Boolean(sequence?.deletedAt),
   });
 
   useEffect(() => {
-    if (!sequenceId) {
+    if (!sequenceId || sequence?.deletedAt) {
       return;
     }
 
@@ -129,7 +146,7 @@ const SequencePageContent = () => {
     }, ACTIVE_ENROLLMENT_REFRESH_INTERVAL_MILLISECONDS);
 
     return () => window.clearInterval(intervalId);
-  }, [refetchActiveEnrollments, sequenceId]);
+  }, [refetchActiveEnrollments, sequence?.deletedAt, sequenceId]);
 
   if (loading || !sequenceId) {
     return <RecordIndexSkeletonLoader />;
@@ -140,6 +157,7 @@ const SequencePageContent = () => {
   }
 
   const isActive = sequence.status === SEQUENCE_STATUSES.ACTIVE;
+  const isArchived = sequence.deletedAt !== null;
   const hasActiveEnrollments =
     (activeEnrollmentCount ?? activeEnrollments.length) > 0;
 
@@ -169,16 +187,36 @@ const SequencePageContent = () => {
           <PageCardHeader
             icon={<IconSend size={18} />}
             title={sequence.name}
-            tag={<StyledPill>{sequence.status}</StyledPill>}
+            tag={
+              <StyledPill>
+                {isArchived ? t`Archived` : sequence.status}
+              </StyledPill>
+            }
             actionButton={
-              <Button
-                title={isActive ? t`Pause` : t`Activate`}
-                Icon={isActive ? IconPlayerPause : IconPlayerPlay}
-                variant={isActive ? 'secondary' : 'primary'}
-                size="small"
-                onClick={() => void toggleSequence()}
-                disabled={!sequencePermissions.canUpdateObjectRecords}
-              />
+              <StyledHeaderActions>
+                {!isArchived && (
+                  <Button
+                    title={isActive ? t`Pause` : t`Activate`}
+                    Icon={isActive ? IconPlayerPause : IconPlayerPlay}
+                    variant={isActive ? 'secondary' : 'primary'}
+                    size="small"
+                    onClick={() => void toggleSequence()}
+                    disabled={!sequencePermissions.canUpdateObjectRecords}
+                  />
+                )}
+                <SequenceActionsMenu
+                  sequence={sequence}
+                  canArchive={sequencePermissions.canSoftDeleteObjectRecords}
+                  canDestroy={sequencePermissions.canDestroyObjectRecords}
+                  onArchived={async () => {
+                    await Promise.all([refetch(), refetchActiveEnrollments()]);
+                  }}
+                  onDestroyed={() => navigate(AppPath.SequencesPage)}
+                  onRestored={async () => {
+                    await Promise.all([refetch(), refetchActiveEnrollments()]);
+                  }}
+                />
+              </StyledHeaderActions>
             }
           />
         }
@@ -208,22 +246,30 @@ const SequencePageContent = () => {
           </StyledTabs>
         }
       >
+        {isArchived && (
+          <StyledArchivedNotice>
+            {t`This sequence is archived and read-only. Restoring it keeps the sequence inactive; contacts removed during archiving are not restarted.`}
+          </StyledArchivedNotice>
+        )}
         <StyledPageContent>
           {activeTab === 'steps' && (
             <SequenceStepList
               sequenceId={sequence.id}
-              isStructureLocked={isActive || hasActiveEnrollments}
+              isStructureLocked={isArchived || isActive || hasActiveEnrollments}
               canAddOrReorder={
+                !isArchived &&
                 !isActive &&
                 !hasActiveEnrollments &&
                 sequenceStepPermissions.canUpdateObjectRecords
               }
               canUpdateSteps={
+                !isArchived &&
                 !isActive &&
                 !hasActiveEnrollments &&
                 sequenceStepPermissions.canUpdateObjectRecords
               }
               canDeleteSteps={
+                !isArchived &&
                 !isActive &&
                 !hasActiveEnrollments &&
                 sequenceStepPermissions.canSoftDeleteObjectRecords
@@ -233,7 +279,10 @@ const SequencePageContent = () => {
           {activeTab === 'contacts' && (
             <SequenceContactsTable
               sequenceId={sequence.id}
-              canUpdate={sequenceEnrollmentPermissions.canUpdateObjectRecords}
+              canUpdate={
+                !isArchived &&
+                sequenceEnrollmentPermissions.canUpdateObjectRecords
+              }
               onEnrollmentUpdated={async () => {
                 await Promise.all([refetch(), refetchActiveEnrollments()]);
               }}
@@ -243,6 +292,7 @@ const SequencePageContent = () => {
             <SequenceSettingsSection
               sequence={sequence}
               canUpdate={
+                !isArchived &&
                 !isActive &&
                 !hasActiveEnrollments &&
                 sequencePermissions.canUpdateObjectRecords
