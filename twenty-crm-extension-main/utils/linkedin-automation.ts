@@ -4,17 +4,16 @@ import { isLinkedInRestrictionUrl } from './linkedin-safety-policy';
 const LINKEDIN_CONNECTION_NOTE_MAX_LENGTH = 200;
 const LINKEDIN_DIRECT_MESSAGE_MAX_LENGTH = 2_000;
 
+const SEND_CONFIRMATION_TIMEOUT_MILLISECONDS = 8_000;
+
 const LINKEDIN_SELECTORS = {
-  connectionDegree: [
-    'main .dist-value',
-    'main .distance-badge',
-    'main [class*="distance-badge"]',
-    'main [class*="distance"]',
-  ],
-  topCard: [
-    'main .pv-top-card',
-    'main [class*="top-card"]',
-    'main section:first-of-type',
+  // Degree badges carry the degree on their own, so they are matched by exact
+  // token rather than by scanning a section for "1st" anywhere in its text.
+  degreeBadge: [
+    '.dist-value',
+    '.distance-badge .dist-value',
+    '[class*="distance-badge"]',
+    '[class*="__degree"]',
   ],
   dialog: ['div[role="dialog"]', '.artdeco-modal'],
   noteTextarea: [
@@ -42,6 +41,22 @@ const LINKEDIN_SELECTORS = {
   ],
 } as const;
 
+// Recommendation rails ("More profiles for you", "People also viewed") render
+// their own degree badges and Connect buttons inside main. Everything the
+// profile-level automation reads must exclude them, otherwise another person's
+// 1st-degree badge is read as the viewed profile's own state.
+const ENTITY_CARD_SELECTOR =
+  'li, aside, [data-view-name*="entity"], [class*="entity-lockup"], [class*="discover-entity"], [class*="browsemap"], [class*="pymk"]';
+
+type ConnectionDegree = 'FIRST' | 'SECOND' | 'THIRD' | 'UNKNOWN';
+
+type ProfileActionControls = {
+  connect: HTMLElement | null;
+  pending: HTMLElement | null;
+  message: HTMLElement | null;
+  more: HTMLElement | null;
+};
+
 const wait = (milliseconds: number) =>
   new Promise((resolve) => setTimeout(resolve, milliseconds));
 
@@ -64,6 +79,15 @@ const isVisible = (element: Element): element is HTMLElement => {
 const normalizedText = (element: Element): string =>
   (element.textContent ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
 
+const accessibleLabel = (element: Element): string =>
+  (element.getAttribute('aria-label') ?? '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+
+const isProfileLevelElement = (element: Element): boolean =>
+  !element.closest(ENTITY_CARD_SELECTOR);
+
 const findVisibleElement = <TElement extends Element>(
   selectors: readonly string[],
   root: ParentNode = document,
@@ -81,22 +105,73 @@ const findVisibleElement = <TElement extends Element>(
   return null;
 };
 
-const findClickableByText = (
-  text: string,
-  root: ParentNode = document,
-): HTMLElement | null => {
-  const expectedText = text.toLowerCase();
-  const candidates = root.querySelectorAll<HTMLElement>(
-    'button, a[role="button"], div[role="button"], [role="menuitem"]',
-  );
+const clickableCandidates = (root: ParentNode = document): HTMLElement[] =>
+  [
+    ...root.querySelectorAll<HTMLElement>(
+      'button, a[role="button"], div[role="button"], [role="menuitem"]',
+    ),
+  ].filter(isVisible);
 
-  return (
-    [...candidates].find(
-      (candidate) =>
-        isVisible(candidate) && normalizedText(candidate) === expectedText,
-    ) ?? null
+// LinkedIn labels the same control differently across surfaces and locales
+// ("Connect", "Invite Jane Doe to connect", "Send without note"). Matching only
+// on exact text made every one of these controls invisible to the runner, so
+// each control is described by the patterns it can present instead.
+const matchesControl = (
+  element: HTMLElement,
+  { text, label }: { text: readonly string[]; label: readonly RegExp[] },
+): boolean => {
+  const elementLabel = accessibleLabel(element);
+
+  if (label.some((pattern) => pattern.test(elementLabel))) {
+    return true;
+  }
+
+  const elementText = normalizedText(element);
+
+  return text.some(
+    (candidate) => elementText === candidate || elementLabel === candidate,
   );
 };
+
+const CONTROL_PATTERNS = {
+  connect: {
+    text: ['connect'],
+    label: [/^invite\b.*\bto connect$/, /^connect\b/],
+  },
+  pending: {
+    text: ['pending'],
+    label: [/^pending\b/, /\bwithdraw invitation\b/],
+  },
+  message: { text: ['message'], label: [/^message\b/] },
+  more: {
+    text: ['more', 'more actions'],
+    label: [/^more actions/, /^more\b/],
+  },
+  addNote: {
+    text: ['add a note', 'add note', 'add a free note'],
+    label: [/^add a? ?(free )?note$/],
+  },
+  send: {
+    text: ['send', 'send invitation', 'send now', 'send invite'],
+    label: [/^send( invitation| invite| now)?$/],
+  },
+  sendWithoutNote: {
+    text: ['send without a note', 'send without note'],
+    label: [/^send without a? ?note$/],
+  },
+  withdraw: { text: ['withdraw'], label: [/^withdraw\b/] },
+} as const;
+
+const findControl = (
+  control: keyof typeof CONTROL_PATTERNS,
+  root: ParentNode = document,
+  { profileLevelOnly = false }: { profileLevelOnly?: boolean } = {},
+): HTMLElement | null =>
+  clickableCandidates(root).find(
+    (candidate) =>
+      matchesControl(candidate, CONTROL_PATTERNS[control]) &&
+      (!profileLevelOnly || isProfileLevelElement(candidate)),
+  ) ?? null;
 
 const waitForElement = async <TElement extends Element>(
   findElement: () => TElement | null,
@@ -132,40 +207,47 @@ export type LinkedInAutomationResult =
       connectionState: LinkedInConnectionState;
     };
 
-export const detectConnectionDegree = ():
-  | 'FIRST'
-  | 'SECOND'
-  | 'THIRD'
-  | 'UNKNOWN' => {
-  for (const selector of LINKEDIN_SELECTORS.connectionDegree) {
-    for (const element of document.querySelectorAll(selector)) {
-      if (!isVisible(element)) {
-        continue;
-      }
-
-      const text = normalizedText(element);
-
-      if (/\b1st\b/.test(text)) return 'FIRST';
-      if (/\b2nd\b/.test(text)) return 'SECOND';
-      if (/\b3rd\+?\b/.test(text)) return 'THIRD';
-    }
-  }
-
-  const topCard = findVisibleElement<HTMLElement>(LINKEDIN_SELECTORS.topCard);
-  const topCardText = topCard ? normalizedText(topCard) : '';
-
-  if (/\b1st\b/.test(topCardText)) return 'FIRST';
-  if (/\b2nd\b/.test(topCardText)) return 'SECOND';
-  if (/\b3rd\+?\b/.test(topCardText)) return 'THIRD';
+const parseDegreeToken = (value: string): ConnectionDegree => {
+  // The badge must be exactly a degree token. Substring matching against a
+  // whole section is what previously reported unrelated people as 1st-degree.
+  if (/^1(st|er|re|°)?$/.test(value)) return 'FIRST';
+  if (/^2(nd|e|°)?$/.test(value)) return 'SECOND';
+  if (/^3(rd|e|°)?\+?$/.test(value)) return 'THIRD';
 
   return 'UNKNOWN';
 };
 
-const detectPendingInvitation = (): boolean => {
-  const topCard = findVisibleElement<HTMLElement>(LINKEDIN_SELECTORS.topCard);
+export const detectConnectionDegree = (): ConnectionDegree => {
+  const main = document.querySelector('main') ?? document;
 
-  return Boolean(findClickableByText('Pending', topCard ?? document));
+  for (const selector of LINKEDIN_SELECTORS.degreeBadge) {
+    for (const element of main.querySelectorAll(selector)) {
+      if (!isVisible(element) || !isProfileLevelElement(element)) {
+        continue;
+      }
+
+      // Badges often read "· 2nd degree connection"; keep only the token.
+      const token = normalizedText(element)
+        .replace(/degree|connection|·|·|,/g, ' ')
+        .trim()
+        .split(' ')[0];
+      const degree = parseDegreeToken(token);
+
+      if (degree !== 'UNKNOWN') {
+        return degree;
+      }
+    }
+  }
+
+  return 'UNKNOWN';
 };
+
+const getProfileActionControls = (): ProfileActionControls => ({
+  connect: findControl('connect', document, { profileLevelOnly: true }),
+  pending: findControl('pending', document, { profileLevelOnly: true }),
+  message: findControl('message', document, { profileLevelOnly: true }),
+  more: findControl('more', document, { profileLevelOnly: true }),
+});
 
 const setTextareaValue = (
   textarea: HTMLTextAreaElement,
@@ -207,6 +289,8 @@ export const getLinkedInAutomationBlockReason = (): string | null => {
     'security verification',
     'commercial use limit',
     'weekly invitation limit',
+    "you've reached the weekly invitation limit",
+    'try again later',
   ];
   const signal = restrictionSignals.find((candidate) =>
     visibleText.includes(candidate),
@@ -215,6 +299,48 @@ export const getLinkedInAutomationBlockReason = (): string | null => {
   return signal
     ? `LinkedIn displayed a safety or limit warning (${signal}).`
     : null;
+};
+
+// A send is only reported as completed once LinkedIn confirms it: the
+// invitation dialog closes and the profile stops offering Connect. Returning
+// COMPLETED after a fixed sleep reported successes that never left the browser.
+const confirmInvitationSent = async (
+  dialog: HTMLElement,
+): Promise<{ confirmed: boolean; reason: string | null }> => {
+  const deadline = Date.now() + SEND_CONFIRMATION_TIMEOUT_MILLISECONDS;
+
+  while (Date.now() < deadline) {
+    const blockReason = getLinkedInAutomationBlockReason();
+
+    if (blockReason) {
+      return { confirmed: false, reason: blockReason };
+    }
+
+    const isDialogClosed = !dialog.isConnected || !isVisible(dialog);
+
+    if (isDialogClosed) {
+      const controls = getProfileActionControls();
+
+      if (controls.pending || !controls.connect) {
+        return { confirmed: true, reason: null };
+      }
+
+      // The dialog closed but Connect is still offered, which is how LinkedIn
+      // presents a dismissed or rejected invitation.
+      return {
+        confirmed: false,
+        reason:
+          'LinkedIn closed the invitation dialog without sending the request',
+      };
+    }
+
+    await wait(250);
+  }
+
+  return {
+    confirmed: false,
+    reason: 'LinkedIn did not confirm that the invitation was sent',
+  };
 };
 
 export const sendConnectionRequest = async (
@@ -239,34 +365,33 @@ export const sendConnectionRequest = async (
     };
   }
 
-  if (skipIfAlreadyConnected && detectConnectionDegree() === 'FIRST') {
-    return { status: 'SKIPPED', connectionState: 'CONNECTED' };
-  }
+  const controls = getProfileActionControls();
+  const degree = detectConnectionDegree();
 
-  if (skipIfAlreadyConnected && detectPendingInvitation()) {
+  // Skipping happens only on positive evidence. An unreadable page is reported
+  // as a failure so the enrollment surfaces the problem instead of silently
+  // recording a connection that was never requested.
+  if (controls.pending) {
     return { status: 'SKIPPED', connectionState: 'PENDING' };
   }
 
-  const topCard = findVisibleElement<HTMLElement>(LINKEDIN_SELECTORS.topCard);
-
-  if (!topCard) {
-    return {
-      status: 'FAILED',
-      connectionState: 'UNKNOWN',
-      errorMessage: 'Could not recognize the LinkedIn profile top card',
-    };
+  if (skipIfAlreadyConnected && degree === 'FIRST') {
+    return { status: 'SKIPPED', connectionState: 'CONNECTED' };
   }
 
-  let connectButton = findClickableByText('Connect', topCard);
+  let connectButton = controls.connect;
 
   if (!connectButton) {
-    const moreButton = findClickableByText('More', topCard);
+    const moreButton = controls.more;
 
     if (!moreButton) {
       return {
         status: 'FAILED',
-        connectionState: 'UNKNOWN',
-        errorMessage: 'Could not find a recognized Connect or More control',
+        connectionState: degree === 'FIRST' ? 'CONNECTED' : 'UNKNOWN',
+        errorMessage:
+          degree === 'FIRST'
+            ? 'LinkedIn shows this profile as an existing connection and offered no Connect control'
+            : 'Could not find a recognized Connect or More control on the profile',
       };
     }
 
@@ -274,7 +399,7 @@ export const sendConnectionRequest = async (
     connectButton = await waitForElement(() => {
       const menu = document.querySelector<HTMLElement>('[role="menu"]');
 
-      return menu ? findClickableByText('Connect', menu) : null;
+      return menu ? findControl('connect', menu) : null;
     });
   }
 
@@ -300,17 +425,12 @@ export const sendConnectionRequest = async (
   }
 
   if (noteText.length > 0) {
-    const addNoteButton = findClickableByText('Add a note', dialog);
+    // Some invitation dialogs expose the note field directly, so a missing
+    // "Add a note" button is only a failure when no textarea appears either.
+    const addNoteButton = findControl('addNote', dialog);
 
-    if (!addNoteButton) {
-      return {
-        status: 'FAILED',
-        connectionState: 'NOT_CONNECTED',
-        errorMessage: 'The invitation dialog did not contain Add a note',
-      };
-    }
+    addNoteButton?.click();
 
-    addNoteButton.click();
     const textarea = await waitForElement(() =>
       findVisibleElement<HTMLTextAreaElement>(
         LINKEDIN_SELECTORS.noteTextarea,
@@ -322,12 +442,14 @@ export const sendConnectionRequest = async (
       return {
         status: 'FAILED',
         connectionState: 'NOT_CONNECTED',
-        errorMessage: 'The invitation note textarea was not recognized',
+        errorMessage: 'The invitation note field was not recognized',
       };
     }
 
     setTextareaValue(textarea, noteText);
-    const sendButton = findClickableByText('Send', dialog);
+    await wait(300);
+
+    const sendButton = findControl('send', dialog);
 
     if (!sendButton) {
       return {
@@ -340,8 +462,7 @@ export const sendConnectionRequest = async (
     sendButton.click();
   } else {
     const sendButton =
-      findClickableByText('Send without a note', dialog) ??
-      findClickableByText('Send', dialog);
+      findControl('sendWithoutNote', dialog) ?? findControl('send', dialog);
 
     if (!sendButton) {
       return {
@@ -355,14 +476,13 @@ export const sendConnectionRequest = async (
     sendButton.click();
   }
 
-  await wait(1_500);
-  const postSendBlockReason = getLinkedInAutomationBlockReason();
+  const { confirmed, reason } = await confirmInvitationSent(dialog);
 
-  if (postSendBlockReason) {
+  if (!confirmed) {
     return {
       status: 'FAILED',
       connectionState: 'UNKNOWN',
-      errorMessage: postSendBlockReason,
+      errorMessage: reason ?? 'The invitation could not be confirmed as sent',
     };
   }
 
@@ -400,7 +520,19 @@ export const sendDirectMessage = async (
     };
   }
 
+  const controls = getProfileActionControls();
   const connectionDegree = detectConnectionDegree();
+
+  // A pending invitation is a legitimate waiting state rather than an error, so
+  // it is reported as such and the recorded connection state stays accurate.
+  if (controls.pending) {
+    return {
+      status: 'FAILED',
+      connectionState: 'PENDING',
+      errorMessage:
+        'The connection request is still pending, so a direct message cannot be sent yet',
+    };
+  }
 
   if (connectionDegree !== 'FIRST') {
     return {
@@ -412,10 +544,7 @@ export const sendDirectMessage = async (
     };
   }
 
-  const topCard = findVisibleElement<HTMLElement>(LINKEDIN_SELECTORS.topCard);
-  const messageButton = topCard
-    ? findClickableByText('Message', topCard)
-    : null;
+  const messageButton = controls.message;
 
   if (!messageButton) {
     return {
@@ -461,7 +590,7 @@ export const sendDirectMessage = async (
     [
       ...composer.querySelectorAll<HTMLButtonElement>('button[type="submit"]'),
     ].find((button) => isVisible(button) && !button.disabled) ??
-    findClickableByText('Send', composer);
+    findControl('send', composer);
 
   if (!sendButton || sendButton.getAttribute('aria-disabled') === 'true') {
     return {
@@ -497,6 +626,11 @@ const getProfileHandle = (profileUrl: string): string | null => {
   }
 };
 
+export const isInvitationManagerPath = (pathname: string): boolean =>
+  /^\/mynetwork\/(invitation-manager|invite-connect\/invitations)\b/.test(
+    pathname,
+  );
+
 export const withdrawConnectionRequest = async (
   profileUrl: string,
 ): Promise<LinkedInAutomationResult> => {
@@ -510,10 +644,12 @@ export const withdrawConnectionRequest = async (
     };
   }
 
-  const invitationManagerPath = '/mynetwork/invitation-manager/sent/';
-
-  if (!window.location.pathname.startsWith(invitationManagerPath)) {
-    window.location.assign(`${window.location.origin}${invitationManagerPath}`);
+  // LinkedIn redirects between several invitation-manager paths, so the check
+  // accepts any of them instead of looping on a single exact prefix.
+  if (!isInvitationManagerPath(window.location.pathname)) {
+    window.location.assign(
+      `${window.location.origin}/mynetwork/invitation-manager/sent/`,
+    );
 
     return { status: 'NAVIGATING', connectionState: 'UNKNOWN' };
   }
@@ -538,11 +674,14 @@ export const withdrawConnectionRequest = async (
     ),
   );
 
+  // An absent row means the invitation is no longer outstanding. It may have
+  // been accepted, withdrawn, or expired, and the page cannot tell them apart,
+  // so the connection state is left unknown rather than asserted as connected.
   if (!matchingRow) {
-    return { status: 'SKIPPED', connectionState: 'CONNECTED' };
+    return { status: 'SKIPPED', connectionState: 'UNKNOWN' };
   }
 
-  const withdrawButton = findClickableByText('Withdraw', matchingRow);
+  const withdrawButton = findControl('withdraw', matchingRow);
 
   if (!withdrawButton) {
     return {
@@ -556,7 +695,7 @@ export const withdrawConnectionRequest = async (
   const dialog = await waitForElement(() =>
     findVisibleElement<HTMLElement>(LINKEDIN_SELECTORS.dialog),
   );
-  const confirmButton = dialog ? findClickableByText('Withdraw', dialog) : null;
+  const confirmButton = dialog ? findControl('withdraw', dialog) : null;
 
   if (!confirmButton) {
     return {

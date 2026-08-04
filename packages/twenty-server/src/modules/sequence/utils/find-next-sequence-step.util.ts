@@ -13,6 +13,29 @@ const isSameBranch = (
   firstBranch?.conditionStepId === secondBranch?.conditionStepId &&
   firstBranch?.outcome === secondBranch?.outcome;
 
+// Positions are not guaranteed unique: editing a sequence can leave two steps
+// on the same position. Ordering on position alone made the tied step
+// unreachable, because traversal only ever looked for a strictly greater
+// position. Creation order breaks ties so every step is still visited exactly
+// once, in a stable order.
+const compareSteps = (
+  first: SequenceStepWorkspaceEntity,
+  second: SequenceStepWorkspaceEntity,
+): number => {
+  if (first.position !== second.position) {
+    return first.position - second.position;
+  }
+
+  // createdAt is an ISO 8601 string, so lexicographic order is chronological.
+  const createdAtComparison = (first.createdAt ?? '').localeCompare(
+    second.createdAt ?? '',
+  );
+
+  return createdAtComparison !== 0
+    ? createdAtComparison
+    : first.id.localeCompare(second.id);
+};
+
 const findFirstStepInBranch = ({
   steps,
   branch,
@@ -22,7 +45,7 @@ const findFirstStepInBranch = ({
 }) =>
   steps
     .filter((step) => isSameBranch(step.settings.branch, branch))
-    .sort((first, second) => first.position - second.position)[0];
+    .sort(compareSteps)[0];
 
 const findNextSiblingOrMerge = ({
   steps,
@@ -34,10 +57,10 @@ const findNextSiblingOrMerge = ({
   const nextSibling = steps
     .filter(
       (step) =>
-        step.position > currentStep.position &&
+        compareSteps(step, currentStep) > 0 &&
         isSameBranch(step.settings.branch, currentStep.settings.branch),
     )
-    .sort((first, second) => first.position - second.position)[0];
+    .sort(compareSteps)[0];
 
   if (nextSibling) {
     return nextSibling;
@@ -76,7 +99,7 @@ export const findNextSequenceStep = ({
       .filter(
         (step) => !step.settings.branch && step.position > currentStepPosition,
       )
-      .sort((first, second) => first.position - second.position)[0];
+      .sort(compareSteps)[0];
   }
 
   if (currentStep.settings.type === SEQUENCE_STEP_TYPES.CONDITION) {

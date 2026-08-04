@@ -147,4 +147,63 @@ describe('findNextSequenceStep', () => {
       }),
     ).toBe(mergedStep);
   });
+
+  it('reaches a sibling that shares the current position', () => {
+    const firstStep = {
+      id: 'tied-first',
+      position: 0,
+      createdAt: '2026-08-04T08:33:20.835Z',
+      settings: {
+        type: SEQUENCE_STEP_TYPES.DELAY,
+        days: 0,
+        hours: 0,
+        minutes: 0,
+      },
+    } as SequenceStepWorkspaceEntity;
+    const tiedSecondStep = {
+      id: 'tied-second',
+      position: 0,
+      createdAt: '2026-08-04T08:37:49.977Z',
+      settings: {
+        type: SEQUENCE_STEP_TYPES.DELAY,
+        days: 0,
+        hours: 0,
+        minutes: 0,
+      },
+    } as SequenceStepWorkspaceEntity;
+
+    expect(
+      findNextSequenceStep({
+        steps: [firstStep, tiedSecondStep],
+        currentStepId: firstStep.id,
+        currentStepPosition: firstStep.position,
+      }),
+    ).toBe(tiedSecondStep);
+  });
+
+  it('starts on the earliest of two steps sharing the first position', () => {
+    const tiedConditionStep = {
+      ...conditionStep,
+      createdAt: '2026-08-04T08:33:20.835Z',
+    } as SequenceStepWorkspaceEntity;
+    const tiedActionStep = {
+      id: 'tied-action',
+      position: 0,
+      createdAt: '2026-08-04T08:37:49.977Z',
+      settings: {
+        type: SEQUENCE_STEP_TYPES.DELAY,
+        days: 0,
+        hours: 0,
+        minutes: 0,
+      },
+    } as SequenceStepWorkspaceEntity;
+
+    expect(
+      findNextSequenceStep({
+        steps: [tiedActionStep, tiedConditionStep],
+        currentStepId: null,
+        currentStepPosition: -1,
+      }),
+    ).toBe(tiedConditionStep);
+  });
 });

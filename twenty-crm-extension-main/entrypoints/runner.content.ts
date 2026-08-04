@@ -11,6 +11,7 @@ import type {
 } from '../types';
 import {
   getLinkedInAutomationBlockReason,
+  isInvitationManagerPath,
   sendConnectionRequest,
   sendDirectMessage,
   withdrawConnectionRequest,
@@ -660,9 +661,10 @@ export default defineContentScript({
 
     const ensureActionPage = (action: TwentyLinkedInAction): boolean => {
       if (action.type === 'WITHDRAW_CONNECTION_REQUEST') {
-        if (
-          !window.location.pathname.startsWith(LINKEDIN_INVITATION_MANAGER_PATH)
-        ) {
+        // The accepted-path check has to match the one the withdrawal itself
+        // uses, otherwise LinkedIn's redirect between invitation-manager paths
+        // leaves the runner navigating in a loop.
+        if (!isInvitationManagerPath(window.location.pathname)) {
           window.location.assign(
             `${window.location.origin}${LINKEDIN_INVITATION_MANAGER_PATH}`,
           );

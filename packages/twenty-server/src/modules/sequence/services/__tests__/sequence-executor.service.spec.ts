@@ -16,6 +16,7 @@ import { type GlobalWorkspaceOrmManager } from 'src/engine/twenty-orm/global-wor
 import { type WorkspaceEntityManager } from 'src/engine/twenty-orm/entity-manager/workspace-entity-manager';
 import { LinkedinActionWorkspaceEntity } from 'src/modules/linkedin/standard-objects/linkedin-action.workspace-entity';
 import { LinkedinConnectionWorkspaceEntity } from 'src/modules/linkedin/standard-objects/linkedin-connection.workspace-entity';
+import { LinkedinInvitationWorkspaceEntity } from 'src/modules/linkedin/standard-objects/linkedin-invitation.workspace-entity';
 import { LinkedinMessageWorkspaceEntity } from 'src/modules/linkedin/standard-objects/linkedin-message.workspace-entity';
 import { LinkedinThreadParticipantWorkspaceEntity } from 'src/modules/linkedin/standard-objects/linkedin-thread-participant.workspace-entity';
 import { PersonWorkspaceEntity } from 'src/modules/person/standard-objects/person.workspace-entity';
@@ -104,11 +105,17 @@ describe('SequenceExecutorService', () => {
     currentSequence = sequence,
     person = buildPerson(),
     steps = [step],
+    connectionCount = 0,
+    sentInvitationCount = 0,
+    linkedinActionCount = 0,
   }: {
     currentEnrollment?: SequenceEnrollmentWorkspaceEntity;
     currentSequence?: SequenceWorkspaceEntity;
     person?: PersonWorkspaceEntity;
     steps?: SequenceStepWorkspaceEntity[];
+    connectionCount?: number;
+    sentInvitationCount?: number;
+    linkedinActionCount?: number;
   } = {}) => {
     const enrollmentRepository = {
       findOne: jest.fn().mockResolvedValue(currentEnrollment),
@@ -125,9 +132,13 @@ describe('SequenceExecutorService', () => {
     };
     const linkedinActionRepository = {
       insert: jest.fn(),
+      count: jest.fn().mockResolvedValue(linkedinActionCount),
     };
     const linkedinConnectionRepository = {
-      count: jest.fn().mockResolvedValue(0),
+      count: jest.fn().mockResolvedValue(connectionCount),
+    };
+    const linkedinInvitationRepository = {
+      count: jest.fn().mockResolvedValue(sentInvitationCount),
     };
     const linkedinMessageRepository = {
       count: jest.fn().mockResolvedValue(0),
@@ -142,6 +153,7 @@ describe('SequenceExecutorService', () => {
       [PersonWorkspaceEntity, personRepository],
       [LinkedinActionWorkspaceEntity, linkedinActionRepository],
       [LinkedinConnectionWorkspaceEntity, linkedinConnectionRepository],
+      [LinkedinInvitationWorkspaceEntity, linkedinInvitationRepository],
       [LinkedinMessageWorkspaceEntity, linkedinMessageRepository],
       [
         LinkedinThreadParticipantWorkspaceEntity,
@@ -867,6 +879,7 @@ describe('SequenceExecutorService', () => {
       },
       person,
       steps: [messageStep],
+      connectionCount: 1,
     });
 
     await service.process({ workspaceId, enrollmentId });
@@ -879,6 +892,89 @@ describe('SequenceExecutorService', () => {
         ownerWorkspaceMemberId: 'owner-workspace-member-id',
       }),
       transactionManager,
+    );
+  });
+
+  it('fails a LinkedIn message step instead of queueing an unsendable action', async () => {
+    const messageStep = {
+      id: 'message-step-id',
+      sequenceId: sequence.id,
+      position: 0,
+      type: SEQUENCE_STEP_TYPES.SEND_LINKEDIN_MESSAGE,
+      settings: {
+        type: SEQUENCE_STEP_TYPES.SEND_LINKEDIN_MESSAGE,
+        messageTemplate: 'Hi {{ firstName }}, thanks for connecting.',
+      },
+    } as SequenceStepWorkspaceEntity;
+    const person = {
+      ...buildPerson(),
+      linkedinLink: {
+        primaryLinkUrl: 'https://www.linkedin.com/in/ada-lovelace/',
+        primaryLinkLabel: 'LinkedIn',
+        secondaryLinks: null,
+      },
+    } as PersonWorkspaceEntity;
+    const { service, linkedinActionRepository, enrollmentRepository } = setup({
+      currentEnrollment: {
+        ...enrollment,
+        waitingOn: SEQUENCE_WAITING_ON.DELAY,
+      },
+      person,
+      steps: [messageStep],
+      connectionCount: 0,
+    });
+
+    await service.process({ workspaceId, enrollmentId });
+
+    expect(linkedinActionRepository.insert).not.toHaveBeenCalled();
+    expect(enrollmentRepository.update).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        status: SEQUENCE_ENROLLMENT_STATUSES.FAILED,
+        errorMessage: 'LINKEDIN_NOT_CONNECTED',
+      }),
+    );
+  });
+
+  it('skips a connection request when an invitation is already outstanding', async () => {
+    const connectionStep = {
+      id: 'connection-step-id',
+      sequenceId: sequence.id,
+      position: 0,
+      type: SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST,
+      settings: {
+        type: SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST,
+        noteTemplate: 'Hi {{ firstName }}',
+        skipIfAlreadyConnected: false,
+      },
+    } as SequenceStepWorkspaceEntity;
+    const person = {
+      ...buildPerson(),
+      linkedinLink: {
+        primaryLinkUrl: 'https://www.linkedin.com/in/ada-lovelace/',
+        primaryLinkLabel: 'LinkedIn',
+        secondaryLinks: null,
+      },
+    } as PersonWorkspaceEntity;
+    const { service, linkedinActionRepository, enrollmentRepository } = setup({
+      currentEnrollment: {
+        ...enrollment,
+        waitingOn: SEQUENCE_WAITING_ON.DELAY,
+      },
+      person,
+      steps: [connectionStep],
+      sentInvitationCount: 1,
+    });
+
+    await service.process({ workspaceId, enrollmentId });
+
+    expect(linkedinActionRepository.insert).not.toHaveBeenCalled();
+    expect(enrollmentRepository.update).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        currentStepId: 'connection-step-id',
+        waitingOn: SEQUENCE_WAITING_ON.DELAY,
+      }),
     );
   });
 

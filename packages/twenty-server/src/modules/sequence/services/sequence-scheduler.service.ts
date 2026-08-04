@@ -31,6 +31,7 @@ import {
   LINKEDIN_ACTION_MAX_AGE_MS,
   SEQUENCE_SCHEDULER_BATCH_SIZE,
   SEQUENCE_EXECUTION_ERROR,
+  SEQUENCE_LINKEDIN_RECONCILE_GRACE_MS,
   SEQUENCE_SEND_SLOT_LOOKAHEAD_MILLISECONDS,
 } from 'src/modules/sequence/sequence.constants';
 import { SequenceEnrollmentWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence-enrollment.workspace-entity';
@@ -80,6 +81,13 @@ export class SequenceSchedulerService {
           SequenceEnrollmentWorkspaceEntity,
           { shouldBypassPermissionChecks: true },
         );
+
+      await this.reconcileLinkedinWaitingEnrollments({
+        workspaceId,
+        enrollmentRepository,
+        linkedinActionRepository,
+        now,
+      });
       const stepRepository = await this.globalWorkspaceOrmManager.getRepository(
         workspaceId,
         SequenceStepWorkspaceEntity,
@@ -259,6 +267,139 @@ export class SequenceSchedulerService {
           status: LINKEDIN_ACTION_STATUSES.FAILED,
           executedAt: now,
           errorMessage: SEQUENCE_EXECUTION_ERROR.LINKEDIN_ACTION_EXPIRED,
+        },
+      );
+    }
+  }
+
+  // Enrollments waiting on a LinkedIn action are woken by an update event on
+  // that action. That event is in-process and fire-and-forget: a worker restart,
+  // a failed handler, or an action deleted underneath the enrollment leaves it
+  // ACTIVE with waitingOn=LINKEDIN_ACTION and nextActionAt=null, which no other
+  // query in this service ever selects. This pass re-derives the outcome from
+  // the action itself so the event stays an optimisation rather than the only
+  // path forward.
+  private async reconcileLinkedinWaitingEnrollments({
+    workspaceId,
+    enrollmentRepository,
+    linkedinActionRepository,
+    now,
+  }: {
+    workspaceId: string;
+    enrollmentRepository: WorkspaceRepository<SequenceEnrollmentWorkspaceEntity>;
+    linkedinActionRepository: WorkspaceRepository<LinkedinActionWorkspaceEntity>;
+    now: Date;
+  }): Promise<void> {
+    // Only enrollments that have been waiting for a while are reconciled, so a
+    // transition that is still settling is never mistaken for a stuck one.
+    const waitingEnrollments = await enrollmentRepository.find({
+      where: {
+        status: SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
+        waitingOn: SEQUENCE_WAITING_ON.LINKEDIN_ACTION,
+        updatedAt: LessThan(
+          new Date(
+            now.getTime() - SEQUENCE_LINKEDIN_RECONCILE_GRACE_MS,
+          ).toISOString(),
+        ),
+      },
+      order: { updatedAt: 'ASC' },
+      take: SEQUENCE_SCHEDULER_BATCH_SIZE,
+    });
+
+    if (waitingEnrollments.length === 0) {
+      return;
+    }
+
+    const actions = await linkedinActionRepository.find({
+      where: {
+        sequenceEnrollmentId: In(
+          waitingEnrollments.map((enrollment) => enrollment.id),
+        ),
+      },
+      order: { createdAt: 'ASC' },
+    });
+    const actionsByEnrollmentId = new Map<
+      string,
+      LinkedinActionWorkspaceEntity[]
+    >();
+
+    for (const action of actions) {
+      if (!isDefined(action.sequenceEnrollmentId)) {
+        continue;
+      }
+
+      const enrollmentActions =
+        actionsByEnrollmentId.get(action.sequenceEnrollmentId) ?? [];
+
+      enrollmentActions.push(action);
+      actionsByEnrollmentId.set(action.sequenceEnrollmentId, enrollmentActions);
+    }
+
+    for (const enrollment of waitingEnrollments) {
+      const enrollmentActions = actionsByEnrollmentId.get(enrollment.id) ?? [];
+      const stepActions = isDefined(enrollment.currentStepId)
+        ? enrollmentActions.filter(
+            (action) => action.sequenceStepId === enrollment.currentStepId,
+          )
+        : enrollmentActions;
+
+      if (
+        stepActions.some(
+          (action) =>
+            action.status === LINKEDIN_ACTION_STATUSES.SCHEDULED ||
+            action.status === LINKEDIN_ACTION_STATUSES.CLAIMED,
+        )
+      ) {
+        continue;
+      }
+
+      const latestAction = stepActions[stepActions.length - 1];
+      const shouldAdvance =
+        isDefined(latestAction) &&
+        (latestAction.status === LINKEDIN_ACTION_STATUSES.COMPLETED ||
+          latestAction.status === LINKEDIN_ACTION_STATUSES.SKIPPED);
+
+      if (shouldAdvance) {
+        const updateResult = await enrollmentRepository.update(
+          {
+            id: enrollment.id,
+            status: SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
+            waitingOn: SEQUENCE_WAITING_ON.LINKEDIN_ACTION,
+          },
+          {
+            waitingOn: SEQUENCE_WAITING_ON.DELAY,
+            nextActionAt: now,
+          },
+        );
+
+        if (updateResult.affected === 1) {
+          await this.sequenceQueueService.enqueueProcess({
+            workspaceId,
+            enrollmentId: enrollment.id,
+          });
+        }
+
+        continue;
+      }
+
+      const errorMessage =
+        latestAction?.errorMessage ??
+        (isDefined(latestAction)
+          ? SEQUENCE_EXECUTION_ERROR.LINKEDIN_ACTION_EXPIRED
+          : SEQUENCE_EXECUTION_ERROR.LINKEDIN_ACTION_MISSING);
+
+      await enrollmentRepository.update(
+        {
+          id: enrollment.id,
+          status: SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
+          waitingOn: SEQUENCE_WAITING_ON.LINKEDIN_ACTION,
+        },
+        {
+          status: SEQUENCE_ENROLLMENT_STATUSES.FAILED,
+          waitingOn: null,
+          nextActionAt: null,
+          endedAt: now,
+          errorMessage,
         },
       );
     }

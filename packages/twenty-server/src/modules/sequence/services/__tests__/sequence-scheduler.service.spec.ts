@@ -1,4 +1,5 @@
 import {
+  LINKEDIN_ACTION_STATUSES,
   SEQUENCE_ENROLLMENT_STATUSES,
   SEQUENCE_STATUSES,
   SEQUENCE_STEP_TYPES,
@@ -71,11 +72,15 @@ describe('SequenceSchedulerService', () => {
     pendingEnrollments = [],
     dueEnrollments = [],
     futureScheduledEnrollments = [],
+    linkedinWaitingEnrollments = [],
+    linkedinActions = [],
   }: {
     startedToday: number;
     pendingEnrollments?: SequenceEnrollmentWorkspaceEntity[];
     dueEnrollments?: SequenceEnrollmentWorkspaceEntity[];
     futureScheduledEnrollments?: SequenceEnrollmentWorkspaceEntity[];
+    linkedinWaitingEnrollments?: SequenceEnrollmentWorkspaceEntity[];
+    linkedinActions?: LinkedinActionWorkspaceEntity[];
   }) => {
     const sequenceRepository = {
       find: jest.fn().mockResolvedValue([sequence]),
@@ -92,6 +97,10 @@ describe('SequenceSchedulerService', () => {
           return futureScheduledEnrollments;
         }
 
+        if (options.where.waitingOn === SEQUENCE_WAITING_ON.LINKEDIN_ACTION) {
+          return linkedinWaitingEnrollments;
+        }
+
         return dueEnrollments;
       }),
       update: jest.fn().mockResolvedValue({ affected: 1 }),
@@ -100,7 +109,11 @@ describe('SequenceSchedulerService', () => {
       find: jest.fn().mockResolvedValue([step]),
     };
     const linkedinActionRepository = {
-      find: jest.fn().mockResolvedValue([]),
+      find: jest
+        .fn()
+        .mockImplementation(async (options) =>
+          options.where.sequenceEnrollmentId ? linkedinActions : [],
+        ),
       update: jest.fn().mockResolvedValue({ affected: 1 }),
     };
     const repositories = new Map<object, object>([
@@ -220,6 +233,93 @@ describe('SequenceSchedulerService', () => {
         waitingOn: SEQUENCE_WAITING_ON.EMAIL_SCHEDULED,
         nextActionAt: new Date('2024-01-01T10:05:00.000Z'),
       }),
+    );
+  });
+
+  it('resumes an enrollment whose LinkedIn action already finished', async () => {
+    const waitingEnrollment = {
+      ...buildEnrollment('waiting-id'),
+      waitingOn: SEQUENCE_WAITING_ON.LINKEDIN_ACTION,
+      currentStepId: 'linkedin-step-id',
+      nextActionAt: null,
+    } as SequenceEnrollmentWorkspaceEntity;
+    const { service, enrollmentRepository, enqueueProcess } = setup({
+      startedToday: 2,
+      linkedinWaitingEnrollments: [waitingEnrollment],
+      linkedinActions: [
+        {
+          id: 'action-id',
+          status: LINKEDIN_ACTION_STATUSES.SKIPPED,
+          sequenceEnrollmentId: 'waiting-id',
+          sequenceStepId: 'linkedin-step-id',
+        } as LinkedinActionWorkspaceEntity,
+      ],
+    });
+
+    await service.tick(workspaceId, now);
+
+    expect(enrollmentRepository.update).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'waiting-id' }),
+      expect.objectContaining({
+        waitingOn: SEQUENCE_WAITING_ON.DELAY,
+        nextActionAt: now,
+      }),
+    );
+    expect(enqueueProcess).toHaveBeenCalledWith({
+      workspaceId,
+      enrollmentId: 'waiting-id',
+    });
+  });
+
+  it('fails an enrollment whose LinkedIn action disappeared', async () => {
+    const waitingEnrollment = {
+      ...buildEnrollment('waiting-id'),
+      waitingOn: SEQUENCE_WAITING_ON.LINKEDIN_ACTION,
+      currentStepId: 'linkedin-step-id',
+      nextActionAt: null,
+    } as SequenceEnrollmentWorkspaceEntity;
+    const { service, enrollmentRepository } = setup({
+      startedToday: 2,
+      linkedinWaitingEnrollments: [waitingEnrollment],
+      linkedinActions: [],
+    });
+
+    await service.tick(workspaceId, now);
+
+    expect(enrollmentRepository.update).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'waiting-id' }),
+      expect.objectContaining({
+        status: SEQUENCE_ENROLLMENT_STATUSES.FAILED,
+        errorMessage: 'LINKEDIN_ACTION_MISSING',
+      }),
+    );
+  });
+
+  it('leaves an enrollment waiting while its LinkedIn action is still scheduled', async () => {
+    const waitingEnrollment = {
+      ...buildEnrollment('waiting-id'),
+      waitingOn: SEQUENCE_WAITING_ON.LINKEDIN_ACTION,
+      currentStepId: 'linkedin-step-id',
+      nextActionAt: null,
+    } as SequenceEnrollmentWorkspaceEntity;
+    const { service, enrollmentRepository } = setup({
+      startedToday: 2,
+      linkedinWaitingEnrollments: [waitingEnrollment],
+      linkedinActions: [
+        {
+          id: 'action-id',
+          status: LINKEDIN_ACTION_STATUSES.SCHEDULED,
+          sequenceEnrollmentId: 'waiting-id',
+          sequenceStepId: 'linkedin-step-id',
+        } as LinkedinActionWorkspaceEntity,
+      ],
+    });
+
+    await service.tick(workspaceId, now);
+
+    expect(enrollmentRepository.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'waiting-id' }),
+      expect.anything(),
     );
   });
 
