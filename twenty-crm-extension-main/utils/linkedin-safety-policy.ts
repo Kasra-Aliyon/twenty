@@ -3,7 +3,9 @@ import type { LinkedInSafetyState } from '../types';
 export const LINKEDIN_READ_REQUESTS_PER_HOUR = 60;
 export const LINKEDIN_READ_REQUESTS_PER_DAY = 200;
 export const LINKEDIN_OUTBOUND_ATTEMPTS_PER_DAY = 20;
-export const LINKEDIN_OUTBOUND_MINIMUM_GAP_MILLISECONDS = 15 * 60_000;
+// Local floor only. The server-side delay pattern drives the actual spacing;
+// this guards against a runner replaying actions back to back.
+export const LINKEDIN_OUTBOUND_MINIMUM_GAP_MILLISECONDS = 60_000;
 export const LINKEDIN_RESTRICTION_COOLDOWN_MILLISECONDS = 24 * 60 * 60_000;
 
 const HOUR_MILLISECONDS = 60 * 60_000;

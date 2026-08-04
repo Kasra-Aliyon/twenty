@@ -8,7 +8,7 @@ export const DEFAULT_SEQUENCE_SETTINGS: SequenceSettings = {
   dailyStarts: 25,
   staggerMinutes: 5,
   linkedinDailyActions: 20,
-  linkedinDelayPatternMinutes: [15, 22, 35, 18, 28, 45, 20],
+  linkedinDelayPatternMinutes: [1, 2, 2.5, 3, 3.5, 4, 5],
   stopOnReply: true,
 };
 

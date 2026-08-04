@@ -37,7 +37,21 @@ describe('SequenceLinkedinThrottleService', () => {
     ...overrides,
   });
 
+  const gapsInMinutes = (slots: Date[], now: Date): number[] =>
+    slots.map((slot, index) =>
+      index === 0
+        ? (slot.getTime() - now.getTime()) / 60_000
+        : (slot.getTime() - slots[index - 1].getTime()) / 60_000,
+    );
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   it('cycles the configured delay pattern and wraps', async () => {
+    // A midpoint draw produces a neutral jitter factor, isolating the cycle.
+    jest.spyOn(Math, 'random').mockReturnValue(0.5);
+
     const { service } = buildService();
     const now = new Date('2026-07-20T09:00:00.000Z');
     const settings = buildSettings({
@@ -52,13 +66,30 @@ describe('SequenceLinkedinThrottleService', () => {
       );
     }
 
-    expect(
-      slots.map((slot, index) =>
-        index === 0
-          ? (slot.getTime() - now.getTime()) / 60_000
-          : (slot.getTime() - slots[index - 1].getTime()) / 60_000,
-      ),
-    ).toEqual([1, 3, 5, 2, 8, 4, 6, 1]);
+    expect(gapsInMinutes(slots, now)).toEqual([1, 3, 5, 2, 8, 4, 6, 1]);
+  });
+
+  it('jitters delays without leaving the configured pattern bounds', async () => {
+    const { service } = buildService();
+    const now = new Date('2026-07-20T09:00:00.000Z');
+    const settings = buildSettings({
+      linkedinDailyActions: 20,
+      linkedinDelayPatternMinutes:
+        DEFAULT_SEQUENCE_SETTINGS.linkedinDelayPatternMinutes,
+    });
+    const slots: Date[] = [];
+
+    for (let index = 0; index < 14; index += 1) {
+      slots.push(
+        await service.reserveSlot({ workspaceId, sequenceId, settings, now }),
+      );
+    }
+
+    const gaps = gapsInMinutes(slots, now);
+
+    expect(Math.min(...gaps)).toBeGreaterThanOrEqual(1);
+    expect(Math.max(...gaps)).toBeLessThanOrEqual(5);
+    expect(new Set(gaps).size).toBeGreaterThan(1);
   });
 
   it('rolls actions beyond the daily cap to the next active day', async () => {

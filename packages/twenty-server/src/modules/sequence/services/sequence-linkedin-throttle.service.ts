@@ -22,6 +22,7 @@ import {
 
 const LINKEDIN_THROTTLE_LOCK_RETRY_COUNT = 10;
 const LINKEDIN_THROTTLE_LOCK_RETRY_DELAY_MILLISECONDS = 10;
+const LINKEDIN_DELAY_JITTER_RATIO = 0.25;
 
 @Injectable()
 export class SequenceLinkedinThrottleService {
@@ -69,11 +70,11 @@ export class SequenceLinkedinThrottleService {
         patternIndexValue >= 0
           ? patternIndexValue
           : 0;
-      const delayMinutes =
-        settings.linkedinDelayPatternMinutes[
-          patternIndex % settings.linkedinDelayPatternMinutes.length
-        ];
-      const delayMilliseconds = delayMinutes * 60 * 1000;
+      const delayMinutes = this.getJitteredDelayMinutes(
+        settings.linkedinDelayPatternMinutes,
+        patternIndex,
+      );
+      const delayMilliseconds = Math.round(delayMinutes * 60) * 1000;
       let candidate = new Date(
         Math.max(now.getTime(), safeLastActionAt.getTime() + delayMilliseconds),
       );
@@ -150,6 +151,28 @@ export class SequenceLinkedinThrottleService {
     }
 
     return false;
+  }
+
+  // Cycling the pattern keeps the long-run average equal to the configured
+  // spacing, but a bare cycle repeats the exact same gaps forever, which is a
+  // fingerprint LinkedIn can match on. Each delay is jittered around its
+  // pattern value and clamped to the pattern's own bounds, so the configured
+  // minimum and maximum spacing still hold.
+  private getJitteredDelayMinutes(
+    patternMinutes: number[],
+    patternIndex: number,
+  ): number {
+    const baseDelayMinutes =
+      patternMinutes[patternIndex % patternMinutes.length];
+    const lowerBoundMinutes = Math.min(...patternMinutes);
+    const upperBoundMinutes = Math.max(...patternMinutes);
+    const jitterFactor =
+      1 + (Math.random() * 2 - 1) * LINKEDIN_DELAY_JITTER_RATIO;
+
+    return Math.min(
+      upperBoundMinutes,
+      Math.max(lowerBoundMinutes, baseDelayMinutes * jitterFactor),
+    );
   }
 
   private async getScheduledDayCount({
