@@ -1,10 +1,18 @@
 import { useMutation } from '@apollo/client/react';
 import { t } from '@lingui/core/macro';
+import { useState } from 'react';
+import { type RecordGqlOperationFilter } from 'twenty-shared/types';
+import { combineFilters } from 'twenty-shared/utils';
 import { IconPhone, IconSparkles } from 'twenty-ui/icon';
 import { Button } from 'twenty-ui/input';
 import { MenuItem } from 'twenty-ui/navigation';
 
-import { useCurrentCommandMenuContextApi } from '@/command-menu-item/hooks/useCurrentCommandMenuContextApi';
+import { contextStoreAnyFieldFilterValueComponentState } from '@/context-store/states/contextStoreAnyFieldFilterValueComponentState';
+import { contextStoreFilterGroupsComponentState } from '@/context-store/states/contextStoreFilterGroupsComponentState';
+import { contextStoreFiltersComponentState } from '@/context-store/states/contextStoreFiltersComponentState';
+import { contextStoreNumberOfSelectedRecordsComponentState } from '@/context-store/states/contextStoreNumberOfSelectedRecordsComponentState';
+import { contextStoreTargetedRecordsRuleComponentState } from '@/context-store/states/contextStoreTargetedRecordsRuleComponentState';
+import { computeContextStoreFilters } from '@/context-store/utils/computeContextStoreFilters';
 import {
   EnrichCompaniesWithApolloDocument,
   EnrichPeoplePhonesWithApolloDocument,
@@ -12,7 +20,10 @@ import {
 } from '~/generated-metadata/graphql';
 import { useApolloCoreClient } from '@/object-metadata/hooks/useApolloCoreClient';
 import { useObjectMetadataItem } from '@/object-metadata/hooks/useObjectMetadataItem';
+import { flattenedFieldMetadataItemsSelector } from '@/object-metadata/states/flattenedFieldMetadataItemsSelector';
+import { useLazyFindManyRecords } from '@/object-record/hooks/useLazyFindManyRecords';
 import { useObjectPermissionsForObject } from '@/object-record/hooks/useObjectPermissionsForObject';
+import { useFilterValueDependencies } from '@/object-record/record-filter/hooks/useFilterValueDependencies';
 import { useSnackBar } from '@/ui/feedback/snack-bar-manager/hooks/useSnackBar';
 import { Dropdown } from '@/ui/layout/dropdown/components/Dropdown';
 import { DropdownContent } from '@/ui/layout/dropdown/components/DropdownContent';
@@ -21,6 +32,8 @@ import { GenericDropdownContentWidth } from '@/ui/layout/dropdown/constants/Gene
 import { useCloseDropdown } from '@/ui/layout/dropdown/hooks/useCloseDropdown';
 import { ConfirmationModal } from '@/ui/layout/modal/components/ConfirmationModal';
 import { useModal } from '@/ui/layout/modal/hooks/useModal';
+import { useAtomComponentStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomComponentStateValue';
+import { useAtomStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomStateValue';
 
 const APOLLO_ENRICHMENT_MAX_RECORDS_PER_REQUEST = 100;
 const APOLLO_ENRICHMENT_DROPDOWN_ID = 'apollo-enrichment-actions';
@@ -42,10 +55,11 @@ type ApolloEnrichmentKind = 'general' | 'phone';
 
 export const ApolloEnrichmentAction = ({
   objectNameSingular,
+  requiredFilter,
 }: {
   objectNameSingular: string;
+  requiredFilter?: RecordGqlOperationFilter;
 }) => {
-  const { selectedRecords } = useCurrentCommandMenuContextApi();
   const { objectMetadataItem } = useObjectMetadataItem({ objectNameSingular });
   const objectPermissions = useObjectPermissionsForObject(
     objectMetadataItem.id,
@@ -54,6 +68,51 @@ export const ApolloEnrichmentAction = ({
   const { openModal } = useModal();
   const apolloCoreClient = useApolloCoreClient();
   const { enqueueErrorSnackBar, enqueueSuccessSnackBar } = useSnackBar();
+  const [areRecordIdsResolving, setAreRecordIdsResolving] = useState(false);
+
+  const contextStoreTargetedRecordsRule = useAtomComponentStateValue(
+    contextStoreTargetedRecordsRuleComponentState,
+  );
+  const contextStoreNumberOfSelectedRecords = useAtomComponentStateValue(
+    contextStoreNumberOfSelectedRecordsComponentState,
+  );
+  const contextStoreFilters = useAtomComponentStateValue(
+    contextStoreFiltersComponentState,
+  );
+  const contextStoreFilterGroups = useAtomComponentStateValue(
+    contextStoreFilterGroupsComponentState,
+  );
+  const contextStoreAnyFieldFilterValue = useAtomComponentStateValue(
+    contextStoreAnyFieldFilterValueComponentState,
+  );
+  const { filterValueDependencies } = useFilterValueDependencies();
+  const flattenedFieldMetadataItems = useAtomStateValue(
+    flattenedFieldMetadataItemsSelector,
+  );
+
+  // In "select all" mode the context store only holds the excluded ids, so the
+  // targeted records have to be resolved through the same filters the table uses.
+  // requiredFilter keeps a record list from enriching records outside of it.
+  const targetedRecordsFilter = combineFilters([
+    computeContextStoreFilters({
+      contextStoreTargetedRecordsRule,
+      contextStoreFilters,
+      contextStoreFilterGroups,
+      objectMetadataItem,
+      fieldMetadataItems: flattenedFieldMetadataItems,
+      filterValueDependencies,
+      contextStoreAnyFieldFilterValue,
+    }),
+    requiredFilter,
+  ]);
+
+  const { findManyRecordsLazy: findTargetedRecords } = useLazyFindManyRecords({
+    objectNameSingular,
+    filter: targetedRecordsFilter,
+    recordGqlFields: { id: true },
+    limit: APOLLO_ENRICHMENT_MAX_RECORDS_PER_REQUEST + 1,
+    fetchPolicy: 'network-only',
+  });
 
   const [enrichPeople, { loading: arePeopleEnriching }] = useMutation(
     EnrichPeopleWithApolloDocument,
@@ -68,13 +127,15 @@ export const ApolloEnrichmentAction = ({
   const isPerson = objectNameSingular === 'person';
   const isCompany = objectNameSingular === 'company';
   const isEnriching =
-    arePeopleEnriching || arePhonesEnriching || areCompaniesEnriching;
-  const selectedRecordCount = selectedRecords.length;
+    arePeopleEnriching ||
+    arePhonesEnriching ||
+    areCompaniesEnriching ||
+    areRecordIdsResolving;
 
   if (
     (!isPerson && !isCompany) ||
     !objectPermissions.canUpdateObjectRecords ||
-    selectedRecordCount === 0
+    contextStoreNumberOfSelectedRecords === 0
   ) {
     return null;
   }
@@ -82,7 +143,10 @@ export const ApolloEnrichmentAction = ({
   const openConfirmation = (kind: ApolloEnrichmentKind) => {
     closeDropdown(APOLLO_ENRICHMENT_DROPDOWN_ID);
 
-    if (selectedRecordCount > APOLLO_ENRICHMENT_MAX_RECORDS_PER_REQUEST) {
+    if (
+      contextStoreNumberOfSelectedRecords >
+      APOLLO_ENRICHMENT_MAX_RECORDS_PER_REQUEST
+    ) {
       enqueueErrorSnackBar({
         message: t`Select no more than ${APOLLO_ENRICHMENT_MAX_RECORDS_PER_REQUEST} records at a time for Apollo enrichment.`,
       });
@@ -95,6 +159,22 @@ export const ApolloEnrichmentAction = ({
         ? APOLLO_PHONE_ENRICHMENT_MODAL_ID
         : APOLLO_GENERAL_ENRICHMENT_MODAL_ID,
     );
+  };
+
+  const resolveRecordIdsToEnrich = async (): Promise<string[]> => {
+    if (contextStoreTargetedRecordsRule.mode === 'selection') {
+      return contextStoreTargetedRecordsRule.selectedRecordIds;
+    }
+
+    setAreRecordIdsResolving(true);
+
+    try {
+      const { records } = await findTargetedRecords();
+
+      return records?.map((record) => record.id) ?? [];
+    } finally {
+      setAreRecordIdsResolving(false);
+    }
   };
 
   const handleResult = async (
@@ -134,13 +214,27 @@ export const ApolloEnrichmentAction = ({
   };
 
   const runEnrichment = async (kind: ApolloEnrichmentKind) => {
-    const variables = {
-      input: {
-        recordIds: selectedRecords.map((record) => record.id),
-      },
-    };
-
     try {
+      const recordIds = await resolveRecordIdsToEnrich();
+
+      if (recordIds.length === 0) {
+        enqueueErrorSnackBar({
+          message: t`No records to enrich.`,
+        });
+
+        return;
+      }
+
+      if (recordIds.length > APOLLO_ENRICHMENT_MAX_RECORDS_PER_REQUEST) {
+        enqueueErrorSnackBar({
+          message: t`Select no more than ${APOLLO_ENRICHMENT_MAX_RECORDS_PER_REQUEST} records at a time for Apollo enrichment.`,
+        });
+
+        return;
+      }
+
+      const variables = { input: { recordIds } };
+
       if (kind === 'phone') {
         const { data } = await enrichPeoplePhones({ variables });
         const result = data?.enrichPeoplePhonesWithApollo;
@@ -219,7 +313,7 @@ export const ApolloEnrichmentAction = ({
       <ConfirmationModal
         modalInstanceId={APOLLO_GENERAL_ENRICHMENT_MODAL_ID}
         title={t`Enrich with Apollo`}
-        subtitle={t`This will enrich ${selectedRecordCount} records and can consume up to ${selectedRecordCount} Apollo credits (no charge for unmatched records). Phone numbers are excluded.`}
+        subtitle={t`This will enrich ${contextStoreNumberOfSelectedRecords} records and can consume up to ${contextStoreNumberOfSelectedRecords} Apollo credits (no charge for unmatched records). Phone numbers are excluded.`}
         onConfirmClick={() => void runEnrichment('general')}
         confirmButtonText={t`Enrich records`}
         confirmButtonAccent="blue"
@@ -228,7 +322,7 @@ export const ApolloEnrichmentAction = ({
         <ConfirmationModal
           modalInstanceId={APOLLO_PHONE_ENRICHMENT_MODAL_ID}
           title={t`Enrich phone numbers with Apollo`}
-          subtitle={t`This will enrich ${selectedRecordCount} people and can consume up to 9 Apollo credits per person when data is found. Phone verification can take several minutes.`}
+          subtitle={t`This will enrich ${contextStoreNumberOfSelectedRecords} people and can consume up to 9 Apollo credits per person when data is found. Phone verification can take several minutes.`}
           onConfirmClick={() => void runEnrichment('phone')}
           confirmButtonText={t`Enrich phone numbers`}
           confirmButtonAccent="blue"

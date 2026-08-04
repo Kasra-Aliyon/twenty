@@ -15,6 +15,7 @@ import { useAtomComponentStateValue } from '@/ui/utilities/state/jotai/hooks/use
 import { useAtomStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomStateValue';
 import { useSetAtomComponentState } from '@/ui/utilities/state/jotai/hooks/useSetAtomComponentState';
 import { useEffect } from 'react';
+import { combineFilters } from 'twenty-shared/utils';
 
 export const RecordIndexContainerContextStoreNumberOfSelectedRecordsEffect =
   () => {
@@ -68,12 +69,16 @@ export const RecordIndexContainerContextStoreNumberOfSelectedRecordsEffect =
       contextStoreAnyFieldFilterValue,
     });
 
+    // findManyRecordsParams.filter carries the page requiredFilter (a record list
+    // membership for instance), so it has to be kept alongside the selection filter
+    // instead of being overridden, otherwise "select all" counts records the table
+    // never displayed.
     const { totalCount } = useFindManyRecords({
       ...findManyRecordsParams,
       recordGqlFields: {
         id: true,
       },
-      filter: computedFilter,
+      filter: combineFilters([findManyRecordsParams.filter, computedFilter]),
       limit: 1,
       skip: contextStoreTargetedRecordsRule.mode === 'selection',
     });

@@ -92,7 +92,10 @@ export const RecordIndexPageHeader = () => {
         isDefined(contextStoreCurrentViewId) ? (
           <>
             {pageActions}
-            <ApolloEnrichmentAction objectNameSingular={objectNameSingular} />
+            <ApolloEnrichmentAction
+              objectNameSingular={objectNameSingular}
+              requiredFilter={requiredFilter}
+            />
             {!isDefined(requiredFilter) && (
               <AddToRecordListAction objectNameSingular={objectNameSingular} />
             )}
