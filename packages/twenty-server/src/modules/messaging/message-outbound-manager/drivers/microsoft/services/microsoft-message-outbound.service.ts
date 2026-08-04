@@ -114,8 +114,10 @@ export class MicrosoftMessageOutboundService implements MessageOutboundDriver {
     return {
       subject: sendMessageInput.subject,
       body: {
-        contentType: 'HTML',
-        content: sendMessageInput.html,
+        contentType: sendMessageInput.isPlainTextOnly ? 'Text' : 'HTML',
+        content: sendMessageInput.isPlainTextOnly
+          ? sendMessageInput.body
+          : sendMessageInput.html,
       },
       toRecipients: toMicrosoftRecipients(sendMessageInput.to),
       ccRecipients: toMicrosoftRecipients(sendMessageInput.cc),

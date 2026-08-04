@@ -275,6 +275,10 @@ export class WorkspaceEntity {
   @Column({ default: false })
   isInternalMessagesImportEnabled: boolean;
 
+  @Field()
+  @Column({ default: false })
+  isPlainTextEmailEnabled: boolean;
+
   @Field(() => [String], { nullable: true })
   @Column({
     type: 'varchar',

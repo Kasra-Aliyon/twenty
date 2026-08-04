@@ -6,6 +6,7 @@ import { SettingsPageContainer } from '@/settings/components/SettingsPageContain
 import { SettingsOptionCardContentButton } from '@/settings/components/SettingsOptions/SettingsOptionCardContentButton';
 import { SettingsWorkspaceUnsubscribeTopicSection } from '@/settings/unsubscribe-topics/components/SettingsWorkspaceUnsubscribeTopicSection';
 import { SettingsWorkspaceEmailGroupSection } from '@/settings/workspace/components/SettingsWorkspaceEmailGroupSection';
+import { SettingsWorkspacePlainTextEmailToggle } from '@/settings/workspace/components/SettingsWorkspacePlainTextEmailToggle';
 import { SettingsPageLayout } from '@/settings/components/layout/SettingsPageLayout';
 import { useAtomStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomStateValue';
 import { useIsFeatureEnabled } from '@/workspace/hooks/useIsFeatureEnabled';
@@ -30,10 +31,6 @@ export const SettingsWorkspaceEmail = () => {
     FeatureFlagKey.IS_EMAIL_GROUP_ENABLED,
   );
 
-  if (!isEmailGroupFeatureEnabled) {
-    return null;
-  }
-
   return (
     <SettingsPageLayout
       title={t`Email`}
@@ -46,7 +43,8 @@ export const SettingsWorkspaceEmail = () => {
       ]}
     >
       <SettingsPageContainer>
-        {isEmailingDomainInDemoMode && (
+        <SettingsWorkspacePlainTextEmailToggle />
+        {isEmailGroupFeatureEnabled && isEmailingDomainInDemoMode && (
           <Card
             rounded
             backgroundColor={themeCssVariables.background.secondary}
@@ -74,8 +72,12 @@ export const SettingsWorkspaceEmail = () => {
             />
           </Card>
         )}
-        <SettingsWorkspaceEmailGroupSection />
-        <SettingsWorkspaceUnsubscribeTopicSection />
+        {isEmailGroupFeatureEnabled && (
+          <>
+            <SettingsWorkspaceEmailGroupSection />
+            <SettingsWorkspaceUnsubscribeTopicSection />
+          </>
+        )}
       </SettingsPageContainer>
     </SettingsPageLayout>
   );

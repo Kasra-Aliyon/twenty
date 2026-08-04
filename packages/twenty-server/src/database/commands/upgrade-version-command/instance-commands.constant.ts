@@ -76,6 +76,7 @@ import { AddHasPaymentMethodToBillingCustomerFastInstanceCommand } from 'src/dat
 import { AddFolderImportToMessageFolderPendingSyncActionFastInstanceCommand } from './2-15/2-15-instance-command-fast-1781714499016-add-folder-import-to-message-folder-pending-sync-action';
 import { AddViewKanbanColumnWidthFastInstanceCommand } from './2-15/2-15-instance-command-fast-1781900000000-add-view-kanban-column-width';
 import { AddViewRecordListIdFastInstanceCommand } from './2-15/2-15-instance-command-fast-1800000005000-add-view-record-list-id';
+import { AddIsPlainTextEmailEnabledFastInstanceCommand } from 'src/database/commands/upgrade-version-command/2-15/2-15-instance-command-fast-1800000006000-add-is-plain-text-email-enabled';
 
 export const INSTANCE_COMMANDS = [
   AddViewFieldGroupIdIndexOnViewFieldFastInstanceCommand,
@@ -154,4 +155,5 @@ export const INSTANCE_COMMANDS = [
   AddFolderImportToMessageFolderPendingSyncActionFastInstanceCommand,
   AddViewKanbanColumnWidthFastInstanceCommand,
   AddViewRecordListIdFastInstanceCommand,
+  AddIsPlainTextEmailEnabledFastInstanceCommand,
 ];

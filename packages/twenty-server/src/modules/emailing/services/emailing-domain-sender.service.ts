@@ -33,6 +33,7 @@ import { getDomainFromEmail } from 'src/utils/get-domain-from-email';
 import { InjectWorkspaceScopedRepository } from 'src/engine/twenty-orm/workspace-scoped-repository/inject-workspace-scoped-repository.decorator';
 import { WorkspaceScopedRepository } from 'src/engine/twenty-orm/workspace-scoped-repository/workspace-scoped-repository';
 import { isDefined } from 'twenty-shared/utils';
+import { CoreEntityCacheService } from 'src/engine/core-entity-cache/services/core-entity-cache.service';
 
 @Injectable()
 export class EmailingDomainSenderService {
@@ -45,6 +46,7 @@ export class EmailingDomainSenderService {
     private readonly twentyConfigService: TwentyConfigService,
     @InjectRepository(MessageChannelEntity)
     private readonly messageChannelRepository: Repository<MessageChannelEntity>,
+    private readonly coreEntityCacheService: CoreEntityCacheService,
   ) {}
 
   async sendEmail(
@@ -73,6 +75,13 @@ export class EmailingDomainSenderService {
     );
 
     const replyTo = await this.resolveReplyTo(workspaceId, emailContent);
+    const workspace = await this.coreEntityCacheService.get(
+      'workspaceEntity',
+      workspaceId,
+    );
+    const html = workspace?.isPlainTextEmailEnabled
+      ? undefined
+      : emailContent.html;
 
     const emailToSend = {
       workspaceId,
@@ -84,9 +93,7 @@ export class EmailingDomainSenderService {
       bcc: recipients.bcc,
       subject: emailContent.subject,
       text: `${emailContent.text}${unsubscribe.textFooter}`,
-      html: isNonEmptyString(emailContent.html)
-        ? `${emailContent.html}${unsubscribe.htmlFooter}`
-        : emailContent.html,
+      html: isNonEmptyString(html) ? `${html}${unsubscribe.htmlFooter}` : html,
       attachments: emailContent.attachments,
       headers: [...(emailContent.headers ?? []), ...unsubscribe.headers],
     } as EmailingDomainSendEmailInput;

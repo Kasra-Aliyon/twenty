@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { EmailingDomainEntity } from 'src/engine/core-modules/emailing-domain/emailing-domain.entity';
+import { CoreEntityCacheModule } from 'src/engine/core-entity-cache/core-entity-cache.module';
 import { EmailingModule } from 'src/modules/emailing/emailing.module';
 import { MessageChannelEntity } from 'src/engine/metadata-modules/message-channel/entities/message-channel.entity';
 import { MessageFolderEntity } from 'src/engine/metadata-modules/message-folder/entities/message-folder.entity';
@@ -25,6 +26,7 @@ import { SentMessagePersistenceService } from 'src/modules/messaging/message-out
     MessagingSmtpDriverModule,
     MessagingImportManagerModule,
     EmailingModule,
+    CoreEntityCacheModule,
     TypeOrmModule.forFeature([
       MessageChannelEntity,
       MessageFolderEntity,

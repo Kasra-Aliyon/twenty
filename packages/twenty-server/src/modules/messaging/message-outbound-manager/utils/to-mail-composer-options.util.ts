@@ -12,7 +12,9 @@ export const toMailComposerOptions = (
     bcc: sendMessageInput.bcc,
     subject: sendMessageInput.subject,
     text: sendMessageInput.body,
-    html: sendMessageInput.html,
+    ...(sendMessageInput.isPlainTextOnly
+      ? {}
+      : { html: sendMessageInput.html }),
     ...(sendMessageInput.attachments && sendMessageInput.attachments.length > 0
       ? {
           attachments: sendMessageInput.attachments.map((attachment) => ({

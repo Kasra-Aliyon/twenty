@@ -75,6 +75,7 @@ describe('useColumnDefinitionsFromObjectMetadata', () => {
       enabledAiModelIds: [],
       useRecommendedModels: true,
       isInternalMessagesImportEnabled: false,
+      isPlainTextEmailEnabled: false,
     });
 
     const companyObjectMetadata = getTestEnrichedObjectMetadataItemsMock().find(

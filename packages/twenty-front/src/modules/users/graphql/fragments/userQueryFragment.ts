@@ -108,6 +108,7 @@ export const USER_QUERY_FRAGMENT = gql`
       eventLogRetentionDays
       editableProfileFields
       isInternalMessagesImportEnabled
+      isPlainTextEmailEnabled
     }
     availableWorkspaces {
       ...AvailableWorkspacesFragment

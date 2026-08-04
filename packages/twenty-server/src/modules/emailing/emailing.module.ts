@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { EmailingDomainModule } from 'src/engine/core-modules/emailing-domain/emailing-domain.module';
+import { CoreEntityCacheModule } from 'src/engine/core-entity-cache/core-entity-cache.module';
 import { EmailingDomainEntity } from 'src/engine/core-modules/emailing-domain/emailing-domain.entity';
 import { MessageSuppressionEntity } from 'src/engine/core-modules/emailing-domain/message-suppression.entity';
 import { UnsubscribeTopicEntity } from 'src/engine/core-modules/emailing-domain/unsubscribe-topic.entity';
@@ -24,6 +25,7 @@ import { UnsubscribeTopicService } from 'src/modules/emailing/services/unsubscri
     MessageChannelMetadataModule,
     FeatureFlagModule,
     PermissionsModule,
+    CoreEntityCacheModule,
     TypeOrmModule.forFeature([
       MessageChannelEntity,
       EmailingDomainEntity,

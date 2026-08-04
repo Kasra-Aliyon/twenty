@@ -48,9 +48,11 @@ export class EmailGroupMessageOutboundService implements MessageOutboundDriver {
         bcc: this.toRecipientArray(sendMessageInput.bcc),
         subject: sendMessageInput.subject,
         text: sendMessageInput.body,
-        html: isNonEmptyString(sendMessageInput.html)
-          ? sendMessageInput.html
-          : undefined,
+        html:
+          !sendMessageInput.isPlainTextOnly &&
+          isNonEmptyString(sendMessageInput.html)
+            ? sendMessageInput.html
+            : undefined,
         from: connectedAccount.handle,
         replyTo: [connectedAccount.handle],
         attachments: sendMessageInput.attachments,
