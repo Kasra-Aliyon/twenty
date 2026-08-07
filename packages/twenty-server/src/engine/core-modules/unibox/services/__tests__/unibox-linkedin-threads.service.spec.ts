@@ -12,6 +12,7 @@ type MockQueryBuilder = {
   andWhere: jest.Mock;
   clone: jest.Mock;
   distinct: jest.Mock;
+  escape: jest.Mock;
   getRawMany: jest.Mock;
   leftJoin: jest.Mock;
   limit: jest.Mock;
@@ -44,6 +45,7 @@ const createMockQueryBuilder = (rawRows: object[] = []): MockQueryBuilder => {
   }
 
   queryBuilder.clone = jest.fn();
+  queryBuilder.escape = jest.fn((identifier: string) => `"${identifier}"`);
   queryBuilder.getRawMany = jest.fn().mockResolvedValue(rawRows);
 
   return queryBuilder;
@@ -94,6 +96,9 @@ describe('UniboxLinkedinThreadsService', () => {
     };
     const linkedinThreadParticipantRepository = {
       createQueryBuilder: jest.fn(() => participantQuery),
+      metadata: {
+        tablePath: 'workspace_test.linkedinThreadParticipant',
+      },
     };
     recordListRepository = {
       findOne: jest.fn(),
@@ -165,7 +170,19 @@ describe('UniboxLinkedinThreadsService', () => {
     );
     expect(baseQuery.andWhere).toHaveBeenCalledWith(
       expect.stringContaining(
+        'FROM "workspace_test"."linkedinThreadParticipant" "linkedinThreadParticipantFilter"',
+      ),
+      { workspaceMemberId },
+    );
+    expect(baseQuery.andWhere).toHaveBeenCalledWith(
+      expect.stringContaining(
         '"linkedinThreadParticipantSearch"."ownerWorkspaceMemberId" = :workspaceMemberId',
+      ),
+      { search: '%Ada%', workspaceMemberId },
+    );
+    expect(baseQuery.andWhere).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'FROM "workspace_test"."linkedinThreadParticipant" "linkedinThreadParticipantSearch"',
       ),
       { search: '%Ada%', workspaceMemberId },
     );

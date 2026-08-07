@@ -97,6 +97,11 @@ export class UniboxLinkedinThreadsService {
             'linkedinMessageThread.ownerWorkspaceMemberId = :workspaceMemberId',
             { workspaceMemberId },
           );
+        const linkedinThreadParticipantTablePath =
+          linkedinThreadParticipantRepository.metadata.tablePath
+            .split('.')
+            .map((identifier) => baseQuery.escape(identifier))
+            .join('.');
         const lastMessageAtExpression =
           'COALESCE(linkedinMessageThread.lastMessageTime, linkedinMessageThread.firstMessageTime, linkedinMessageThread.createdAt)';
 
@@ -123,7 +128,7 @@ export class UniboxLinkedinThreadsService {
           baseQuery.andWhere(
             `EXISTS (
               SELECT 1
-              FROM "linkedinThreadParticipant" "linkedinThreadParticipantFilter"
+              FROM ${linkedinThreadParticipantTablePath} "linkedinThreadParticipantFilter"
               WHERE ${participantFilterConditions.join(' AND ')}
             )`,
             {
@@ -141,7 +146,7 @@ export class UniboxLinkedinThreadsService {
               "linkedinMessageThread"."name" ILIKE :search
               OR EXISTS (
                 SELECT 1
-                FROM "linkedinThreadParticipant" "linkedinThreadParticipantSearch"
+                FROM ${linkedinThreadParticipantTablePath} "linkedinThreadParticipantSearch"
                 WHERE "linkedinThreadParticipantSearch"."threadId" = "linkedinMessageThread"."id"
                   AND "linkedinThreadParticipantSearch"."ownerWorkspaceMemberId" = :workspaceMemberId
                   AND "linkedinThreadParticipantSearch"."isSelf" = false
