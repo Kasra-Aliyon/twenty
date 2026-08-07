@@ -25,8 +25,8 @@ import {
   tripLinkedInSafetyCircuit,
 } from '../utils/linkedin-safety';
 import {
-  LINKEDIN_OUTBOUND_ATTEMPTS_PER_DAY,
   LINKEDIN_OUTBOUND_MINIMUM_GAP_MILLISECONDS,
+  LINKEDIN_READ_REQUESTS_PER_DAY,
   LINKEDIN_READ_REQUESTS_PER_HOUR,
 } from '../utils/linkedin-safety-policy';
 import { syncLinkedInConnectionsAndInvitations } from '../utils/linkedin-sync-connections';
@@ -253,7 +253,7 @@ const emptySafetySnapshot = (): LinkedInSafetySnapshot => ({
   readRequestsLastHour: 0,
   readRequestsToday: 0,
   outboundAttemptsToday: 0,
-  outboundDailyLimit: LINKEDIN_OUTBOUND_ATTEMPTS_PER_DAY,
+  dailyReadLimitEnabled: false,
   nextOutboundAt: null,
   cooldownUntil: null,
   cooldownReason: null,
@@ -800,15 +800,25 @@ export default defineContentScript({
 
       let result: LinkedInAutomationResult;
 
-      if (action.type === 'SEND_CONNECTION_REQUEST') {
-        result = await sendConnectionRequest(
-          action.noteText,
-          action.skipIfAlreadyConnected,
-        );
-      } else if (action.type === 'SEND_MESSAGE') {
-        result = await sendDirectMessage(action.noteText);
-      } else {
-        result = await withdrawConnectionRequest(action.linkedinUrl);
+      try {
+        if (action.type === 'SEND_CONNECTION_REQUEST') {
+          result = await sendConnectionRequest(
+            action.noteText ?? '',
+            action.skipIfAlreadyConnected,
+          );
+        } else if (action.type === 'SEND_MESSAGE') {
+          result = await sendDirectMessage(action.noteText ?? '');
+        } else {
+          result = await withdrawConnectionRequest(action.linkedinUrl);
+        }
+      } catch (error) {
+        result = {
+          status: 'FAILED',
+          connectionState: 'UNKNOWN',
+          errorMessage: `LinkedIn automation stopped unexpectedly: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        };
       }
 
       if (result.status === 'NAVIGATING') {
@@ -950,6 +960,7 @@ export default defineContentScript({
         statusMessage = error instanceof Error ? error.message : String(error);
         statusIsError = true;
         render();
+        schedulePoll(RUNNER_POLL_INTERVAL_MILLISECONDS);
       } finally {
         isPolling = false;
       }
@@ -1025,6 +1036,10 @@ export default defineContentScript({
         const nextOutboundLabel = safetySnapshot.nextOutboundAt
           ? new Date(safetySnapshot.nextOutboundAt).toLocaleString()
           : 'Now';
+        const outboundSafetyLabel = `${safetySnapshot.outboundAttemptsToday} today · Eligible: ${nextOutboundLabel} · Consecutive gap always on`;
+        const dailyReadLimitLabel = safetySnapshot.dailyReadLimitEnabled
+          ? `${safetySnapshot.readRequestsToday}/${LINKEDIN_READ_REQUESTS_PER_DAY} today`
+          : `${safetySnapshot.readRequestsToday} today · Daily cap off for testing`;
 
         panel.innerHTML = `
           <div class="twenty-linkedin-runner-header">
@@ -1041,7 +1056,7 @@ export default defineContentScript({
             </div>
             <div class="twenty-linkedin-runner-meta">
               <div class="twenty-linkedin-runner-status">Next: ${escapeHtml(nextActionLabel)}</div>
-              <div class="twenty-linkedin-runner-status">Today: ${safetySnapshot.outboundAttemptsToday}/${safetySnapshot.outboundDailyLimit} · Eligible: ${escapeHtml(nextOutboundLabel)}</div>
+              <div class="twenty-linkedin-runner-status">${escapeHtml(outboundSafetyLabel)}</div>
             </div>
             ${cooldownLabel ? `<div class="twenty-linkedin-runner-status is-error">${escapeHtml(cooldownLabel)}</div>` : ''}
             <div class="twenty-linkedin-runner-status${statusIsError ? ' is-error' : ''}">${escapeHtml(statusMessage)}</div>
@@ -1056,7 +1071,7 @@ export default defineContentScript({
             </div>
             <div class="twenty-linkedin-runner-meta">
               <div class="twenty-linkedin-runner-status">Last completed sync: ${escapeHtml(lastHarvestLabel)}</div>
-              <div class="twenty-linkedin-runner-status">Read budget: ${safetySnapshot.readRequestsLastHour}/${LINKEDIN_READ_REQUESTS_PER_HOUR} requests in the last hour.</div>
+              <div class="twenty-linkedin-runner-status">Read budget: ${safetySnapshot.readRequestsLastHour}/${LINKEDIN_READ_REQUESTS_PER_HOUR} in the last hour · ${escapeHtml(dailyReadLimitLabel)}.</div>
             </div>
             ${progressLabel ? `<div class="twenty-linkedin-runner-status">${escapeHtml(progressLabel)}</div>` : ''}
             <p class="twenty-linkedin-runner-sync-copy">Sync every 30 mins</p>

@@ -26,10 +26,9 @@ const compareSteps = (
     return first.position - second.position;
   }
 
-  // createdAt is an ISO 8601 string, so lexicographic order is chronological.
-  const createdAtComparison = (first.createdAt ?? '').localeCompare(
-    second.createdAt ?? '',
-  );
+  const firstCreatedAt = first.createdAt ? String(first.createdAt) : '';
+  const secondCreatedAt = second.createdAt ? String(second.createdAt) : '';
+  const createdAtComparison = firstCreatedAt.localeCompare(secondCreatedAt);
 
   return createdAtComparison !== 0
     ? createdAtComparison

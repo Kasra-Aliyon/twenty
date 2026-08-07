@@ -22,6 +22,7 @@ describe('SequenceLinkedinThrottleService', () => {
 
     return {
       service: new SequenceLinkedinThrottleService(cacheStorageService),
+      cacheStorageService,
       values,
     };
   };
@@ -34,6 +35,7 @@ describe('SequenceLinkedinThrottleService', () => {
     activeDays: [1, 2, 3, 4, 5],
     windowStart: '09:00',
     windowEnd: '17:00',
+    linkedinDailyActionLimitEnabled: true,
     ...overrides,
   });
 
@@ -46,6 +48,37 @@ describe('SequenceLinkedinThrottleService', () => {
 
   afterEach(() => {
     jest.restoreAllMocks();
+  });
+
+  it('keeps consecutive delays when only the daily cap is disabled', async () => {
+    jest.spyOn(Math, 'random').mockReturnValue(0.5);
+
+    const { service, values } = buildService();
+    const now = new Date('2026-07-20T09:00:00.000Z');
+    const settings = buildSettings({
+      linkedinDailyActionLimitEnabled: false,
+      linkedinDailyActions: 1,
+      linkedinDelayPatternMinutes: [15],
+    });
+
+    const firstSlot = await service.reserveSlot({
+      workspaceId,
+      sequenceId,
+      settings,
+      now,
+    });
+    const secondSlot = await service.reserveSlot({
+      workspaceId,
+      sequenceId,
+      settings,
+      now,
+    });
+
+    expect(firstSlot.toISOString()).toBe('2026-07-20T09:15:00.000Z');
+    expect(secondSlot.toISOString()).toBe('2026-07-20T09:30:00.000Z');
+    expect([...values.keys()].some((key) => key.includes('daily-count'))).toBe(
+      false,
+    );
   });
 
   it('cycles the configured delay pattern and wraps', async () => {

@@ -63,7 +63,7 @@ export const SequenceConnectionRequestStepEditor = ({
 }: SequenceConnectionRequestStepEditorProps) => {
   const [noteTemplate, setNoteTemplate] = useState(settings.noteTemplate);
   const [skipIfAlreadyConnected, setSkipIfAlreadyConnected] = useState(
-    settings.skipIfAlreadyConnected,
+    settings.skipIfAlreadyConnected ?? true,
   );
   const [executionMode, setExecutionMode] = useState(
     settings.executionMode ?? SEQUENCE_ACTION_EXECUTION_MODES.AUTOMATED,
@@ -148,13 +148,19 @@ export const SequenceConnectionRequestStepEditor = ({
       </StyledField>
 
       <StyledToggleRow>
-        <span>{t`Skip when already connected or an invitation is pending`}</span>
+        <span>{t`Skip when already connected`}</span>
         <Toggle
           value={skipIfAlreadyConnected}
           onChange={setSkipIfAlreadyConnected}
           toggleSize="small"
         />
       </StyledToggleRow>
+
+      <StyledHint>
+        {skipIfAlreadyConnected
+          ? t`This step is skipped if the contact is already connected or if a connection request is still outstanding.`
+          : t`Outstanding requests are always skipped; this flag only controls skipping on existing network connections.`}
+      </StyledHint>
 
       <StyledActions>
         <Button

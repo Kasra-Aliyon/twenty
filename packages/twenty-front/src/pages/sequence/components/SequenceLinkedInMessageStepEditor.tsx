@@ -142,7 +142,7 @@ export const SequenceLinkedInMessageStepEditor = ({
           {messageTemplate.length}/{LINKEDIN_MESSAGE_CHARACTER_LIMIT}
         </StyledCharacterCount>
         <StyledHint>
-          {t`Sent only when the runner recognizes a first-degree connection. Daily limits, the 15-minute interval, and restriction cooldowns apply.`}
+          {t`Sent only when the runner recognizes a first-degree connection. Consecutive-action delays and restriction cooldowns always apply; the daily action cap can be disabled for testing.`}
         </StyledHint>
       </StyledField>
 

@@ -47,17 +47,24 @@ Only `twenty-front` and/or `twenty-server` source changed:
 
 `twenty-mcp` changed (e.g. packages/twenty-mcp/src/constants.ts):
 
-    Not part of `yarn start` at all.
+    Not part of `yarn start` at all. Claude Code and Codex both talk to a
+    launchd-managed HTTP service (127.0.0.1:3333) that runs the built
+    dist/, not to yarn start, and not to the .mcpb bundle below.
 
     cd /Users/kasraaliyon/Documents/GitHub/twenty
     npx nx typecheck twenty-mcp
     npx nx build twenty-mcp
-    cd packages/twenty-mcp
-    yarn mcpb:pack
+    twenty-mcp-restart
 
-    Then reinstall/reload the rebuilt twenty-mcp-server.mcpb in whatever MCP
-    client you use (Claude Desktop, etc.) — it won't reflect the change
-    until you do.
+    The service does not watch dist/ — it won't reflect the change until
+    you run `twenty-mcp-restart`. Full setup and daily commands:
+    ~/.config/twenty-mcp/RUNBOOK.md (run `twenty-doctor` any time something
+    seems off).
+
+    The Claude Desktop Extension (.mcpb) is currently disabled. If you
+    re-enable it, it needs its own rebuild + repack + reinstall (see
+    "Build the Twenty MCP" below) and its own credentials, entered
+    separately in Desktop Settings -> Extensions -> Twenty CRM.
 
 LinkedIn extension changed (twenty-crm-extension-main):
 

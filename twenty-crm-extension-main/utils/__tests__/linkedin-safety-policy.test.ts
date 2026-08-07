@@ -6,8 +6,8 @@ import {
   getLinkedInOutboundSafetyDecision,
   getLinkedInReadSafetyDecision,
   isLinkedInRestrictionUrl,
-  LINKEDIN_OUTBOUND_ATTEMPTS_PER_DAY,
   LINKEDIN_OUTBOUND_MINIMUM_GAP_MILLISECONDS,
+  LINKEDIN_READ_REQUESTS_PER_DAY,
   LINKEDIN_READ_REQUESTS_PER_HOUR,
   pruneLinkedInSafetyState,
 } from '../linkedin-safety-policy';
@@ -36,7 +36,24 @@ describe('LinkedIn safety policy', () => {
     });
   });
 
-  it('enforces a cross-sequence outbound gap and daily cap', () => {
+  it('makes only the daily read cap switchable', () => {
+    const state = buildState({
+      readRequestTimestamps: Array.from(
+        { length: LINKEDIN_READ_REQUESTS_PER_DAY },
+        (_, index) => NOW - 2 * 60 * 60_000 - index,
+      ),
+    });
+
+    expect(getLinkedInReadSafetyDecision(state, NOW)).toMatchObject({
+      allowed: false,
+      reason: 'Daily read limit reached. Sync will resume automatically.',
+    });
+    expect(getLinkedInReadSafetyDecision(state, NOW, false)).toEqual({
+      allowed: true,
+    });
+  });
+
+  it('always enforces the cross-sequence outbound gap', () => {
     const recentAttemptState = buildState({
       outboundAttempts: [
         {
@@ -56,42 +73,35 @@ describe('LinkedIn safety policy', () => {
       allowed: false,
       reason: 'Waiting for the LinkedIn safety interval.',
     });
-
-    const cappedState = buildState({
-      outboundAttempts: Array.from(
-        { length: LINKEDIN_OUTBOUND_ATTEMPTS_PER_DAY },
-        (_, index) => ({
-          actionId: `action-${index}`,
-          attemptedAt:
-            NOW -
-            (LINKEDIN_OUTBOUND_ATTEMPTS_PER_DAY - index) *
-              LINKEDIN_OUTBOUND_MINIMUM_GAP_MILLISECONDS,
-        }),
-      ),
-    });
-
-    expect(
-      getLinkedInOutboundSafetyDecision(cappedState, 'next-action', NOW),
-    ).toMatchObject({
-      allowed: false,
-      reason: 'Daily LinkedIn automation limit reached.',
-    });
   });
 
-  it('supports a lower user-configured outbound limit', () => {
-    const state = buildState({
-      outboundAttempts: Array.from({ length: 5 }, (_, index) => ({
-        actionId: 'action-' + index,
-        attemptedAt:
-          NOW - (5 - index) * LINKEDIN_OUTBOUND_MINIMUM_GAP_MILLISECONDS,
-      })),
+  it('keeps restriction cooldowns and duplicate protection on', () => {
+    expect(
+      getLinkedInOutboundSafetyDecision(
+        buildState({
+          cooldownUntil: NOW + 60_000,
+          cooldownReason: 'LinkedIn verification required.',
+        }),
+        'test-action',
+        NOW,
+      ),
+    ).toMatchObject({
+      allowed: false,
+      reason: 'LinkedIn verification required.',
     });
 
     expect(
-      getLinkedInOutboundSafetyDecision(state, 'next-action', NOW, 5),
+      getLinkedInOutboundSafetyDecision(
+        buildState({
+          outboundAttempts: [{ actionId: 'test-action', attemptedAt: NOW - 1 }],
+        }),
+        'test-action',
+        NOW,
+      ),
     ).toMatchObject({
       allowed: false,
-      reason: 'Daily LinkedIn automation limit reached.',
+      reason:
+        'This action was already attempted today and will not be replayed automatically.',
     });
   });
 

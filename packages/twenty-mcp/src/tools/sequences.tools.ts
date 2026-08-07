@@ -44,8 +44,10 @@ const sequenceSettingsSchema = z.object({
       return false;
     }
   }, 'Must be an IANA timezone such as Europe/Helsinki or America/New_York'),
+  dailyStartLimitEnabled: z.boolean(),
   dailyStarts: z.number().int().nonnegative(),
   staggerMinutes: z.number().nonnegative(),
+  linkedinDailyActionLimitEnabled: z.boolean(),
   linkedinDailyActions: z.number().int().min(1).max(20),
   linkedinDelayPatternMinutes: z.array(z.number().positive()).min(1),
   stopOnReply: z.boolean(),
@@ -504,12 +506,14 @@ const SEQUENCE_CAPABILITIES = {
       'Integers 0-6 where 0 is Sunday. Empty means the sequence never opens.',
     sending_window:
       'windowStart/windowEnd are HH:mm in the configured IANA timezone.',
+    daily_start_limit:
+      'dailyStartLimitEnabled controls whether dailyStarts limits how many pending enrollments are admitted per local day.',
     daily_starts:
       'Maximum pending enrollments admitted into the active sequence per local day.',
     stagger_minutes:
       'Minimum spacing used when scheduling automated email starts.',
     linkedin_limits:
-      'linkedinDailyActions is capped at 20; linkedinDelayPatternMinutes controls workspace-wide LinkedIn action spacing.',
+      'linkedinDailyActionLimitEnabled controls only the daily action cap. The sending window and workspace-wide delay pattern are always enforced.',
     stop_on_reply:
       'Sequence default. Automated email steps may inherit or override it.',
   },

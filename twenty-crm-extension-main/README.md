@@ -78,17 +78,18 @@ Same process - visit any LinkedIn company page (`linkedin.com/company/name`)
 ### Outbound actions
 
 Outbound sequence actions remain explicitly opt-in through **Start runner**.
-The extension applies a configurable browser-side cap of 1–20 attempts per
-local day and at least 15 minutes between attempts, in addition to the
-workspace-wide server schedule. Configure the local cap in the extension popup
-or choose a lower per-sequence limit in Twenty. An action is recorded before
-the final LinkedIn UI operation and is never silently replayed after an
-uncertain outcome.
+Three daily-count switches default off during runner development: **Enforce
+daily enrollment start cap** and **Enforce daily LinkedIn action cap** in
+sequence settings, plus **Enforce daily read cap** in the extension popup. The
+sending window, server delay pattern, local consecutive action gap, hourly read
+limit, request pacing, duplicate-action protection, and restriction cooldown
+remain active in either mode. An action is recorded before the final LinkedIn
+UI operation and is never silently replayed after an uncertain outcome.
 
 Sequences can also send direct LinkedIn messages through the visible LinkedIn
 composer. The runner sends only when it recognizes the profile as a
-first-degree connection. Direct messages share the same daily cap, minimum
-interval, restriction detection, and no-replay behavior as connection actions.
+first-degree connection. Direct messages share the configured throttling mode,
+restriction detection, and no-replay behavior as connection actions.
 
 ### LinkedIn account-safety boundaries
 

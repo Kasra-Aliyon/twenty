@@ -6,7 +6,6 @@ import type {
 import {
   getLinkedInOutboundSafetyDecision,
   getLinkedInReadSafetyDecision,
-  LINKEDIN_OUTBOUND_ATTEMPTS_PER_DAY,
   LINKEDIN_OUTBOUND_MINIMUM_GAP_MILLISECONDS,
   LINKEDIN_RESTRICTION_COOLDOWN_MILLISECONDS,
   pruneLinkedInSafetyState,
@@ -84,14 +83,6 @@ const saveState = async (state: LinkedInSafetyState): Promise<void> => {
   await browser.storage.local.set({ [LINKEDIN_SAFETY_STATE_KEY]: state });
 };
 
-const normalizeDailyOutboundLimit = (value: unknown): number =>
-  typeof value === 'number' && Number.isFinite(value)
-    ? Math.min(
-        LINKEDIN_OUTBOUND_ATTEMPTS_PER_DAY,
-        Math.max(1, Math.floor(value)),
-      )
-    : LINKEDIN_OUTBOUND_ATTEMPTS_PER_DAY;
-
 const getStoredSettings = async (): Promise<LinkedInSafetySettings> => {
   const storedValue = await browser.storage.local.get(
     LINKEDIN_SAFETY_SETTINGS_KEY,
@@ -101,9 +92,10 @@ const getStoredSettings = async (): Promise<LinkedInSafetySettings> => {
     | undefined;
 
   return {
-    dailyOutboundLimit: normalizeDailyOutboundLimit(
-      storedSettings?.dailyOutboundLimit,
-    ),
+    dailyReadLimitEnabled:
+      typeof storedSettings?.dailyReadLimitEnabled === 'boolean'
+        ? storedSettings.dailyReadLimitEnabled
+        : false,
   };
 };
 
@@ -118,8 +110,11 @@ export const reserveLinkedInReadRequest = async (
 ): Promise<void> =>
   withLinkedInSafetyStore(async () => {
     const state = pruneLinkedInSafetyState(await getStoredState(), now);
+    const settings = await getStoredSettings();
 
-    throwIfBlocked(getLinkedInReadSafetyDecision(state, now));
+    throwIfBlocked(
+      getLinkedInReadSafetyDecision(state, now, settings.dailyReadLimitEnabled),
+    );
     state.readRequestTimestamps.push(now);
     await saveState(state);
   });
@@ -129,15 +124,8 @@ export const assertLinkedInOutboundAllowed = async (
   now = Date.now(),
 ): Promise<void> =>
   withLinkedInSafetyStore(async () => {
-    const settings = await getStoredSettings();
-
     throwIfBlocked(
-      getLinkedInOutboundSafetyDecision(
-        await getStoredState(),
-        actionId,
-        now,
-        settings.dailyOutboundLimit,
-      ),
+      getLinkedInOutboundSafetyDecision(await getStoredState(), actionId, now),
     );
   });
 
@@ -149,10 +137,12 @@ export const setLinkedInSafetySettings = async (
   settings: Partial<LinkedInSafetySettings>,
 ): Promise<LinkedInSafetySettings> =>
   withLinkedInSafetyStore(async () => {
+    const currentSettings = await getStoredSettings();
     const nextSettings = {
-      dailyOutboundLimit: normalizeDailyOutboundLimit(
-        settings.dailyOutboundLimit,
-      ),
+      dailyReadLimitEnabled:
+        typeof settings.dailyReadLimitEnabled === 'boolean'
+          ? settings.dailyReadLimitEnabled
+          : currentSettings.dailyReadLimitEnabled,
     };
 
     await browser.storage.local.set({
@@ -217,7 +207,7 @@ export const getLinkedInSafetySnapshot = async (
       outboundAttemptsToday: state.outboundAttempts.filter(
         ({ attemptedAt }) => attemptedAt >= dayStart.getTime(),
       ).length,
-      outboundDailyLimit: settings.dailyOutboundLimit,
+      dailyReadLimitEnabled: settings.dailyReadLimitEnabled,
       nextOutboundAt:
         lastOutboundAttemptAt > 0
           ? lastOutboundAttemptAt + LINKEDIN_OUTBOUND_MINIMUM_GAP_MILLISECONDS

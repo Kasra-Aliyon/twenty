@@ -30,6 +30,8 @@ const StyledLayout = styled.div`
   display: flex;
   flex-direction: column;
   height: 100dvh;
+  overflow: hidden;
+  overscroll-behavior-y: none;
   position: relative;
   scrollbar-color: ${themeCssVariables.border.color.medium} transparent;
   scrollbar-width: 4px;

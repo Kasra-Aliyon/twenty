@@ -231,6 +231,20 @@ export const SequenceSettingsSection = ({
         </StyledField>
       </StyledFieldsGrid>
 
+      <StyledToggleRow>
+        <span>{t`Enforce daily enrollment start cap`}</span>
+        <Toggle
+          value={settings.dailyStartLimitEnabled}
+          onChange={(dailyStartLimitEnabled) =>
+            setSettings((currentSettings) => ({
+              ...currentSettings,
+              dailyStartLimitEnabled,
+            }))
+          }
+          toggleSize="small"
+        />
+      </StyledToggleRow>
+
       <StyledFieldsGrid>
         <StyledField>
           <span>{t`Daily enrollment starts`}</span>
@@ -238,6 +252,7 @@ export const SequenceSettingsSection = ({
             type="number"
             min={1}
             value={settings.dailyStarts}
+            disabled={!settings.dailyStartLimitEnabled}
             onChange={(event) =>
               setSettings((currentSettings) => ({
                 ...currentSettings,
@@ -271,6 +286,11 @@ export const SequenceSettingsSection = ({
           />
         )}
       </StyledFieldsGrid>
+      <StyledHelperText>
+        {settings.dailyStartLimitEnabled
+          ? t`Pending enrollments are admitted up to this daily cap.`
+          : t`Testing mode: pending enrollments are admitted without a daily cap, in scheduler batches.`}
+      </StyledHelperText>
 
       {accountOptions.length === 0 && (
         <StyledField>
@@ -294,6 +314,19 @@ export const SequenceSettingsSection = ({
       </StyledToggleRow>
 
       <StyledSectionTitle>{t`LinkedIn`}</StyledSectionTitle>
+      <StyledToggleRow>
+        <span>{t`Enforce daily LinkedIn action cap`}</span>
+        <Toggle
+          value={settings.linkedinDailyActionLimitEnabled}
+          onChange={(linkedinDailyActionLimitEnabled) =>
+            setSettings((currentSettings) => ({
+              ...currentSettings,
+              linkedinDailyActionLimitEnabled,
+            }))
+          }
+          toggleSize="small"
+        />
+      </StyledToggleRow>
       <StyledFieldsGrid>
         <StyledField>
           <span>{t`Daily LinkedIn actions`}</span>
@@ -302,6 +335,7 @@ export const SequenceSettingsSection = ({
             min={1}
             max={20}
             value={settings.linkedinDailyActions}
+            disabled={!settings.linkedinDailyActionLimitEnabled}
             onChange={(event) =>
               setSettings((currentSettings) => ({
                 ...currentSettings,
@@ -325,7 +359,9 @@ export const SequenceSettingsSection = ({
         </StyledField>
       </StyledFieldsGrid>
       <StyledHelperText>
-        {t`Choose 1–20 LinkedIn actions per day. The connector's local limit and 15-minute safety interval also apply.`}
+        {settings.linkedinDailyActionLimitEnabled
+          ? t`The daily action cap, sending window, and delay pattern are enforced.`
+          : t`Testing mode: only the daily action cap is off. The sending window and delay pattern remain enforced.`}
       </StyledHelperText>
 
       <StyledActions>

@@ -6,7 +6,7 @@ import type {
   LinkedInSafetySnapshot,
   LinkedInSyncTotals,
 } from '../../types';
-import { LINKEDIN_OUTBOUND_ATTEMPTS_PER_DAY } from '../../utils/linkedin-safety-policy';
+import { LINKEDIN_READ_REQUESTS_PER_DAY } from '../../utils/linkedin-safety-policy';
 import {
   DEFAULT_TWENTY_API_URL,
   DEFAULT_TWENTY_APP_URL,
@@ -21,7 +21,7 @@ const isLoading = ref(true);
 const isSaving = ref(false);
 const isTesting = ref(false);
 const isLinkedInSyncing = ref(false);
-const isSavingLinkedInLimit = ref(false);
+const isSavingLinkedInSafetySetting = ref(false);
 const error = ref<string | null>(null);
 const success = ref<string | null>(null);
 const linkedInSyncTotals = ref<LinkedInSyncTotals>({
@@ -31,7 +31,7 @@ const linkedInSyncTotals = ref<LinkedInSyncTotals>({
   messages: 0,
 });
 const linkedInSafetySnapshot = ref<LinkedInSafetySnapshot | null>(null);
-const linkedInDailyOutboundLimit = ref(LINKEDIN_OUTBOUND_ATTEMPTS_PER_DAY);
+const linkedInDailyReadLimitEnabled = ref(false);
 const recentCaptures = ref<
   Array<{
     linkedinUrl: string;
@@ -155,41 +155,37 @@ async function loadLinkedInSafetySnapshot() {
 
     if (response.success && response.data) {
       linkedInSafetySnapshot.value = response.data;
-      linkedInDailyOutboundLimit.value = response.data.outboundDailyLimit;
+      linkedInDailyReadLimitEnabled.value = response.data.dailyReadLimitEnabled;
     }
   } catch (err) {
     console.error('Error loading LinkedIn safety status:', err);
   }
 }
 
-async function saveLinkedInDailyOutboundLimit() {
-  const dailyOutboundLimit = Math.min(
-    LINKEDIN_OUTBOUND_ATTEMPTS_PER_DAY,
-    Math.max(1, Math.floor(Number(linkedInDailyOutboundLimit.value) || 1)),
-  );
-
-  linkedInDailyOutboundLimit.value = dailyOutboundLimit;
-  isSavingLinkedInLimit.value = true;
+async function saveLinkedInDailyReadLimitEnabled() {
+  isSavingLinkedInSafetySetting.value = true;
   error.value = null;
 
   try {
     const response = (await browser.runtime.sendMessage({
       type: 'SET_LINKEDIN_SAFETY_SETTINGS',
-      payload: { dailyOutboundLimit },
+      payload: {
+        dailyReadLimitEnabled: linkedInDailyReadLimitEnabled.value,
+      },
     })) as ExtensionResponse<LinkedInSafetySettings>;
 
     if (!response.success || !response.data) {
-      error.value = response.error || 'Could not save the LinkedIn limit';
+      error.value = response.error || 'Could not save the daily read limit';
       return;
     }
 
-    linkedInDailyOutboundLimit.value = response.data.dailyOutboundLimit;
+    linkedInDailyReadLimitEnabled.value = response.data.dailyReadLimitEnabled;
     await loadLinkedInSafetySnapshot();
   } catch (err) {
     console.error('Error saving LinkedIn safety settings:', err);
-    error.value = 'Could not save the LinkedIn limit';
+    error.value = 'Could not save the daily read limit';
   } finally {
-    isSavingLinkedInLimit.value = false;
+    isSavingLinkedInSafetySetting.value = false;
   }
 }
 
@@ -470,27 +466,36 @@ function formatDate(timestamp: number): string {
         <p class="hint">Sync every 30 mins</p>
         <p v-if="linkedInSafetySnapshot" class="hint">
           Safety: {{ linkedInSafetySnapshot.readRequestsLastHour }}/60 reads
-          this hour · {{ linkedInSafetySnapshot.outboundAttemptsToday }}/{{
-            linkedInSafetySnapshot.outboundDailyLimit
+          this hour · {{ linkedInSafetySnapshot.readRequestsToday }}/{{
+            LINKEDIN_READ_REQUESTS_PER_DAY
           }}
+          reads today · {{ linkedInSafetySnapshot.outboundAttemptsToday }}
           outbound attempts today.
         </p>
         <div class="safety-limit">
-          <label class="safety-limit__label" for="linkedinDailyOutboundLimit">
-            Daily automation limit
+          <label
+            class="safety-limit__label"
+            for="linkedinDailyReadLimitEnabled"
+          >
+            Enforce daily read cap
           </label>
           <input
-            id="linkedinDailyOutboundLimit"
-            v-model.number="linkedInDailyOutboundLimit"
-            class="safety-limit__input"
-            type="number"
-            min="1"
-            :max="LINKEDIN_OUTBOUND_ATTEMPTS_PER_DAY"
-            :disabled="isSavingLinkedInLimit"
-            @change="saveLinkedInDailyOutboundLimit"
+            id="linkedinDailyReadLimitEnabled"
+            v-model="linkedInDailyReadLimitEnabled"
+            type="checkbox"
+            :disabled="isSavingLinkedInSafetySetting"
+            @change="saveLinkedInDailyReadLimitEnabled"
           />
         </div>
-        <p class="hint">1–20 actions. The CRM sequence limit also applies.</p>
+        <p class="hint">
+          <template v-if="linkedInDailyReadLimitEnabled">
+            The 200-request daily read cap is on.
+          </template>
+          <template v-else>
+            Testing mode: only the daily read cap is off. Hourly limits, request
+            pacing, and restriction safeguards stay on.
+          </template>
+        </p>
         <button
           class="btn btn--primary sync-button"
           :disabled="isLinkedInSyncing"
@@ -821,16 +826,6 @@ function formatDate(timestamp: number): string {
   color: #4b5563;
   font-size: 12px;
   font-weight: 500;
-}
-
-.safety-limit__input {
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  box-sizing: border-box;
-  font-size: 12px;
-  padding: 5px 6px;
-  text-align: right;
-  width: 58px;
 }
 
 .harvest-stat strong {

@@ -889,7 +889,9 @@ export class SequenceExecutorService {
         return;
       }
 
-      if (settings.skipIfAlreadyConnected) {
+      const shouldSkipIfAlreadyConnected = settings.skipIfAlreadyConnected !== false;
+
+      if (shouldSkipIfAlreadyConnected) {
         const isConnected = await this.isPersonConnectedToSender({
           workspaceId,
           personId: person.id,
@@ -1344,6 +1346,8 @@ export class SequenceExecutorService {
         status: In([
           LINKEDIN_ACTION_STATUSES.SCHEDULED,
           LINKEDIN_ACTION_STATUSES.CLAIMED,
+          LINKEDIN_ACTION_STATUSES.COMPLETED,
+          LINKEDIN_ACTION_STATUSES.SKIPPED,
         ]),
       },
     });

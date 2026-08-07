@@ -108,8 +108,10 @@ export type SequenceSettings = {
   windowStart: string;
   windowEnd: string;
   timezone: string;
+  dailyStartLimitEnabled: boolean;
   dailyStarts: number;
   staggerMinutes: number;
+  linkedinDailyActionLimitEnabled: boolean;
   linkedinDailyActions: number;
   linkedinDelayPatternMinutes: number[];
   stopOnReply: boolean;

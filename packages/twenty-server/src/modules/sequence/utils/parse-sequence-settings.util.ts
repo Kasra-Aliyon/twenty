@@ -67,6 +67,10 @@ export const parseSequenceSettings = (value: unknown): SequenceSettings => {
     windowStart,
     windowEnd,
     timezone,
+    dailyStartLimitEnabled:
+      typeof value.dailyStartLimitEnabled === 'boolean'
+        ? value.dailyStartLimitEnabled
+        : DEFAULT_SEQUENCE_SETTINGS.dailyStartLimitEnabled,
     dailyStarts: Math.floor(
       toNonNegativeNumber(
         value.dailyStarts,
@@ -77,6 +81,10 @@ export const parseSequenceSettings = (value: unknown): SequenceSettings => {
       value.staggerMinutes,
       DEFAULT_SEQUENCE_SETTINGS.staggerMinutes,
     ),
+    linkedinDailyActionLimitEnabled:
+      typeof value.linkedinDailyActionLimitEnabled === 'boolean'
+        ? value.linkedinDailyActionLimitEnabled
+        : DEFAULT_SEQUENCE_SETTINGS.linkedinDailyActionLimitEnabled,
     linkedinDailyActions: Math.min(
       LINKEDIN_DAILY_ACTIONS_MAXIMUM,
       Math.max(

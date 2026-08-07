@@ -83,30 +83,34 @@ export class SequenceLinkedinThrottleService {
         candidate = nextWindowOpen(candidate, settings);
       }
 
-      let scheduledDayCount = await this.getScheduledDayCount({
-        workspaceId,
-        candidate,
-        settings,
-      });
+      let scheduledDayCount = 0;
 
-      for (
-        let dayRollCount = 0;
-        scheduledDayCount >= settings.linkedinDailyActions;
-        dayRollCount += 1
-      ) {
-        if (dayRollCount > 14) {
-          throw new Error('Could not find an available LinkedIn action day');
-        }
-
-        candidate = this.getNextDayWindowOpen(candidate, settings);
+      if (settings.linkedinDailyActionLimitEnabled) {
         scheduledDayCount = await this.getScheduledDayCount({
           workspaceId,
           candidate,
           settings,
         });
+
+        for (
+          let dayRollCount = 0;
+          scheduledDayCount >= settings.linkedinDailyActions;
+          dayRollCount += 1
+        ) {
+          if (dayRollCount > 14) {
+            throw new Error('Could not find an available LinkedIn action day');
+          }
+
+          candidate = this.getNextDayWindowOpen(candidate, settings);
+          scheduledDayCount = await this.getScheduledDayCount({
+            workspaceId,
+            candidate,
+            settings,
+          });
+        }
       }
 
-      await Promise.all([
+      const cacheWrites = [
         this.cacheStorageService.set(
           this.getLastActionAtKey(workspaceId),
           candidate.toISOString(),
@@ -117,12 +121,19 @@ export class SequenceLinkedinThrottleService {
           patternIndex + 1,
           SEQUENCE_LINKEDIN_THROTTLE_CACHE_TTL,
         ),
-        this.cacheStorageService.set(
-          this.getDailyCountKey(workspaceId, candidate, settings.timezone),
-          scheduledDayCount + 1,
-          SEQUENCE_LINKEDIN_THROTTLE_CACHE_TTL,
-        ),
-      ]);
+      ];
+
+      if (settings.linkedinDailyActionLimitEnabled) {
+        cacheWrites.push(
+          this.cacheStorageService.set(
+            this.getDailyCountKey(workspaceId, candidate, settings.timezone),
+            scheduledDayCount + 1,
+            SEQUENCE_LINKEDIN_THROTTLE_CACHE_TTL,
+          ),
+        );
+      }
+
+      await Promise.all(cacheWrites);
 
       return candidate;
     } finally {

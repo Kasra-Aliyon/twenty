@@ -439,18 +439,23 @@ export class SequenceSchedulerService {
         return;
       }
 
-      const startedToday = await enrollmentRepository.count(
-        {
-          where: {
-            sequenceId: sequence.id,
-            startedAt: MoreThanOrEqual(
-              startOfDayInTimezone(now, settings.timezone),
-            ),
+      let remainingStarts = SEQUENCE_SCHEDULER_BATCH_SIZE;
+
+      if (settings.dailyStartLimitEnabled) {
+        const startedToday = await enrollmentRepository.count(
+          {
+            where: {
+              sequenceId: sequence.id,
+              startedAt: MoreThanOrEqual(
+                startOfDayInTimezone(now, settings.timezone),
+              ),
+            },
           },
-        },
-        workspaceTransactionManager,
-      );
-      const remainingStarts = Math.max(0, settings.dailyStarts - startedToday);
+          workspaceTransactionManager,
+        );
+
+        remainingStarts = Math.max(0, settings.dailyStarts - startedToday);
+      }
 
       if (remainingStarts === 0) {
         return;

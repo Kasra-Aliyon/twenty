@@ -1102,7 +1102,9 @@ async function handleMessage(
         return {
           success: true,
           data: await setLinkedInSafetySettings(
-            message.payload as { dailyOutboundLimit?: number },
+            message.payload as {
+              dailyReadLimitEnabled?: boolean;
+            },
           ),
         };
 

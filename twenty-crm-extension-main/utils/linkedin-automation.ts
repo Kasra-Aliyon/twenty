@@ -5,6 +5,11 @@ const LINKEDIN_CONNECTION_NOTE_MAX_LENGTH = 200;
 const LINKEDIN_DIRECT_MESSAGE_MAX_LENGTH = 2_000;
 
 const SEND_CONFIRMATION_TIMEOUT_MILLISECONDS = 8_000;
+const LINKEDIN_INVITATION_AUTOMATION_REVISION = '2026-08-07.2';
+const INVITATION_DIALOG_TITLE_PATTERN = /add a note to (?:your )?invitation/i;
+const RELATIONSHIP_PROMPT_TITLE_PATTERN = /how do you know\b/i;
+const RELATIONSHIP_MESSAGE_FIRST_PATTERN =
+  /(?:send|write) (?:them|this member|the member) a message first|message (?:them|this member) first/i;
 
 const LINKEDIN_SELECTORS = {
   // Degree badges carry the degree on their own, so they are matched by exact
@@ -15,7 +20,25 @@ const LINKEDIN_SELECTORS = {
     '[class*="distance-badge"]',
     '[class*="__degree"]',
   ],
-  dialog: ['div[role="dialog"]', '.artdeco-modal'],
+  dialog: [
+    'dialog[open]',
+    '[role="dialog"]',
+    '[role="alertdialog"]',
+    '.artdeco-modal',
+    '[aria-modal="true"]',
+  ],
+  menu: [
+    '[role="menu"]',
+    '.artdeco-dropdown__content',
+    '.artdeco-dropdown__content-inner',
+    '[data-view-name*="overflow"]',
+  ],
+  confirmation: [
+    '[role="alert"]',
+    '[role="status"]',
+    '.artdeco-toast-item',
+    '[data-view-name*="toast"]',
+  ],
   noteTextarea: [
     'textarea[name="message"]',
     'textarea#custom-message',
@@ -61,11 +84,13 @@ const wait = (milliseconds: number) =>
   new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 const isVisible = (element: Element): element is HTMLElement => {
-  if (!(element instanceof HTMLElement)) {
+  const elementWindow = element.ownerDocument.defaultView;
+
+  if (!elementWindow || typeof element.getBoundingClientRect !== 'function') {
     return false;
   }
 
-  const style = window.getComputedStyle(element);
+  const style = elementWindow.getComputedStyle(element);
   const rect = element.getBoundingClientRect();
 
   return (
@@ -74,6 +99,78 @@ const isVisible = (element: Element): element is HTMLElement => {
     rect.width > 0 &&
     rect.height > 0
   );
+};
+
+// LinkedIn mounts invitation UI in several different places: the profile
+// document, a /preload/ frame, and open shadow roots owned by those surfaces.
+// The frame host itself can report a zero-sized box even while its sheet is
+// rendered, so only candidate controls are visibility-filtered.
+const getAccessibleLinkedInRoots = (
+  initialRoot: ParentNode = document,
+): ParentNode[] => {
+  const accessibleRoots: ParentNode[] = [];
+  const visitedRoots = new Set<ParentNode>();
+
+  const visitRoot = (currentRoot: ParentNode) => {
+    if (visitedRoots.has(currentRoot)) {
+      return;
+    }
+
+    visitedRoots.add(currentRoot);
+    accessibleRoots.push(currentRoot);
+
+    const rootElement =
+      currentRoot.nodeType === 1 ? (currentRoot as Element) : null;
+    const elements = [
+      ...(rootElement ? [rootElement] : []),
+      ...currentRoot.querySelectorAll<Element>('*'),
+    ];
+
+    for (const element of elements) {
+      if (element.shadowRoot) {
+        visitRoot(element.shadowRoot);
+      }
+
+      if (element.localName !== 'iframe') {
+        continue;
+      }
+
+      try {
+        const frameDocument = (element as HTMLIFrameElement).contentDocument;
+
+        if (frameDocument) {
+          visitRoot(frameDocument);
+        }
+      } catch {
+        // Cross-origin frames are intentionally ignored. The LinkedIn preload
+        // surface is same-origin and remains accessible here.
+      }
+    }
+  };
+
+  visitRoot(initialRoot);
+
+  return accessibleRoots;
+};
+
+const getAccessibleLinkedInDocuments = (): Document[] =>
+  getAccessibleLinkedInRoots().filter(
+    (root): root is Document => root.nodeType === 9,
+  );
+
+const querySelectorAllAcrossRoots = <TElement extends Element>(
+  selector: string,
+  root: ParentNode = document,
+): TElement[] => {
+  const elements = new Set<TElement>();
+
+  for (const accessibleRoot of getAccessibleLinkedInRoots(root)) {
+    for (const element of accessibleRoot.querySelectorAll<TElement>(selector)) {
+      elements.add(element);
+    }
+  }
+
+  return [...elements];
 };
 
 const normalizedText = (element: Element): string =>
@@ -93,7 +190,7 @@ const findVisibleElement = <TElement extends Element>(
   root: ParentNode = document,
 ): TElement | null => {
   for (const selector of selectors) {
-    const element = [...root.querySelectorAll<TElement>(selector)].find(
+    const element = querySelectorAllAcrossRoots<TElement>(selector, root).find(
       isVisible,
     );
 
@@ -106,11 +203,10 @@ const findVisibleElement = <TElement extends Element>(
 };
 
 const clickableCandidates = (root: ParentNode = document): HTMLElement[] =>
-  [
-    ...root.querySelectorAll<HTMLElement>(
-      'button, a[role="button"], div[role="button"], [role="menuitem"]',
-    ),
-  ].filter(isVisible);
+  querySelectorAllAcrossRoots<HTMLElement>(
+    'button, a[role="button"], a[href*="/preload/custom-invite"], div[role="button"], [role="menuitem"]',
+    root,
+  ).filter(isVisible);
 
 // LinkedIn labels the same control differently across surfaces and locales
 // ("Connect", "Invite Jane Doe to connect", "Send without note"). Matching only
@@ -149,7 +245,7 @@ const CONTROL_PATTERNS = {
   },
   addNote: {
     text: ['add a note', 'add note', 'add a free note'],
-    label: [/^add a? ?(free )?note$/],
+    label: [/^add a? ?(free )?note\b/],
   },
   send: {
     text: ['send', 'send invitation', 'send now', 'send invite'],
@@ -157,21 +253,355 @@ const CONTROL_PATTERNS = {
   },
   sendWithoutNote: {
     text: ['send without a note', 'send without note'],
-    label: [/^send without a? ?note$/],
+    label: [/^send without a? ?note\b/],
   },
   withdraw: { text: ['withdraw'], label: [/^withdraw\b/] },
 } as const;
 
-const findControl = (
+const findControls = (
   control: keyof typeof CONTROL_PATTERNS,
   root: ParentNode = document,
   { profileLevelOnly = false }: { profileLevelOnly?: boolean } = {},
-): HTMLElement | null =>
-  clickableCandidates(root).find(
+): HTMLElement[] =>
+  clickableCandidates(root).filter(
     (candidate) =>
       matchesControl(candidate, CONTROL_PATTERNS[control]) &&
       (!profileLevelOnly || isProfileLevelElement(candidate)),
-  ) ?? null;
+  );
+
+const findControl = (
+  control: keyof typeof CONTROL_PATTERNS,
+  root: ParentNode = document,
+  options: { profileLevelOnly?: boolean } = {},
+): HTMLElement | null => findControls(control, root, options)[0] ?? null;
+
+const isEnabledControl = (control: HTMLElement): boolean =>
+  (control as HTMLButtonElement).disabled !== true &&
+  !control.hasAttribute('disabled') &&
+  control.getAttribute('aria-disabled') !== 'true';
+
+const findControlInOpenMenu = (
+  control: 'connect' | 'pending',
+  controlsPresentBeforeOpening: ReadonlySet<HTMLElement> = new Set(),
+): HTMLElement | null => {
+  for (const selector of LINKEDIN_SELECTORS.menu) {
+    for (const menu of querySelectorAllAcrossRoots<HTMLElement>(selector)) {
+      if (!isVisible(menu)) {
+        continue;
+      }
+
+      const menuControl = findControl(control, menu);
+
+      if (menuControl) {
+        return menuControl;
+      }
+    }
+  }
+
+  // LinkedIn has shipped overflow menus without menu roles or its legacy
+  // artdeco classes. In that variant, the newly rendered control is still
+  // distinguishable from recommendation-rail controls that existed before
+  // More was opened.
+  return (
+    findControls(control).find(
+      (candidate) =>
+        candidate.matches('[role="menuitem"]') ||
+        !controlsPresentBeforeOpening.has(candidate),
+    ) ?? null
+  );
+};
+
+const isInvitationDialog = (element: HTMLElement): boolean =>
+  Boolean(
+    findControl('sendWithoutNote', element) ||
+    findControl('addNote', element) ||
+    findVisibleElement<HTMLTextAreaElement>(
+      LINKEDIN_SELECTORS.noteTextarea,
+      element,
+    ),
+  );
+
+const findInvitationDialog = (): HTMLElement | null => {
+  const accessibleRoots = getAccessibleLinkedInRoots();
+
+  for (const currentRoot of accessibleRoots) {
+    for (const selector of LINKEDIN_SELECTORS.dialog) {
+      for (const element of currentRoot.querySelectorAll<HTMLElement>(
+        selector,
+      )) {
+        if (isVisible(element) && isInvitationDialog(element)) {
+          return element;
+        }
+      }
+    }
+  }
+
+  // The current LinkedIn connection sheet is not consistently exposed as a
+  // native/ARIA dialog. Anchor on its unique action and walk to the smallest
+  // stable ancestor carrying the invitation title instead of depending on a
+  // generated class name.
+  for (const currentRoot of accessibleRoots) {
+    const sendWithoutNote = findControl('sendWithoutNote', currentRoot);
+
+    if (!sendWithoutNote) {
+      continue;
+    }
+
+    let fallbackContainer: HTMLElement | null = null;
+    let ancestor = sendWithoutNote.parentElement;
+
+    while (ancestor) {
+      if (isVisible(ancestor)) {
+        if (INVITATION_DIALOG_TITLE_PATTERN.test(normalizedText(ancestor))) {
+          return ancestor;
+        }
+
+        if (
+          !fallbackContainer &&
+          findControl('addNote', ancestor) &&
+          findControl('sendWithoutNote', ancestor)
+        ) {
+          fallbackContainer = ancestor;
+        }
+      }
+
+      ancestor = ancestor.parentElement;
+    }
+
+    if (fallbackContainer) {
+      return fallbackContainer;
+    }
+  }
+
+  return null;
+};
+
+const findRelationshipPrompt = (): HTMLElement | null => {
+  const accessibleRoots = getAccessibleLinkedInRoots();
+
+  for (const currentRoot of accessibleRoots) {
+    for (const selector of LINKEDIN_SELECTORS.dialog) {
+      for (const element of currentRoot.querySelectorAll<HTMLElement>(
+        selector,
+      )) {
+        if (
+          isVisible(element) &&
+          RELATIONSHIP_PROMPT_TITLE_PATTERN.test(normalizedText(element))
+        ) {
+          return element;
+        }
+      }
+    }
+  }
+
+  for (const currentRoot of accessibleRoots) {
+    const heading = [
+      ...currentRoot.querySelectorAll<HTMLElement>(
+        'h1, h2, h3, [role="heading"]',
+      ),
+    ].find(
+      (element) =>
+        isVisible(element) &&
+        RELATIONSHIP_PROMPT_TITLE_PATTERN.test(normalizedText(element)),
+    );
+
+    if (!heading) {
+      continue;
+    }
+
+    let ancestor = heading.parentElement;
+
+    while (ancestor) {
+      if (
+        isVisible(ancestor) &&
+        querySelectorAllAcrossRoots('button, [role="radio"], label', ancestor)
+          .length > 0
+      ) {
+        return ancestor;
+      }
+
+      ancestor = ancestor.parentElement;
+    }
+  }
+
+  return null;
+};
+
+const findTruthfulRelationshipOption = (
+  prompt: HTMLElement,
+): HTMLElement | null => {
+  const optionPatterns = [
+    /^other$/i,
+    /^we don['’]t know each other$/i,
+    /^i don['’]t know (?:this person|them)$/i,
+  ];
+
+  return (
+    querySelectorAllAcrossRoots<HTMLElement>(
+      'button, [role="radio"], label, input[type="radio"]',
+      prompt,
+    ).find((candidate) => {
+      if (!isVisible(candidate)) {
+        return false;
+      }
+
+      const candidateText = normalizedText(candidate);
+      const candidateLabel = accessibleLabel(candidate);
+
+      return optionPatterns.some(
+        (pattern) =>
+          pattern.test(candidateText) || pattern.test(candidateLabel),
+      );
+    }) ?? null
+  );
+};
+
+const findRelationshipAdvanceControl = (
+  prompt: HTMLElement,
+): HTMLElement | null =>
+  clickableCandidates(prompt).find((candidate) => {
+    if (!isEnabledControl(candidate)) {
+      return false;
+    }
+
+    const text = normalizedText(candidate);
+    const label = accessibleLabel(candidate);
+
+    return (
+      /^(?:continue|next|connect)$/.test(text) ||
+      /^(?:continue|next|connect)\b/.test(label)
+    );
+  }) ?? null;
+
+const summarizeVisibleConnectionSurface = (): string => {
+  const accessibleRoots = getAccessibleLinkedInRoots();
+  const surfaces = accessibleRoots.flatMap((currentRoot) =>
+    LINKEDIN_SELECTORS.dialog
+      .flatMap((selector) => [
+        ...currentRoot.querySelectorAll<HTMLElement>(selector),
+      ])
+      .filter(isVisible),
+  );
+  const surface = surfaces[0];
+  const heading = surface
+    ? querySelectorAllAcrossRoots<HTMLElement>(
+        'h1, h2, h3, [role="heading"]',
+        surface,
+      )
+        .find(isVisible)
+        ?.textContent?.replace(/\s+/g, ' ')
+        .trim()
+    : undefined;
+  const controlRoot = surface ?? document;
+  const controls = clickableCandidates(controlRoot)
+    .map((candidate) =>
+      (candidate.getAttribute('aria-label') || candidate.textContent || '')
+        .replace(/\s+/g, ' ')
+        .trim(),
+    )
+    .filter(Boolean)
+    .slice(0, 6);
+  const documentLocations = getAccessibleLinkedInDocuments()
+    .map((currentDocument) => {
+      try {
+        return currentDocument.location.pathname;
+      } catch {
+        return 'cross-origin';
+      }
+    })
+    .slice(0, 4);
+  const parts = [
+    `runner: ${LINKEDIN_INVITATION_AUTOMATION_REVISION}`,
+    `roots: ${accessibleRoots.length}`,
+    `documents: ${documentLocations.join(', ') || 'none'}`,
+    heading ? `title: ${heading}` : '',
+    controls.length > 0 ? `controls: ${controls.join(', ')}` : '',
+  ].filter(Boolean);
+
+  return ` (${parts.join('; ').slice(0, 500)})`;
+};
+
+type InvitationFlowResult =
+  | { dialog: HTMLElement; errorMessage: null }
+  | { dialog: null; errorMessage: string };
+
+const waitForInvitationFlow = async (): Promise<InvitationFlowResult> => {
+  const deadline = Date.now() + 4_000;
+  const clickedControls = new WeakSet<HTMLElement>();
+
+  while (Date.now() < deadline) {
+    const dialog = findInvitationDialog();
+
+    if (dialog) {
+      return { dialog, errorMessage: null };
+    }
+
+    const blockReason = getLinkedInAutomationBlockReason();
+
+    if (blockReason) {
+      return { dialog: null, errorMessage: blockReason };
+    }
+
+    const relationshipPrompt = findRelationshipPrompt();
+
+    if (relationshipPrompt) {
+      const promptText = normalizedText(relationshipPrompt);
+
+      if (RELATIONSHIP_MESSAGE_FIRST_PATTERN.test(promptText)) {
+        return {
+          dialog: null,
+          errorMessage:
+            'LinkedIn requires a message before this member can receive a connection invitation',
+        };
+      }
+
+      const truthfulOption = findTruthfulRelationshipOption(relationshipPrompt);
+
+      if (!truthfulOption) {
+        return {
+          dialog: null,
+          errorMessage:
+            'LinkedIn asked how you know this member but did not offer a truthful Other or We don’t know each other option',
+        };
+      }
+
+      if (!clickedControls.has(truthfulOption)) {
+        clickedControls.add(truthfulOption);
+        truthfulOption.click();
+      } else {
+        const advanceControl =
+          findRelationshipAdvanceControl(relationshipPrompt);
+
+        if (advanceControl && !clickedControls.has(advanceControl)) {
+          clickedControls.add(advanceControl);
+          advanceControl.click();
+        }
+      }
+    }
+
+    await wait(150);
+  }
+
+  return {
+    dialog: null,
+    errorMessage: `LinkedIn did not open a recognized invitation dialog${summarizeVisibleConnectionSurface()}`,
+  };
+};
+
+const hasInvitationSentConfirmation = (): boolean => {
+  const confirmationPattern =
+    /(?:invitation|connection request) (?:was )?sent/i;
+
+  return getAccessibleLinkedInRoots().some((currentRoot) =>
+    LINKEDIN_SELECTORS.confirmation.some((selector) =>
+      [...currentRoot.querySelectorAll<HTMLElement>(selector)].some(
+        (element) =>
+          isVisible(element) &&
+          confirmationPattern.test(normalizedText(element)),
+      ),
+    ),
+  );
+};
 
 const waitForElement = async <TElement extends Element>(
   findElement: () => TElement | null,
@@ -253,21 +683,29 @@ const setTextareaValue = (
   textarea: HTMLTextAreaElement,
   value: string,
 ): void => {
+  const textareaWindow = textarea.ownerDocument.defaultView;
   const valueSetter = Object.getOwnPropertyDescriptor(
-    HTMLTextAreaElement.prototype,
+    Object.getPrototypeOf(textarea) as object,
     'value',
   )?.set;
 
   valueSetter?.call(textarea, value);
-  textarea.dispatchEvent(new Event('input', { bubbles: true }));
-  textarea.dispatchEvent(new Event('change', { bubbles: true }));
+  textarea.dispatchEvent(
+    new (textareaWindow?.Event ?? Event)('input', { bubbles: true }),
+  );
+  textarea.dispatchEvent(
+    new (textareaWindow?.Event ?? Event)('change', { bubbles: true }),
+  );
 };
 
 const setContentEditableValue = (element: HTMLElement, value: string): void => {
+  const elementWindow = element.ownerDocument.defaultView;
+  const InputEventConstructor = elementWindow?.InputEvent ?? InputEvent;
+
   element.focus();
-  element.replaceChildren(document.createTextNode(value));
+  element.replaceChildren(element.ownerDocument.createTextNode(value));
   element.dispatchEvent(
-    new InputEvent('input', {
+    new InputEventConstructor('input', {
       bubbles: true,
       data: value,
       inputType: 'insertText',
@@ -280,7 +718,10 @@ export const getLinkedInAutomationBlockReason = (): string | null => {
     return 'LinkedIn opened a verification or restriction page.';
   }
 
-  const visibleText = (document.body?.innerText ?? '').toLowerCase();
+  const visibleText = getAccessibleLinkedInDocuments()
+    .map((currentDocument) => currentDocument.body?.innerText ?? '')
+    .join(' ')
+    .toLowerCase();
   const restrictionSignals = [
     'unusual activity',
     'temporarily restricted',
@@ -306,8 +747,10 @@ export const getLinkedInAutomationBlockReason = (): string | null => {
 // COMPLETED after a fixed sleep reported successes that never left the browser.
 const confirmInvitationSent = async (
   dialog: HTMLElement,
+  connectSource: 'DIRECT' | 'MENU',
 ): Promise<{ confirmed: boolean; reason: string | null }> => {
   const deadline = Date.now() + SEND_CONFIRMATION_TIMEOUT_MILLISECONDS;
+  let didInspectOverflowMenu = false;
 
   while (Date.now() < deadline) {
     const blockReason = getLinkedInAutomationBlockReason();
@@ -316,22 +759,60 @@ const confirmInvitationSent = async (
       return { confirmed: false, reason: blockReason };
     }
 
-    const isDialogClosed = !dialog.isConnected || !isVisible(dialog);
+    const activeDialog = findInvitationDialog();
+    const isDialogClosed =
+      (!dialog.isConnected || !isVisible(dialog)) && activeDialog === null;
 
     if (isDialogClosed) {
       const controls = getProfileActionControls();
 
-      if (controls.pending || !controls.connect) {
+      if (
+        controls.pending ||
+        detectConnectionDegree() === 'FIRST' ||
+        hasInvitationSentConfirmation()
+      ) {
         return { confirmed: true, reason: null };
       }
 
-      // The dialog closed but Connect is still offered, which is how LinkedIn
-      // presents a dismissed or rejected invitation.
-      return {
-        confirmed: false,
-        reason:
-          'LinkedIn closed the invitation dialog without sending the request',
-      };
+      if (connectSource === 'DIRECT' && controls.connect) {
+        return {
+          confirmed: false,
+          reason:
+            'LinkedIn closed the invitation dialog but still offers Connect',
+        };
+      }
+
+      if (
+        connectSource === 'MENU' &&
+        !didInspectOverflowMenu &&
+        controls.more
+      ) {
+        didInspectOverflowMenu = true;
+        const controlsBeforeOpening = new Set([
+          ...findControls('connect'),
+          ...findControls('pending'),
+        ]);
+
+        controls.more.click();
+        const menuControl = await waitForElement(
+          () =>
+            findControlInOpenMenu('pending', controlsBeforeOpening) ??
+            findControlInOpenMenu('connect', controlsBeforeOpening),
+          1_500,
+        );
+
+        if (menuControl) {
+          if (matchesControl(menuControl, CONTROL_PATTERNS.pending)) {
+            return { confirmed: true, reason: null };
+          }
+
+          return {
+            confirmed: false,
+            reason:
+              'LinkedIn closed the invitation dialog but the profile menu still offers Connect',
+          };
+        }
+      }
     }
 
     await wait(250);
@@ -339,7 +820,8 @@ const confirmInvitationSent = async (
 
   return {
     confirmed: false,
-    reason: 'LinkedIn did not confirm that the invitation was sent',
+    reason:
+      'LinkedIn did not show Pending or another confirmation that the invitation was sent',
   };
 };
 
@@ -357,7 +839,9 @@ export const sendConnectionRequest = async (
     };
   }
 
-  if (noteText.length > LINKEDIN_CONNECTION_NOTE_MAX_LENGTH) {
+  const normalizedNoteText = noteText?.trim() ?? '';
+
+  if (normalizedNoteText.length > LINKEDIN_CONNECTION_NOTE_MAX_LENGTH) {
     return {
       status: 'FAILED',
       connectionState: 'NOT_CONNECTED',
@@ -367,76 +851,86 @@ export const sendConnectionRequest = async (
 
   const controls = getProfileActionControls();
   const degree = detectConnectionDegree();
+  let dialog = findInvitationDialog();
+  let connectSource: 'DIRECT' | 'MENU' = controls.connect ? 'DIRECT' : 'MENU';
 
-  // Skipping happens only on positive evidence. An unreadable page is reported
-  // as a failure so the enrollment surfaces the problem instead of silently
-  // recording a connection that was never requested.
-  if (controls.pending) {
-    return { status: 'SKIPPED', connectionState: 'PENDING' };
-  }
+  if (!dialog) {
+    // Skipping happens only on positive evidence. An unreadable page is
+    // reported as a failure so the enrollment surfaces the problem instead of
+    // silently recording a connection that was never requested.
+    if (controls.pending) {
+      return { status: 'SKIPPED', connectionState: 'PENDING' };
+    }
 
-  if (skipIfAlreadyConnected && degree === 'FIRST') {
-    return { status: 'SKIPPED', connectionState: 'CONNECTED' };
-  }
+    if (skipIfAlreadyConnected && degree === 'FIRST') {
+      return { status: 'SKIPPED', connectionState: 'CONNECTED' };
+    }
 
-  let connectButton = controls.connect;
+    let connectButton = controls.connect;
 
-  if (!connectButton) {
-    const moreButton = controls.more;
+    if (!connectButton) {
+      const moreButton = controls.more;
 
-    if (!moreButton) {
+      if (!moreButton) {
+        return {
+          status: 'FAILED',
+          connectionState: degree === 'FIRST' ? 'CONNECTED' : 'UNKNOWN',
+          errorMessage:
+            degree === 'FIRST'
+              ? 'LinkedIn shows this profile as an existing connection and offered no Connect control'
+              : 'Could not find a recognized Connect or More control on the profile',
+        };
+      }
+
+      const connectControlsBeforeOpening = new Set(findControls('connect'));
+
+      moreButton.click();
+      connectSource = 'MENU';
+      connectButton = await waitForElement(() =>
+        findControlInOpenMenu('connect', connectControlsBeforeOpening),
+      );
+    }
+
+    if (!connectButton) {
       return {
         status: 'FAILED',
-        connectionState: degree === 'FIRST' ? 'CONNECTED' : 'UNKNOWN',
-        errorMessage:
-          degree === 'FIRST'
-            ? 'LinkedIn shows this profile as an existing connection and offered no Connect control'
-            : 'Could not find a recognized Connect or More control on the profile',
+        connectionState: 'UNKNOWN',
+        errorMessage: 'Connect was not available in the profile actions menu',
       };
     }
 
-    moreButton.click();
-    connectButton = await waitForElement(() => {
-      const menu = document.querySelector<HTMLElement>('[role="menu"]');
+    connectButton.click();
+    const invitationFlow = await waitForInvitationFlow();
+    dialog = invitationFlow.dialog;
 
-      return menu ? findControl('connect', menu) : null;
-    });
+    if (!dialog) {
+      return {
+        status: 'FAILED',
+        connectionState: 'UNKNOWN',
+        errorMessage:
+          invitationFlow.errorMessage ??
+          'LinkedIn did not open a recognized invitation dialog',
+      };
+    }
   }
 
-  if (!connectButton) {
-    return {
-      status: 'FAILED',
-      connectionState: 'UNKNOWN',
-      errorMessage: 'Connect was not available in the profile actions menu',
-    };
-  }
+  let currentDialog = dialog;
 
-  connectButton.click();
-  const dialog = await waitForElement(() =>
-    findVisibleElement<HTMLElement>(LINKEDIN_SELECTORS.dialog),
-  );
-
-  if (!dialog) {
-    return {
-      status: 'FAILED',
-      connectionState: 'UNKNOWN',
-      errorMessage: 'LinkedIn did not open a recognized invitation dialog',
-    };
-  }
-
-  if (noteText.length > 0) {
+  if (normalizedNoteText.length > 0) {
     // Some invitation dialogs expose the note field directly, so a missing
     // "Add a note" button is only a failure when no textarea appears either.
     const addNoteButton = findControl('addNote', dialog);
 
     addNoteButton?.click();
 
-    const textarea = await waitForElement(() =>
-      findVisibleElement<HTMLTextAreaElement>(
+    const textarea = await waitForElement(() => {
+      currentDialog = findInvitationDialog() ?? currentDialog;
+
+      return findVisibleElement<HTMLTextAreaElement>(
         LINKEDIN_SELECTORS.noteTextarea,
-        dialog,
-      ),
-    );
+        currentDialog,
+      );
+    });
 
     if (!textarea) {
       return {
@@ -446,10 +940,14 @@ export const sendConnectionRequest = async (
       };
     }
 
-    setTextareaValue(textarea, noteText);
-    await wait(300);
+    setTextareaValue(textarea, normalizedNoteText);
 
-    const sendButton = findControl('send', dialog);
+    const sendButton = await waitForElement(() => {
+      currentDialog = findInvitationDialog() ?? currentDialog;
+      const control = findControl('send', currentDialog);
+
+      return control && isEnabledControl(control) ? control : null;
+    });
 
     if (!sendButton) {
       return {
@@ -461,8 +959,14 @@ export const sendConnectionRequest = async (
 
     sendButton.click();
   } else {
-    const sendButton =
-      findControl('sendWithoutNote', dialog) ?? findControl('send', dialog);
+    const sendButton = await waitForElement(() => {
+      currentDialog = findInvitationDialog() ?? currentDialog;
+      const control =
+        findControl('sendWithoutNote', currentDialog) ??
+        findControl('send', currentDialog);
+
+      return control && isEnabledControl(control) ? control : null;
+    });
 
     if (!sendButton) {
       return {
@@ -476,7 +980,10 @@ export const sendConnectionRequest = async (
     sendButton.click();
   }
 
-  const { confirmed, reason } = await confirmInvitationSent(dialog);
+  const { confirmed, reason } = await confirmInvitationSent(
+    dialog,
+    connectSource,
+  );
 
   if (!confirmed) {
     return {

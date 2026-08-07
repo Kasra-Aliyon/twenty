@@ -2,7 +2,6 @@ import type { LinkedInSafetyState } from '../types';
 
 export const LINKEDIN_READ_REQUESTS_PER_HOUR = 60;
 export const LINKEDIN_READ_REQUESTS_PER_DAY = 200;
-export const LINKEDIN_OUTBOUND_ATTEMPTS_PER_DAY = 20;
 // Local floor only. The server-side delay pattern drives the actual spacing;
 // this guards against a runner replaying actions back to back.
 export const LINKEDIN_OUTBOUND_MINIMUM_GAP_MILLISECONDS = 60_000;
@@ -55,6 +54,7 @@ export type LinkedInSafetyDecision =
 export const getLinkedInReadSafetyDecision = (
   rawState: LinkedInSafetyState,
   now: number,
+  dailyReadLimitEnabled = true,
 ): LinkedInSafetyDecision => {
   const state = pruneLinkedInSafetyState(rawState, now);
 
@@ -84,7 +84,10 @@ export const getLinkedInReadSafetyDecision = (
     (timestamp) => timestamp >= startOfLocalDay(now),
   );
 
-  if (requestsToday.length >= LINKEDIN_READ_REQUESTS_PER_DAY) {
+  if (
+    dailyReadLimitEnabled &&
+    requestsToday.length >= LINKEDIN_READ_REQUESTS_PER_DAY
+  ) {
     return {
       allowed: false,
       retryAt: startOfLocalDay(now) + DAY_MILLISECONDS,
@@ -99,16 +102,8 @@ export const getLinkedInOutboundSafetyDecision = (
   rawState: LinkedInSafetyState,
   actionId: string,
   now: number,
-  dailyOutboundLimit = LINKEDIN_OUTBOUND_ATTEMPTS_PER_DAY,
 ): LinkedInSafetyDecision => {
   const state = pruneLinkedInSafetyState(rawState, now);
-  const effectiveDailyOutboundLimit = Math.min(
-    LINKEDIN_OUTBOUND_ATTEMPTS_PER_DAY,
-    Math.max(1, Math.floor(dailyOutboundLimit)),
-  );
-  const attemptsToday = state.outboundAttempts.filter(
-    ({ attemptedAt }) => attemptedAt >= startOfLocalDay(now),
-  );
 
   if (state.cooldownUntil !== null) {
     return {
@@ -126,14 +121,6 @@ export const getLinkedInOutboundSafetyDecision = (
       retryAt: startOfLocalDay(now) + DAY_MILLISECONDS,
       reason:
         'This action was already attempted today and will not be replayed automatically.',
-    };
-  }
-
-  if (attemptsToday.length >= effectiveDailyOutboundLimit) {
-    return {
-      allowed: false,
-      retryAt: startOfLocalDay(now) + DAY_MILLISECONDS,
-      reason: 'Daily LinkedIn automation limit reached.',
     };
   }
 

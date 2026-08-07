@@ -12,7 +12,10 @@ import { LinkedinActionWorkspaceEntity } from 'src/modules/linkedin/standard-obj
 import { type SequenceMailboxThrottleService } from 'src/modules/sequence/services/sequence-mailbox-throttle.service';
 import { type SequenceQueueService } from 'src/modules/sequence/services/sequence-queue.service';
 import { SequenceSchedulerService } from 'src/modules/sequence/services/sequence-scheduler.service';
-import { DEFAULT_SEQUENCE_SETTINGS } from 'src/modules/sequence/sequence.constants';
+import {
+  DEFAULT_SEQUENCE_SETTINGS,
+  SEQUENCE_SCHEDULER_BATCH_SIZE,
+} from 'src/modules/sequence/sequence.constants';
 import { SequenceEnrollmentWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence-enrollment.workspace-entity';
 import { SequenceStepWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence-step.workspace-entity';
 import { SequenceWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence.workspace-entity';
@@ -29,6 +32,7 @@ describe('SequenceSchedulerService', () => {
       activeDays: [1],
       windowStart: '00:00',
       windowEnd: '23:59',
+      dailyStartLimitEnabled: true,
       dailyStarts: 2,
       staggerMinutes: 5,
     },
@@ -74,6 +78,7 @@ describe('SequenceSchedulerService', () => {
     futureScheduledEnrollments = [],
     linkedinWaitingEnrollments = [],
     linkedinActions = [],
+    dailyStartLimitEnabled = true,
   }: {
     startedToday: number;
     pendingEnrollments?: SequenceEnrollmentWorkspaceEntity[];
@@ -81,10 +86,18 @@ describe('SequenceSchedulerService', () => {
     futureScheduledEnrollments?: SequenceEnrollmentWorkspaceEntity[];
     linkedinWaitingEnrollments?: SequenceEnrollmentWorkspaceEntity[];
     linkedinActions?: LinkedinActionWorkspaceEntity[];
+    dailyStartLimitEnabled?: boolean;
   }) => {
+    const activeSequence = {
+      ...sequence,
+      settings: {
+        ...sequence.settings,
+        dailyStartLimitEnabled,
+      },
+    } as SequenceWorkspaceEntity;
     const sequenceRepository = {
-      find: jest.fn().mockResolvedValue([sequence]),
-      findOne: jest.fn().mockResolvedValue(sequence),
+      find: jest.fn().mockResolvedValue([activeSequence]),
+      findOne: jest.fn().mockResolvedValue(activeSequence),
     };
     const enrollmentRepository = {
       count: jest.fn().mockResolvedValue(startedToday),
@@ -202,6 +215,36 @@ describe('SequenceSchedulerService', () => {
         nextActionAt: now,
       }),
       expect.any(Object),
+    );
+  });
+
+  it('admits pending enrollments without counting daily starts when the cap is disabled', async () => {
+    const pendingEnrollments = [
+      buildEnrollment('first-pending-id', SEQUENCE_ENROLLMENT_STATUSES.PENDING),
+      buildEnrollment(
+        'second-pending-id',
+        SEQUENCE_ENROLLMENT_STATUSES.PENDING,
+      ),
+    ];
+    const { service, enrollmentRepository } = setup({
+      startedToday: 25,
+      pendingEnrollments,
+      dailyStartLimitEnabled: false,
+    });
+
+    await service.tick(workspaceId, now);
+
+    const pendingFindCall = enrollmentRepository.find.mock.calls.find(
+      ([options]) =>
+        options.where.status === SEQUENCE_ENROLLMENT_STATUSES.PENDING,
+    );
+
+    expect(enrollmentRepository.count).not.toHaveBeenCalled();
+    expect(pendingFindCall?.[0]).toEqual(
+      expect.objectContaining({ take: SEQUENCE_SCHEDULER_BATCH_SIZE }),
+    );
+    expect(enrollmentRepository.update).toHaveBeenCalledTimes(
+      pendingEnrollments.length,
     );
   });
 

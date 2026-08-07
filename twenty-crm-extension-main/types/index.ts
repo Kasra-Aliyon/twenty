@@ -215,14 +215,14 @@ export type LinkedInSafetySnapshot = {
   readRequestsLastHour: number;
   readRequestsToday: number;
   outboundAttemptsToday: number;
-  outboundDailyLimit: number;
+  dailyReadLimitEnabled: boolean;
   nextOutboundAt: number | null;
   cooldownUntil: number | null;
   cooldownReason: string | null;
 };
 
 export type LinkedInSafetySettings = {
-  dailyOutboundLimit: number;
+  dailyReadLimitEnabled: boolean;
 };
 
 export type LinkedInSyncLock = {
