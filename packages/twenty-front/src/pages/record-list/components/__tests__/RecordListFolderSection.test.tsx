@@ -70,6 +70,7 @@ const TestRecordListFolderSection = ({
     isSaving={false}
     listSortableGroup="record-lists:folder-id"
     lists={[recordList]}
+    memberCountByListId={{ [recordList.id]: 12 }}
     newFolderDraft={newFolderDraft}
     onChangeNewFolderDraft={onChangeNewFolderDraft}
     onDeleteFolder={jest.fn()}
@@ -143,9 +144,28 @@ describe('RecordListFolderSection', () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(screen.getByRole('link', { name: 'Customers' }));
+    fireEvent.click(screen.getByRole('link', { name: /^Customers/ }));
 
     expect(mockSelectList).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the record count for the folder and its list', () => {
+    render(
+      <MemoryRouter
+        future={{
+          v7_relativeSplatPath: true,
+          v7_startTransition: true,
+        }}
+      >
+        <TestRecordListFolderSection
+          newFolderDraft={null}
+          onChangeNewFolderDraft={jest.fn()}
+          onSaveNewFolderName={jest.fn()}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getAllByText('12')).toHaveLength(2);
   });
 
   it('collapses and expands the lists when the folder is selected', () => {
@@ -169,12 +189,14 @@ describe('RecordListFolderSection', () => {
     fireEvent.click(folderToggle);
 
     expect(
-      screen.queryByRole('link', { name: 'Customers' }),
+      screen.queryByRole('link', { name: /^Customers/ }),
     ).not.toBeInTheDocument();
     expect(folderToggle).toHaveAttribute('aria-expanded', 'false');
 
     fireEvent.click(folderToggle);
 
-    expect(screen.getByRole('link', { name: 'Customers' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: /^Customers/ }),
+    ).toBeInTheDocument();
   });
 });

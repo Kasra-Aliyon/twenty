@@ -10,8 +10,9 @@ export const FONT_COMMON = {
   },
   weight: {
     regular: 400,
-    medium: 500,
-    semiBold: 600,
+    medium: 510,
+    semiBold: 590,
   },
-  family: "'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, sans-serif",
+  family:
+    "'Inter Variable', 'Inter', 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
 };

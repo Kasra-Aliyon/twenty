@@ -1,4 +1,5 @@
 import { useLingui } from '@lingui/react/macro';
+import { styled } from '@linaria/react';
 import {
   IconDotsVertical,
   IconPencil,
@@ -13,6 +14,12 @@ import { DropdownContent } from '@/ui/layout/dropdown/components/DropdownContent
 import { DropdownMenuItemsContainer } from '@/ui/layout/dropdown/components/DropdownMenuItemsContainer';
 import { GenericDropdownContentWidth } from '@/ui/layout/dropdown/constants/GenericDropdownContentWidth';
 import { useCloseDropdown } from '@/ui/layout/dropdown/hooks/useCloseDropdown';
+
+const StyledActionsButton = styled(LightIconButton)`
+  --light-icon-button-hover-bg: transparent;
+
+  transition: none;
+`;
 
 type RecordListItemActionsDropdownProps = {
   itemId: string;
@@ -47,7 +54,7 @@ export const RecordListItemActionsDropdown = ({
       dropdownId={dropdownId}
       dropdownPlacement="bottom-end"
       clickableComponent={
-        <LightIconButton
+        <StyledActionsButton
           Icon={IconDotsVertical}
           accent="tertiary"
           aria-label={

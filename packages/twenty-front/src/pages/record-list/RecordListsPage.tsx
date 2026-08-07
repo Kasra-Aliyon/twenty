@@ -60,6 +60,7 @@ import {
   type RecordListRecord,
 } from './types/RecordListRecords';
 import { groupVisibleRecordLists } from './utils/groupVisibleRecordLists';
+import { useRecordListMemberCounts } from './hooks/useRecordListMemberCounts';
 
 const OBJECT_NAME_BY_LIST_TYPE = {
   [RECORD_LIST_TYPES.COMPANY]: 'company',
@@ -82,6 +83,9 @@ const RecordLists = ({ onClose }: { onClose?: () => void }) => {
   const isRecordListsEnabled = useIsFeatureEnabled(
     FeatureFlagKey.IS_RECORD_LISTS_ENABLED,
   );
+  const memberCountByListId = useRecordListMemberCounts({
+    skip: !isRecordListsEnabled,
+  });
   const apolloCoreClient = useApolloCoreClient();
   const { enqueueErrorSnackBar } = useSnackBar();
   const { closeDropdown } = useCloseDropdown();
@@ -406,6 +410,7 @@ const RecordLists = ({ onClose }: { onClose?: () => void }) => {
             <RecordListFolderSection
               folder={null}
               lists={topLevelLists}
+              memberCountByListId={memberCountByListId}
               listSortableGroup={`${RECORD_LIST_SORTABLE_GROUP_PREFIX}${ROOT_RECORD_LIST_FOLDER_ID}`}
               canManageLists={shouldShowListActions}
               isReorderingDisabled={
@@ -454,6 +459,7 @@ const RecordLists = ({ onClose }: { onClose?: () => void }) => {
                 <RecordListFolderSection
                   folder={folder}
                   lists={folderLists}
+                  memberCountByListId={memberCountByListId}
                   isFolderDeleteDisabled={
                     (listCountByFolderId[folder.id] ?? 0) > 0
                   }

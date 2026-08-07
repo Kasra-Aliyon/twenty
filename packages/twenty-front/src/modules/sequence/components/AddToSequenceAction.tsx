@@ -1,10 +1,18 @@
 import { useCurrentCommandMenuContextApi } from '@/command-menu-item/hooks/useCurrentCommandMenuContextApi';
+import { contextStoreAnyFieldFilterValueComponentState } from '@/context-store/states/contextStoreAnyFieldFilterValueComponentState';
+import { contextStoreFilterGroupsComponentState } from '@/context-store/states/contextStoreFilterGroupsComponentState';
+import { contextStoreFiltersComponentState } from '@/context-store/states/contextStoreFiltersComponentState';
+import { contextStoreTargetedRecordsRuleComponentState } from '@/context-store/states/contextStoreTargetedRecordsRuleComponentState';
+import { computeContextStoreFilters } from '@/context-store/utils/computeContextStoreFilters';
 import { useApolloCoreClient } from '@/object-metadata/hooks/useApolloCoreClient';
 import { useDoObjectMetadataItemsExist } from '@/object-metadata/hooks/useDoObjectMetadataItemsExist';
 import { useObjectMetadataItem } from '@/object-metadata/hooks/useObjectMetadataItem';
-import { useCreateManyRecords } from '@/object-record/hooks/useCreateManyRecords';
+import { flattenedFieldMetadataItemsSelector } from '@/object-metadata/states/flattenedFieldMetadataItemsSelector';
+import { useBatchCreateManyRecords } from '@/object-record/hooks/useBatchCreateManyRecords';
 import { useFindManyRecords } from '@/object-record/hooks/useFindManyRecords';
+import { useLazyFetchAllRecords } from '@/object-record/hooks/useLazyFetchAllRecords';
 import { useObjectPermissionsForObject } from '@/object-record/hooks/useObjectPermissionsForObject';
+import { useFilterValueDependencies } from '@/object-record/record-filter/hooks/useFilterValueDependencies';
 import { type ObjectRecord } from '@/object-record/types/ObjectRecord';
 import { getRecordsFromRecordConnection } from '@/object-record/cache/utils/getRecordsFromRecordConnection';
 import { useSnackBar } from '@/ui/feedback/snack-bar-manager/hooks/useSnackBar';
@@ -13,15 +21,19 @@ import { DropdownContent } from '@/ui/layout/dropdown/components/DropdownContent
 import { DropdownMenuItemsContainer } from '@/ui/layout/dropdown/components/DropdownMenuItemsContainer';
 import { GenericDropdownContentWidth } from '@/ui/layout/dropdown/constants/GenericDropdownContentWidth';
 import { useCloseDropdown } from '@/ui/layout/dropdown/hooks/useCloseDropdown';
+import { useAtomComponentStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomComponentStateValue';
+import { useAtomStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomStateValue';
 import { useIsFeatureEnabled } from '@/workspace/hooks/useIsFeatureEnabled';
 import { t } from '@lingui/core/macro';
 import { useState } from 'react';
 import { QUERY_MAX_RECORDS } from 'twenty-shared/constants';
 import {
   FeatureFlagKey,
+  type RecordGqlOperationFilter,
   type SequenceSettings,
   type SequenceStatus,
 } from 'twenty-shared/types';
+import { combineFilters } from 'twenty-shared/utils';
 import { IconSend } from 'twenty-ui/icon';
 import { Button } from 'twenty-ui/input';
 import { MenuItem } from 'twenty-ui/navigation';
@@ -40,18 +52,62 @@ type ExistingSequenceEnrollment = ObjectRecord & {
 
 const SEQUENCES_PAGE_SIZE = 50;
 
-const AddToSequenceActionContent = () => {
+const AddToSequenceActionContent = ({
+  requiredFilter,
+}: {
+  requiredFilter?: RecordGqlOperationFilter;
+}) => {
   const dropdownId = 'add-selected-people-to-sequence';
   const [isSaving, setIsSaving] = useState(false);
   const { closeDropdown } = useCloseDropdown();
-  const { selectedRecords } = useCurrentCommandMenuContextApi();
+  const { selectedRecords, isSelectAll, numberOfSelectedRecords } =
+    useCurrentCommandMenuContextApi();
   const apolloCoreClient = useApolloCoreClient();
   const { enqueueSuccessSnackBar, enqueueErrorSnackBar } = useSnackBar();
+  const { objectMetadataItem: personObjectMetadataItem } =
+    useObjectMetadataItem({ objectNameSingular: 'person' });
   const { objectMetadataItem: enrollmentObjectMetadataItem } =
     useObjectMetadataItem({ objectNameSingular: 'sequenceEnrollment' });
   const enrollmentPermissions = useObjectPermissionsForObject(
     enrollmentObjectMetadataItem.id,
   );
+  const contextStoreTargetedRecordsRule = useAtomComponentStateValue(
+    contextStoreTargetedRecordsRuleComponentState,
+  );
+  const contextStoreFilters = useAtomComponentStateValue(
+    contextStoreFiltersComponentState,
+  );
+  const contextStoreFilterGroups = useAtomComponentStateValue(
+    contextStoreFilterGroupsComponentState,
+  );
+  const contextStoreAnyFieldFilterValue = useAtomComponentStateValue(
+    contextStoreAnyFieldFilterValueComponentState,
+  );
+  const { filterValueDependencies } = useFilterValueDependencies();
+  const flattenedFieldMetadataItems = useAtomStateValue(
+    flattenedFieldMetadataItemsSelector,
+  );
+
+  const targetedPeopleFilter = combineFilters([
+    computeContextStoreFilters({
+      contextStoreTargetedRecordsRule,
+      contextStoreFilters,
+      contextStoreFilterGroups,
+      objectMetadataItem: personObjectMetadataItem,
+      fieldMetadataItems: flattenedFieldMetadataItems,
+      filterValueDependencies,
+      contextStoreAnyFieldFilterValue,
+    }),
+    requiredFilter,
+  ]);
+
+  const { fetchAllRecords: fetchAllTargetedPeople } =
+    useLazyFetchAllRecords<ObjectRecord>({
+      objectNameSingular: 'person',
+      filter: targetedPeopleFilter,
+      recordGqlFields: { id: true },
+      limit: QUERY_MAX_RECORDS,
+    });
   const {
     records: sequences,
     fetchMoreRecords: fetchMoreSequences,
@@ -86,14 +142,14 @@ const AddToSequenceActionContent = () => {
     limit: QUERY_MAX_RECORDS,
     skip: selectedRecords.length === 0,
   });
-  const { createManyRecords } = useCreateManyRecords({
+  const { batchCreateManyRecords } = useBatchCreateManyRecords({
     objectNameSingular: 'sequenceEnrollment',
     skipPostOptimisticEffect: true,
   });
 
   if (
     !enrollmentPermissions.canUpdateObjectRecords ||
-    selectedRecords.length === 0
+    numberOfSelectedRecords === 0
   ) {
     return null;
   }
@@ -107,30 +163,48 @@ const AddToSequenceActionContent = () => {
     setIsSaving(true);
 
     try {
-      const { data } = await refetchExistingEnrollments({
-        filter: {
-          and: [
-            { sequenceId: { eq: sequence.id } },
-            { personId: { in: selectedRecords.map((record) => record.id) } },
-          ],
-        },
-        limit: QUERY_MAX_RECORDS,
-      });
+      const targetedPeople = isSelectAll
+        ? await fetchAllTargetedPeople()
+        : selectedRecords;
+      const peopleToEnroll: ObjectRecord[] = [];
 
-      if (!data) {
-        throw new Error('Could not verify existing sequence enrollments');
-      }
-
-      const existingEnrollments =
-        getRecordsFromRecordConnection<ExistingSequenceEnrollment>({
-          recordConnection: data.sequenceEnrollments,
+      for (
+        let batchStart = 0;
+        batchStart < targetedPeople.length;
+        batchStart += QUERY_MAX_RECORDS
+      ) {
+        const peopleBatch = targetedPeople.slice(
+          batchStart,
+          batchStart + QUERY_MAX_RECORDS,
+        );
+        const { data } = await refetchExistingEnrollments({
+          filter: {
+            and: [
+              { sequenceId: { eq: sequence.id } },
+              { personId: { in: peopleBatch.map((record) => record.id) } },
+            ],
+          },
+          limit: QUERY_MAX_RECORDS,
         });
-      const alreadyEnrolledPersonIds = new Set(
-        existingEnrollments.map((enrollment) => enrollment.personId),
-      );
-      const peopleToEnroll = selectedRecords.filter(
-        (person) => !alreadyEnrolledPersonIds.has(person.id),
-      );
+
+        if (!data) {
+          throw new Error('Could not verify existing sequence enrollments');
+        }
+
+        const existingEnrollments =
+          getRecordsFromRecordConnection<ExistingSequenceEnrollment>({
+            recordConnection: data.sequenceEnrollments,
+          });
+        const alreadyEnrolledPersonIds = new Set(
+          existingEnrollments.map((enrollment) => enrollment.personId),
+        );
+
+        peopleToEnroll.push(
+          ...peopleBatch.filter(
+            (person) => !alreadyEnrolledPersonIds.has(person.id),
+          ),
+        );
+      }
 
       if (peopleToEnroll.length === 0) {
         enqueueSuccessSnackBar({
@@ -139,7 +213,7 @@ const AddToSequenceActionContent = () => {
         return;
       }
 
-      await createManyRecords({
+      await batchCreateManyRecords({
         recordsToCreate: peopleToEnroll.map((person) => ({
           sequenceId: sequence.id,
           personId: person.id,
@@ -205,8 +279,10 @@ const AddToSequenceActionContent = () => {
 
 export const AddToSequenceAction = ({
   objectNameSingular,
+  requiredFilter,
 }: {
   objectNameSingular: string;
+  requiredFilter?: RecordGqlOperationFilter;
 }) => {
   const isOutreachSequencesEnabled = useIsFeatureEnabled(
     FeatureFlagKey.IS_OUTREACH_SEQUENCES_ENABLED,
@@ -224,5 +300,5 @@ export const AddToSequenceAction = ({
     return null;
   }
 
-  return <AddToSequenceActionContent />;
+  return <AddToSequenceActionContent requiredFilter={requiredFilter} />;
 };

@@ -99,7 +99,10 @@ export const RecordIndexPageHeader = () => {
             {!isDefined(requiredFilter) && (
               <AddToRecordListAction objectNameSingular={objectNameSingular} />
             )}
-            <AddToSequenceAction objectNameSingular={objectNameSingular} />
+            <AddToSequenceAction
+              objectNameSingular={objectNameSingular}
+              requiredFilter={requiredFilter}
+            />
             <RecordIndexCommandMenu />
             {!isLayoutCustomizationModeEnabled && <SidePanelToggleButton />}
           </>

@@ -192,7 +192,6 @@ export const StyledActions = styled.div`
   pointer-events: none;
   position: absolute;
   right: ${themeCssVariables.spacing[1]};
-  transition: opacity 100ms ease;
   z-index: 1;
 `;
 

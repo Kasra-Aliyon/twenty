@@ -50,6 +50,7 @@ type RecordListFolderSectionProps = {
   isSaving: boolean;
   listSortableGroup: string;
   lists: RecordListRecord[];
+  memberCountByListId: Record<string, number>;
   newFolderDraft: EditingRecordListItem | null;
   onChangeNewFolderDraft: (item: EditingRecordListItem) => void;
   onDeleteFolder: (folderId: string) => void;
@@ -70,6 +71,7 @@ export const RecordListFolderSection = ({
   isSaving,
   listSortableGroup,
   lists,
+  memberCountByListId,
   newFolderDraft,
   onChangeNewFolderDraft,
   onDeleteFolder,
@@ -94,6 +96,10 @@ export const RecordListFolderSection = ({
   });
 
   const toggleFolder = () => setIsExpanded((isOpen) => !isOpen);
+  const folderMemberCount = lists.reduce(
+    (count, recordList) => count + (memberCountByListId[recordList.id] ?? 0),
+    0,
+  );
 
   return (
     <StyledFolder>
@@ -152,7 +158,7 @@ export const RecordListFolderSection = ({
             ) : (
               <span>{folder.name}</span>
             )}
-            <StyledFolderCount>{lists.length}</StyledFolderCount>
+            <StyledFolderCount>{folderMemberCount}</StyledFolderCount>
           </StyledFolderTitle>
           {canManageLists && (
             <StyledActions data-record-list-actions>
@@ -200,6 +206,9 @@ export const RecordListFolderSection = ({
                     <ListIcon size={16} />
                   </StyledListIcon>
                   <span>{recordList.name}</span>
+                  <StyledFolderCount>
+                    {memberCountByListId[recordList.id] ?? 0}
+                  </StyledFolderCount>
                 </StyledListLink>
                 {canManageLists && (
                   <StyledActions data-record-list-actions>
