@@ -47,6 +47,10 @@ const CreateViewFieldInputSchema = z.object({
     .describe(
       'Aggregate operation for this field (e.g., "SUM", "AVG", "COUNT").',
     ),
+  subFieldName: z
+    .string()
+    .optional()
+    .describe('Composite subfield to display, such as "addressCountry".'),
 });
 
 const UpdateViewFieldInputSchema = z.object({
@@ -63,6 +67,11 @@ const UpdateViewFieldInputSchema = z.object({
     .enum(Object.values(AggregateOperations) as [string, ...string[]])
     .optional()
     .describe('Aggregate operation for this field.'),
+  subFieldName: z
+    .string()
+    .nullable()
+    .optional()
+    .describe('Composite subfield to display, or null for the full field.'),
 });
 
 const DeleteViewFieldInputSchema = z.object({

@@ -20,7 +20,9 @@
   gap: var(--t-spacing-1);
   height: 24px;
   padding: 0 var(--t-spacing-2);
-  transition: background 0.1s ease;
+  transition:
+    background duration(fast) ease,
+    color duration(fast) ease;
   white-space: nowrap;
 
   &:hover {

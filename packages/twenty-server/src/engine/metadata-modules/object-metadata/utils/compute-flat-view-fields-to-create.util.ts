@@ -64,6 +64,7 @@ export const computeFlatViewFieldsToCreate = ({
       size: DEFAULT_VIEW_FIELD_SIZE,
       position: index,
       aggregateOperation: null,
+      subFieldName: null,
       isActive: true,
       isSystemSideEffect: true,
       universalOverrides: null,

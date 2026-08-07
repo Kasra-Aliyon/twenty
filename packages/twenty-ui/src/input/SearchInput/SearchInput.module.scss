@@ -7,7 +7,7 @@
 
 .inputContainer {
   align-items: center;
-  background-color: var(--t-background-transparent-lighter);
+  background-color: var(--t-background-secondary);
   border: 1px solid var(--t-border-color-medium);
   border-radius: var(--t-border-radius-sm);
   box-sizing: border-box;
@@ -16,10 +16,15 @@
   gap: var(--t-spacing-1);
   height: 32px;
   padding: 0 var(--t-spacing-2);
+  transition:
+    background duration(fast) ease,
+    border-color duration(fast) ease,
+    box-shadow duration(fast) ease;
 }
 
 .inputContainer:focus-within {
   border-color: var(--t-color-blue);
+  box-shadow: 0 0 0 2px var(--t-accent-accent3);
 }
 
 .iconContainer {

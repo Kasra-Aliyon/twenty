@@ -1,4 +1,7 @@
-import { type FieldMetadata } from '@/object-record/record-field/ui/types/FieldMetadata';
+import {
+  type FieldAddressMetadata,
+  type FieldMetadata,
+} from '@/object-record/record-field/ui/types/FieldMetadata';
 import { type ColumnDefinition } from '@/object-record/record-table/types/ColumnDefinition';
 import { mapArrayToObject } from '~/utils/array/mapArrayToObject';
 import { moveArrayItem } from '~/utils/array/moveArrayItem';
@@ -6,6 +9,7 @@ import { isUndefinedOrNull } from '~/utils/isUndefinedOrNull';
 
 import { isDefined } from 'twenty-shared/utils';
 import { type ViewField } from '@/views/types/ViewField';
+import { FieldMetadataType } from 'twenty-shared/types';
 
 export const mapViewFieldsToColumnDefinitions = ({
   columnDefinitions,
@@ -30,6 +34,23 @@ export const mapViewFieldsToColumnDefinitions = ({
 
       const { isLabelIdentifier } = correspondingColumnDefinition;
 
+      const isAddressCountryColumn =
+        correspondingColumnDefinition.type === FieldMetadataType.ADDRESS &&
+        viewField.subFieldName === 'addressCountry';
+
+      const addressMetadata =
+        correspondingColumnDefinition.metadata as FieldAddressMetadata;
+
+      const columnMetadata = isAddressCountryColumn
+        ? {
+            ...addressMetadata,
+            settings: {
+              ...addressMetadata.settings,
+              subFields: ['addressCountry'] as const,
+            },
+          }
+        : correspondingColumnDefinition.metadata;
+
       if (isLabelIdentifier === true) {
         labelIdentifierFieldMetadataId =
           correspondingColumnDefinition.fieldMetadataId;
@@ -37,8 +58,10 @@ export const mapViewFieldsToColumnDefinitions = ({
 
       return {
         fieldMetadataId: viewField.fieldMetadataId,
-        label: correspondingColumnDefinition.label,
-        metadata: correspondingColumnDefinition.metadata,
+        label: isAddressCountryColumn
+          ? 'Country'
+          : correspondingColumnDefinition.label,
+        metadata: columnMetadata,
         iconName: correspondingColumnDefinition.iconName,
         type: correspondingColumnDefinition.type,
         position: isLabelIdentifier ? 0 : viewField.position,
@@ -46,6 +69,7 @@ export const mapViewFieldsToColumnDefinitions = ({
         isLabelIdentifier,
         isVisible: isLabelIdentifier || viewField.isVisible,
         viewFieldId: viewField.id,
+        subFieldName: viewField.subFieldName,
         isUIEditable: correspondingColumnDefinition.metadata.isUIEditable,
         isSortable: correspondingColumnDefinition.isSortable,
         isFilterable: correspondingColumnDefinition.isFilterable,

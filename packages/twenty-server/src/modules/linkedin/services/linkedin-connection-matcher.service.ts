@@ -196,6 +196,7 @@ export class LinkedinConnectionMatcherService {
     }
 
     const matchedPersonIds = new Set<string>();
+    const latestConnectedAtByPersonId = new Map<string, Date>();
     const connectionUpdates = connections.flatMap((connection) => {
       const matchedPersonId = this.resolvePersonId({
         connection,
@@ -205,6 +206,21 @@ export class LinkedinConnectionMatcherService {
 
       if (isDefined(matchedPersonId)) {
         matchedPersonIds.add(matchedPersonId);
+
+        if (isDefined(connection.connectedAt)) {
+          const latestConnectedAt =
+            latestConnectedAtByPersonId.get(matchedPersonId);
+
+          if (
+            !isDefined(latestConnectedAt) ||
+            connection.connectedAt > latestConnectedAt
+          ) {
+            latestConnectedAtByPersonId.set(
+              matchedPersonId,
+              connection.connectedAt,
+            );
+          }
+        }
       }
 
       if (matchedPersonId === connection.personId) {
@@ -224,9 +240,39 @@ export class LinkedinConnectionMatcherService {
     }
 
     if (matchedPersonIds.size > 0) {
-      await repositories.personRepository.update(
-        { id: In([...matchedPersonIds]) },
-        { linkedinConnectionState: LINKEDIN_CONNECTION_STATES.CONNECTED },
+      const matchedPeople = await repositories.personRepository.find({
+        where: { id: In([...matchedPersonIds]) },
+        select: ['id', 'linkedinConnectedAt'],
+      });
+      const existingConnectedAtByPersonId = new Map(
+        matchedPeople.map(({ id, linkedinConnectedAt }) => [
+          id,
+          linkedinConnectedAt,
+        ]),
+      );
+
+      await repositories.personRepository.updateMany(
+        [...matchedPersonIds].map((personId) => {
+          const observedConnectedAt = latestConnectedAtByPersonId.get(personId);
+          const existingConnectedAt =
+            existingConnectedAtByPersonId.get(personId);
+          const linkedinConnectedAt =
+            isDefined(observedConnectedAt) &&
+            (!isDefined(existingConnectedAt) ||
+              observedConnectedAt > existingConnectedAt)
+              ? observedConnectedAt
+              : existingConnectedAt;
+
+          return {
+            criteria: personId,
+            partialEntity: {
+              linkedinConnectionState: LINKEDIN_CONNECTION_STATES.CONNECTED,
+              ...(isDefined(linkedinConnectedAt)
+                ? { linkedinConnectedAt }
+                : {}),
+            },
+          };
+        }),
       );
     }
   }
@@ -251,18 +297,18 @@ export class LinkedinConnectionMatcherService {
       }
 
       if (isDefined(directHandlePersonIds) && directHandlePersonIds.size > 1) {
-        return null;
+        return connection.personId;
       }
     }
 
     const fullName = normalizeFullName(connection.name);
 
     if (!isDefined(fullName)) {
-      return null;
+      return connection.personId;
     }
 
     const fullNamePersonIds = personIdsByFullName.get(fullName);
 
-    return getOnlySetValue(fullNamePersonIds);
+    return getOnlySetValue(fullNamePersonIds) ?? connection.personId;
   }
 }

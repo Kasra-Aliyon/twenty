@@ -1,4 +1,3 @@
-import { COLOR_DARK } from '@ui/theme/constants/ColorsDark';
 import { FONT_COMMON } from './FontCommon';
 import { GRAY_SCALE_DARK } from './GrayScaleDark';
 
@@ -10,7 +9,7 @@ export const FONT_DARK = {
     light: GRAY_SCALE_DARK.gray8,
     extraLight: GRAY_SCALE_DARK.gray7,
     inverted: GRAY_SCALE_DARK.gray1,
-    danger: COLOR_DARK.red,
+    danger: '#F87171',
   },
   ...FONT_COMMON,
 };

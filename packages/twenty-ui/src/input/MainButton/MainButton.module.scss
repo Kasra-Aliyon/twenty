@@ -9,20 +9,25 @@
   background: var(--main-button-bg);
   border: 1px solid;
   border-color: var(--main-button-border-color);
-  border-radius: var(--t-border-radius-md);
-  box-shadow: var(--main-button-box-shadow, var(--t-box-shadow-light));
+  border-radius: var(--t-border-radius-sm);
+  box-shadow: var(--main-button-box-shadow, none);
   color: var(--main-button-color);
   cursor: pointer;
   display: flex;
   flex-direction: row;
   font-family: var(--t-font-family);
-  font-weight: var(--t-font-weight-semi-bold);
+  font-weight: var(--t-font-weight-medium);
   gap: var(--t-spacing-2);
   justify-content: center;
   outline: none;
   padding: var(--t-spacing-2) var(--t-spacing-3);
   max-height: var(--t-spacing-8);
   width: var(--main-button-width, auto);
+  transition:
+    background duration(fast) ease,
+    border-color duration(fast) ease,
+    box-shadow duration(fast) ease,
+    color duration(fast) ease;
 
   &:hover {
     background: var(--main-button-hover-bg);

@@ -5,6 +5,7 @@ import {
   IsEnum,
   IsNumber,
   IsOptional,
+  IsString,
   IsUUID,
 } from 'class-validator';
 import { AggregateOperations } from 'twenty-shared/types';
@@ -45,6 +46,11 @@ export class CreateViewFieldInput {
   @IsEnum(AggregateOperations)
   @Field(() => AggregateOperations, { nullable: true })
   aggregateOperation?: AggregateOperations;
+
+  @IsOptional()
+  @IsString()
+  @Field(() => String, { nullable: true })
+  subFieldName?: string | null;
 
   @IsOptional()
   @IsUUID()

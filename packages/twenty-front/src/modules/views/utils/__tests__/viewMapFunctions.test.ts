@@ -147,6 +147,7 @@ describe('mapViewFieldsToColumnDefinitions', () => {
         position: 1,
         isVisible: false,
         viewFieldId: '1',
+        subFieldName: undefined,
       },
       {
         fieldMetadataId: '3',
@@ -158,6 +159,7 @@ describe('mapViewFieldsToColumnDefinitions', () => {
         position: 3,
         isVisible: true,
         viewFieldId: '3',
+        subFieldName: undefined,
       },
     ];
 
@@ -167,6 +169,47 @@ describe('mapViewFieldsToColumnDefinitions', () => {
     });
 
     expect(actualColumnDefinitions).toEqual(expectedColumnDefinitions);
+  });
+
+  it('should present an address country subfield as a country-only column', () => {
+    const addressFieldMetadataId = '05731f68-6e7a-4903-8374-c0b6a9063482';
+    const viewFields: ViewField[] = [
+      {
+        id: 'view-field-id',
+        fieldMetadataId: addressFieldMetadataId,
+        position: 1,
+        size: 130,
+        isVisible: true,
+        isActive: true,
+        subFieldName: 'addressCountry',
+      },
+    ];
+    const columnDefinitions: ColumnDefinition<FieldMetadata>[] = [
+      {
+        fieldMetadataId: addressFieldMetadataId,
+        label: 'Address',
+        position: 1,
+        metadata: {
+          fieldName: 'address',
+          placeHolder: 'Address',
+        },
+        iconName: 'IconMap',
+        type: FieldMetadataType.ADDRESS,
+        size: 170,
+      },
+    ];
+
+    expect(
+      mapViewFieldsToColumnDefinitions({ columnDefinitions, viewFields }),
+    ).toEqual([
+      expect.objectContaining({
+        label: 'Country',
+        subFieldName: 'addressCountry',
+        metadata: expect.objectContaining({
+          settings: { subFields: ['addressCountry'] },
+        }),
+      }),
+    ]);
   });
 });
 
@@ -196,6 +239,7 @@ describe('mapColumnDefinitionsToViewFields', () => {
         isActive: true,
         definition: columnDefinitions[0],
         size: undefined,
+        subFieldName: undefined,
       },
       {
         id: '',
@@ -205,6 +249,7 @@ describe('mapColumnDefinitionsToViewFields', () => {
         isVisible: false,
         isActive: true,
         definition: columnDefinitions[1],
+        subFieldName: undefined,
       },
     ];
 

@@ -77,6 +77,7 @@ import { AddFolderImportToMessageFolderPendingSyncActionFastInstanceCommand } fr
 import { AddViewKanbanColumnWidthFastInstanceCommand } from './2-15/2-15-instance-command-fast-1781900000000-add-view-kanban-column-width';
 import { AddViewRecordListIdFastInstanceCommand } from './2-15/2-15-instance-command-fast-1800000005000-add-view-record-list-id';
 import { AddIsPlainTextEmailEnabledFastInstanceCommand } from 'src/database/commands/upgrade-version-command/2-15/2-15-instance-command-fast-1800000006000-add-is-plain-text-email-enabled';
+import { AddViewFieldSubFieldNameFastInstanceCommand } from 'src/database/commands/upgrade-version-command/2-15/2-15-instance-command-fast-1786114573952-add-view-field-sub-field-name';
 
 export const INSTANCE_COMMANDS = [
   AddViewFieldGroupIdIndexOnViewFieldFastInstanceCommand,
@@ -156,4 +157,5 @@ export const INSTANCE_COMMANDS = [
   AddViewKanbanColumnWidthFastInstanceCommand,
   AddViewRecordListIdFastInstanceCommand,
   AddIsPlainTextEmailEnabledFastInstanceCommand,
+  AddViewFieldSubFieldNameFastInstanceCommand,
 ];

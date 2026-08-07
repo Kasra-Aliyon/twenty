@@ -2181,8 +2181,14 @@ export const STANDARD_OBJECTS = {
       linkedinConnectionState: {
         universalIdentifier: '6321ab3f-7514-456d-8b10-bd6389818a3f',
       },
+      linkedinConnectedAt: {
+        universalIdentifier: '13041c10-4e75-47f7-88f8-85ff1547e999',
+      },
       jobTitle: { universalIdentifier: '20202020-b0d0-415a-bef9-640a26dacd9b' },
       phones: { universalIdentifier: '20202020-0638-448e-8825-439134618022' },
+      address: {
+        universalIdentifier: '66ebfe61-eb63-4ea6-aaab-f8a6c10020bf',
+      },
       avatarUrl: {
         universalIdentifier: '20202020-b8a6-40df-961c-373dc5d2ec21',
       },
@@ -2282,6 +2288,12 @@ export const STANDARD_OBJECTS = {
           linkedinLink: {
             universalIdentifier: '20202020-af02-4a02-8a02-ae0a1ea11af8',
           },
+          linkedinConnectedAt: {
+            universalIdentifier: '93584d13-9b4c-4f39-8877-c7968c46fab8',
+          },
+          addressCountry: {
+            universalIdentifier: 'b67b4df6-9a47-4203-92f4-dad23ed849ea',
+          },
         },
       },
       personRecordPageFields: {
@@ -2307,6 +2319,9 @@ export const STANDARD_OBJECTS = {
           phones: {
             universalIdentifier: '20202020-af02-4a02-8a02-ae0a1ea12202',
           },
+          address: {
+            universalIdentifier: '7704f85b-75cf-4e60-bb2d-41cd822c70ab',
+          },
           company: {
             universalIdentifier: '20202020-af02-4a02-8a02-ae0a1ea12203',
           },
@@ -2315,6 +2330,9 @@ export const STANDARD_OBJECTS = {
           },
           linkedinLink: {
             universalIdentifier: '20202020-af02-4a02-8a02-ae0a1ea12205',
+          },
+          linkedinConnectedAt: {
+            universalIdentifier: '403cf9a2-6f7b-4822-b714-56bafe609733',
           },
           avatarUrl: {
             universalIdentifier: '20202020-af02-4a02-8a02-ae0a1ea12208',

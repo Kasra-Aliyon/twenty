@@ -166,7 +166,7 @@ const AddToSequenceActionContent = ({
       const targetedPeople = isSelectAll
         ? await fetchAllTargetedPeople()
         : selectedRecords;
-      const peopleToEnroll: ObjectRecord[] = [];
+      const peopleToEnroll: { id: string }[] = [];
 
       for (
         let batchStart = 0;

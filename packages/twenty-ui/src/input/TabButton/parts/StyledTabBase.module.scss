@@ -34,7 +34,7 @@
     color: var(--t-font-color-primary);
 
     &::after {
-      background-color: var(--t-border-color-inverted);
+      background-color: var(--t-accent-primary);
     }
   }
 }
@@ -69,7 +69,7 @@
     color: var(--t-font-color-primary);
 
     &::after {
-      background-color: var(--t-border-color-inverted);
+      background-color: var(--t-accent-primary);
     }
   }
 }

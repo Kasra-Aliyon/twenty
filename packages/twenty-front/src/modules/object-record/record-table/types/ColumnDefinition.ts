@@ -9,4 +9,5 @@ export type ColumnDefinition<T extends FieldMetadata> = FieldDefinition<T> & {
   viewFieldId?: string;
   isFilterable?: boolean;
   isSortable?: boolean;
+  subFieldName?: string | null;
 };

@@ -1,4 +1,5 @@
 import {
+  type AddressMetadata,
   type ActorMetadata,
   type EmailsMetadata,
   FieldMetadataType,
@@ -44,10 +45,12 @@ export class PersonWorkspaceEntity extends BaseWorkspaceEntity {
   emails: EmailsMetadata;
   linkedinLink: LinksMetadata | null;
   linkedinConnectionState: LinkedInConnectionState;
+  linkedinConnectedAt: Date | null;
   jobTitle: string | null;
   /** @deprecated Use `phones` field instead */
   phone: string | null;
   phones: PhonesMetadata;
+  address: AddressMetadata | null;
   /** @deprecated Use `avatarFile` field instead */
   avatarUrl: string | null;
   avatarFile: FileOutput[] | null;

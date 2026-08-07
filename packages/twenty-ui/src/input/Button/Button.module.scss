@@ -41,12 +41,16 @@ $gray-scale-light-gray1: color(display-p3 1 1 1);
   flex-direction: row;
   font-family: var(--t-font-family);
   font-size: var(--t-font-size-md);
-  font-weight: 500;
+  font-weight: var(--t-font-weight-medium);
   gap: var(--t-spacing-1);
   justify-content: var(--btn-justify, flex-start);
   padding: 0 var(--t-spacing-2) 0 var(--t-spacing-2);
   text-decoration: none;
-  transition: background 0.1s ease;
+  transition:
+    background duration(fast) ease,
+    border-color duration(fast) ease,
+    box-shadow duration(fast) ease,
+    color duration(fast) ease;
   white-space: nowrap;
   width: auto;
 

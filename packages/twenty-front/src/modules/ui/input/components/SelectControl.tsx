@@ -19,7 +19,7 @@ export const StyledControlContainer = styled.div<{
   hasRightElement?: boolean;
 }>`
   align-items: center;
-  background-color: ${themeCssVariables.background.transparent.lighter};
+  background-color: ${themeCssVariables.background.secondary};
   border: 1px solid ${themeCssVariables.border.color.medium};
   border-bottom-left-radius: ${themeCssVariables.border.radius.sm};
   border-bottom-right-radius: ${({ hasRightElement }) =>
@@ -52,6 +52,20 @@ export const StyledControlContainer = styled.div<{
   max-width: 100%;
   padding: 0 ${themeCssVariables.spacing[2]};
   text-align: left;
+  transition:
+    background calc(${themeCssVariables.animation.duration.fast} * 1s) ease,
+    border-color calc(${themeCssVariables.animation.duration.fast} * 1s) ease;
+
+  &:hover {
+    background-color: ${({ disabled }) =>
+      disabled
+        ? themeCssVariables.background.tertiary
+        : themeCssVariables.background.primary};
+    border-color: ${({ disabled }) =>
+      disabled
+        ? themeCssVariables.border.color.medium
+        : themeCssVariables.border.color.strong};
+  }
 `;
 
 const StyledIconChevronDownWrapper = styled.div<{

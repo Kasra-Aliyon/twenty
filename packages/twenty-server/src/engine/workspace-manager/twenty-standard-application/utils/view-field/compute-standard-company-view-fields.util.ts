@@ -95,6 +95,7 @@ export const computeStandardCompanyViewFields = (
         position: 6,
         isVisible: true,
         size: 170,
+        subFieldName: 'addressCountry',
         aggregateOperation: AggregateOperations.COUNT_NOT_EMPTY,
       },
     }),

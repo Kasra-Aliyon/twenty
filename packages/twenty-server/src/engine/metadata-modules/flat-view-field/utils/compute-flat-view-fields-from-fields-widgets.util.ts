@@ -249,6 +249,7 @@ export const computeFlatViewFieldsFromFieldsWidgets = ({
           size: DEFAULT_VIEW_FIELD_SIZE,
           position,
           aggregateOperation: null,
+          subFieldName: null,
           isActive: true,
           isSystemSideEffect,
           universalOverrides: null,

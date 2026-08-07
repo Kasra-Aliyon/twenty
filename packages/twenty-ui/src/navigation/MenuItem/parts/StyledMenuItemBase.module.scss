@@ -1,13 +1,13 @@
 // Shared base replicating the deprecated Linaria StyledMenuItemBase /
 // StyledHoverableMenuItemBase static rules.
 @mixin menu-item-base {
-  --horizontal-padding: var(--t-spacing-1);
-  --vertical-padding: var(--t-spacing-2);
+  --horizontal-padding: var(--t-spacing-2);
+  --vertical-padding: var(--t-spacing-1_5);
 
   // Height and width below are sized against the content box.
   box-sizing: content-box;
   align-items: center;
-  border-radius: var(--t-border-radius-sm);
+  border-radius: var(--t-border-radius-md);
   display: flex;
   flex-direction: row;
   font-size: var(--t-font-size-sm);
@@ -19,7 +19,9 @@
   user-select: none;
   width: calc(100% - 2 * var(--horizontal-padding));
   background: transparent;
-  transition: background 0.1s ease;
+  transition:
+    background duration(fast) ease,
+    color duration(fast) ease;
   color: var(--t-font-color-secondary);
 }
 
@@ -29,7 +31,7 @@
 @mixin menu-item-base-states {
   &[data-key-selected],
   &[data-focused] {
-    background: var(--t-background-transparent-light);
+    background: var(--t-background-transparent-medium);
   }
 
   &[data-accent='danger'] {
@@ -67,7 +69,7 @@
 
   &[data-disabled][data-key-selected]:hover,
   &[data-disabled][data-focused]:hover {
-    background: var(--t-background-transparent-light);
+    background: var(--t-background-transparent-medium);
   }
 }
 

@@ -83,12 +83,12 @@ type StyledItemProps = Pick<
 const StyledItem = styled.button<StyledItemProps>`
   align-items: center;
   background: ${({ active }) =>
-    active ? themeCssVariables.background.transparent.light : 'transparent'};
+    active ? themeCssVariables.background.transparent.medium : 'transparent'};
   border: ${({ isSelectedInEditMode }) =>
     isSelectedInEditMode
       ? `1px solid ${themeCssVariables.color.blue}`
       : '1px solid transparent'};
-  border-radius: ${themeCssVariables.border.radius.sm};
+  border-radius: ${themeCssVariables.border.radius.md};
   box-sizing: border-box;
   color: ${({ active, isSoon, variant }) => {
     if (variant === 'tertiary') {
@@ -120,6 +120,9 @@ const StyledItem = styled.button<StyledItemProps>`
   padding-top: ${themeCssVariables.spacing[1]};
   pointer-events: ${({ isSoon }) => (isSoon ? 'none' : 'auto')};
   text-decoration: none;
+  transition:
+    background calc(${themeCssVariables.animation.duration.fast} * 1s) ease,
+    color calc(${themeCssVariables.animation.duration.fast} * 1s) ease;
   user-select: none;
   width: ${({ isNavigationDrawerExpanded, hasRightOptions }) =>
     !isNavigationDrawerExpanded
@@ -127,7 +130,10 @@ const StyledItem = styled.button<StyledItemProps>`
       : `calc(100% - ${themeCssVariables.spacing['1.5']} + ${themeCssVariables.spacing[1]} + ${hasRightOptions ? themeCssVariables.spacing['0.5'] : themeCssVariables.spacing[1]})`};
 
   &:hover {
-    background: ${themeCssVariables.background.transparent.light};
+    background: ${({ active }) =>
+      active
+        ? themeCssVariables.background.transparent.medium
+        : themeCssVariables.background.transparent.light};
     color: ${({ variant }) =>
       variant === 'tertiary'
         ? themeCssVariables.font.color.tertiary

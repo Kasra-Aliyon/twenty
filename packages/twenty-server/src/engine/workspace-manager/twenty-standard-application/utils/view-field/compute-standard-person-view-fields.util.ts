@@ -110,6 +110,32 @@ export const computeStandardPersonViewFields = (
         size: 150,
       },
     }),
+    allPeopleLinkedinConnectedAt: createStandardViewFieldFlatMetadata({
+      ...args,
+      objectName: 'person',
+      context: {
+        viewName: 'allPeople',
+        viewFieldName: 'linkedinConnectedAt',
+        fieldName: 'linkedinConnectedAt',
+        position: 8,
+        isVisible: true,
+        size: 170,
+        aggregateOperation: AggregateOperations.MAX,
+      },
+    }),
+    allPeopleAddressCountry: createStandardViewFieldFlatMetadata({
+      ...args,
+      objectName: 'person',
+      context: {
+        viewName: 'allPeople',
+        viewFieldName: 'addressCountry',
+        fieldName: 'address',
+        position: 9,
+        isVisible: true,
+        size: 130,
+        subFieldName: 'addressCountry',
+      },
+    }),
 
     // personRecordPageFields view fields
     // General group
@@ -134,6 +160,19 @@ export const computeStandardPersonViewFields = (
         viewFieldName: 'phones',
         fieldName: 'phones',
         position: 1,
+        isVisible: true,
+        size: 150,
+        viewFieldGroupName: 'general',
+      },
+    }),
+    personRecordPageFieldsAddress: createStandardViewFieldFlatMetadata({
+      ...args,
+      objectName: 'person',
+      context: {
+        viewName: 'personRecordPageFields',
+        viewFieldName: 'address',
+        fieldName: 'address',
+        position: 2,
         isVisible: true,
         size: 150,
         viewFieldGroupName: 'general',
@@ -301,6 +340,20 @@ export const computeStandardPersonViewFields = (
         viewFieldGroupName: 'social',
       },
     }),
+    personRecordPageFieldsLinkedinConnectedAt:
+      createStandardViewFieldFlatMetadata({
+        ...args,
+        objectName: 'person',
+        context: {
+          viewName: 'personRecordPageFields',
+          viewFieldName: 'linkedinConnectedAt',
+          fieldName: 'linkedinConnectedAt',
+          position: 1,
+          isVisible: true,
+          size: 170,
+          viewFieldGroupName: 'social',
+        },
+      }),
     // System group
     personRecordPageFieldsCreatedAt: createStandardViewFieldFlatMetadata({
       ...args,

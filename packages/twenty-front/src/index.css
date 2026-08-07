@@ -1,18 +1,75 @@
 body {
   margin: 0;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
   background: var(--t-background-primary);
   color: var(--t-font-color-primary);
+  font-family: var(--t-font-family);
+  font-feature-settings: 'cv01', 'ss03';
+  font-variation-settings: 'opsz' auto;
+  letter-spacing: -0.011em;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 html {
   font-size: 13px;
 }
 
+html.light {
+  color-scheme: light;
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+* {
+  scrollbar-color: var(--t-background-transparent-strong) transparent;
+  scrollbar-width: thin;
+}
+
+*::-webkit-scrollbar {
+  height: 6px;
+  width: 6px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--t-background-transparent-strong);
+  border: 1px solid transparent;
+  border-radius: var(--t-border-radius-pill);
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--t-font-color-light);
+  background-clip: padding-box;
+}
+
+::selection {
+  background: var(--t-accent-primary);
+  color: var(--t-font-color-inverted);
+}
+
+html.dark ::selection {
+  color: var(--t-font-color-primary);
+}
+
 button {
   font-size: 13px;
+}
+
+button,
+input,
+textarea,
+select {
+  letter-spacing: inherit;
 }
 
 form {

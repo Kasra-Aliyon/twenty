@@ -7,7 +7,7 @@
   border-radius: 10px;
   background-color: var(--t-background-transparent-medium);
   cursor: pointer;
-  transition: background-color duration(normal) ease;
+  transition: background-color duration(fast) ease;
 
   &[data-checked] {
     background-color: var(--toggle-on-color, var(--t-color-blue));
@@ -40,7 +40,7 @@
   display: block;
   border-radius: 50%;
   background-color: var(--t-background-primary);
-  transition: transform duration(normal) ease;
+  transition: transform duration(fast) ease;
 }
 
 .small .thumb {

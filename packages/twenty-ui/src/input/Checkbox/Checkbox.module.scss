@@ -4,7 +4,7 @@
   --checkbox-border-width: 1px;
   --checkbox-bg: transparent;
   --checkbox-border-color: var(--t-border-color-secondary-inverted);
-  --checkbox-box-radius: var(--t-border-radius-sm);
+  --checkbox-box-radius: var(--t-border-radius-xs);
 
   align-items: center;
   border-radius: var(--t-border-radius-md);
@@ -39,7 +39,7 @@
 }
 
 .squared {
-  --checkbox-box-radius: var(--t-border-radius-sm);
+  --checkbox-box-radius: var(--t-border-radius-xs);
 
   border-radius: var(--t-border-radius-md);
 }

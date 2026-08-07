@@ -25,8 +25,8 @@ type PageCardHeaderProps = {
 
 const StyledHeader = styled.div`
   align-items: center;
-  background-color: ${themeCssVariables.background.secondary};
-  border-bottom: 1px solid ${themeCssVariables.border.color.medium};
+  background-color: ${themeCssVariables.background.primary};
+  border-bottom: 1px solid ${themeCssVariables.border.color.light};
   box-sizing: border-box;
   display: flex;
   gap: ${themeCssVariables.spacing[2]};
@@ -50,7 +50,7 @@ const StyledTitle = styled.div<{ titleColor?: string }>`
     titleColor ?? themeCssVariables.font.color.primary};
   display: flex;
   font-size: ${themeCssVariables.font.size.md};
-  font-weight: ${themeCssVariables.font.weight.semiBold};
+  font-weight: ${themeCssVariables.font.weight.medium};
   gap: ${themeCssVariables.spacing[2]};
   min-width: 0;
 `;

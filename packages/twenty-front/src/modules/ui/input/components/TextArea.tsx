@@ -37,7 +37,7 @@ const StyledLabel = styled.label`
   color: ${themeCssVariables.font.color.light};
   display: block;
   font-size: ${themeCssVariables.font.size.xs};
-  font-weight: ${themeCssVariables.font.weight.semiBold};
+  font-weight: ${themeCssVariables.font.weight.medium};
   margin-bottom: ${themeCssVariables.spacing[1]};
 `;
 
@@ -46,7 +46,7 @@ const StyledTextAreaContainer = styled.div<{ variant: TextAreaVariant }>`
     background-color: ${({ variant }) =>
       variant === 'transparent'
         ? 'transparent'
-        : themeCssVariables.background.transparent.lighter};
+        : themeCssVariables.background.secondary};
     border: ${({ variant }) =>
       variant === 'transparent'
         ? 'none'
@@ -66,14 +66,25 @@ const StyledTextAreaContainer = styled.div<{ variant: TextAreaVariant }>`
     padding: ${({ variant }) =>
       variant === 'transparent' ? '0' : themeCssVariables.spacing[2]};
     resize: none;
+    transition:
+      background calc(${themeCssVariables.animation.duration.fast} * 1s) ease,
+      border-color calc(${themeCssVariables.animation.duration.fast} * 1s) ease,
+      box-shadow calc(${themeCssVariables.animation.duration.fast} * 1s) ease;
     width: 100%;
+
+    &:hover:not(:disabled) {
+      border-color: ${({ variant }) =>
+        variant === 'transparent'
+          ? 'transparent'
+          : themeCssVariables.border.color.strong};
+    }
 
     &:focus {
       outline: none;
       box-shadow: ${({ variant }) =>
         variant === 'transparent'
           ? 'none'
-          : `0px 0px 0px 3px ${themeCssVariables.color.transparent.blue2}`};
+          : `0 0 0 2px ${themeCssVariables.color.transparent.blue2}`};
       border-color: ${({ variant }) =>
         variant === 'transparent'
           ? 'transparent'
@@ -86,6 +97,10 @@ const StyledTextAreaContainer = styled.div<{ variant: TextAreaVariant }>`
     }
 
     &:disabled {
+      background-color: ${({ variant }) =>
+        variant === 'transparent'
+          ? 'transparent'
+          : themeCssVariables.background.tertiary};
       color: ${themeCssVariables.font.color.tertiary};
     }
   }

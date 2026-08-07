@@ -7,6 +7,7 @@ import {
   IsNotEmpty,
   IsNumber,
   IsOptional,
+  IsString,
   IsUUID,
   ValidateNested,
 } from 'class-validator';
@@ -35,6 +36,11 @@ class UpdateViewFieldInputUpdates {
   @IsEnum(AggregateOperations)
   @Field(() => AggregateOperations, { nullable: true })
   aggregateOperation?: AggregateOperations;
+
+  @IsOptional()
+  @IsString()
+  @Field(() => String, { nullable: true })
+  subFieldName?: string | null;
 
   @IsOptional()
   @IsUUID()

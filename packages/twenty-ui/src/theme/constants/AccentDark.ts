@@ -1,11 +1,10 @@
 import * as RadixColors from '@radix-ui/colors';
-import { COLOR_DARK } from '@ui/theme/constants/ColorsDark';
 
 export const ACCENT_DARK = {
   primary: '#5E6AD2',
-  secondary: '#707CFF',
-  tertiary: COLOR_DARK.blue3,
-  quaternary: COLOR_DARK.blue2,
+  secondary: '#828FFF',
+  tertiary: '#23264F',
+  quaternary: '#18182F',
   accent3570: '#5E6AD2',
   accent4060: '#5E6AD2',
   accent1: RadixColors.indigoDarkP3.indigo1,

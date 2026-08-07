@@ -22,7 +22,7 @@ describe('LinkedinConnectionMatcherService', () => {
   };
   const personRepository = {
     find: jest.fn(),
-    update: jest.fn(),
+    updateMany: jest.fn(),
     createQueryBuilder: jest.fn(),
   };
   const globalWorkspaceOrmManager = {
@@ -54,6 +54,7 @@ describe('LinkedinConnectionMatcherService', () => {
       handle: 'ada-lovelace',
       name: 'Ada Lovelace',
       personId: null,
+      connectedAt: new Date('2025-03-04T12:30:00.000Z'),
       ...overrides,
     }) as LinkedinConnectionWorkspaceEntity;
 
@@ -72,7 +73,7 @@ describe('LinkedinConnectionMatcherService', () => {
     connectionRepository.find.mockResolvedValue([buildConnection()]);
     connectionRepository.updateMany.mockResolvedValue([]);
     personRepository.find.mockResolvedValue([]);
-    personRepository.update.mockResolvedValue({ affected: 1 });
+    personRepository.updateMany.mockResolvedValue({ raw: [] });
     personNameQueryBuilder.select.mockReturnValue(personNameQueryBuilder);
     personNameQueryBuilder.where.mockReturnValue(personNameQueryBuilder);
     personNameQueryBuilder.getMany.mockResolvedValue([]);
@@ -106,10 +107,15 @@ describe('LinkedinConnectionMatcherService', () => {
         partialEntity: { personId: PERSON_ID },
       },
     ]);
-    expect(personRepository.update).toHaveBeenCalledWith(
-      expect.objectContaining({ id: expect.anything() }),
-      { linkedinConnectionState: LINKEDIN_CONNECTION_STATES.CONNECTED },
-    );
+    expect(personRepository.updateMany).toHaveBeenCalledWith([
+      {
+        criteria: PERSON_ID,
+        partialEntity: {
+          linkedinConnectedAt: new Date('2025-03-04T12:30:00.000Z'),
+          linkedinConnectionState: LINKEDIN_CONNECTION_STATES.CONNECTED,
+        },
+      },
+    ]);
   });
 
   it('does not guess when a handle is ambiguous across People', async () => {
@@ -137,7 +143,7 @@ describe('LinkedinConnectionMatcherService', () => {
     });
 
     expect(connectionRepository.updateMany).not.toHaveBeenCalled();
-    expect(personRepository.update).not.toHaveBeenCalled();
+    expect(personRepository.updateMany).not.toHaveBeenCalled();
   });
 
   it('falls back to an exact full name only when it resolves to one Person', async () => {
@@ -196,10 +202,108 @@ describe('LinkedinConnectionMatcherService', () => {
     });
 
     expect(connectionRepository.updateMany).not.toHaveBeenCalled();
-    expect(personRepository.update).toHaveBeenCalledWith(
-      expect.objectContaining({ id: expect.anything() }),
-      { linkedinConnectionState: LINKEDIN_CONNECTION_STATES.CONNECTED },
-    );
+    expect(personRepository.updateMany).toHaveBeenCalledWith([
+      {
+        criteria: PERSON_ID,
+        partialEntity: {
+          linkedinConnectedAt: new Date('2025-03-04T12:30:00.000Z'),
+          linkedinConnectionState: LINKEDIN_CONNECTION_STATES.CONNECTED,
+        },
+      },
+    ]);
+  });
+
+  it('preserves a stored Person match and backfills its connection date', async () => {
+    connectionRepository.find.mockResolvedValue([
+      buildConnection({
+        handle: '',
+        name: '',
+        personId: PERSON_ID,
+      }),
+    ]);
+
+    await service.matchConnectionsByIds({
+      connectionIds: [CONNECTION_ID],
+      workspaceId: WORKSPACE_ID,
+    });
+
+    expect(connectionRepository.updateMany).not.toHaveBeenCalled();
+    expect(personRepository.updateMany).toHaveBeenCalledWith([
+      {
+        criteria: PERSON_ID,
+        partialEntity: {
+          linkedinConnectedAt: new Date('2025-03-04T12:30:00.000Z'),
+          linkedinConnectionState: LINKEDIN_CONNECTION_STATES.CONNECTED,
+        },
+      },
+    ]);
+  });
+
+  it('keeps the most recent connection date for a Person', async () => {
+    const olderConnectionDate = new Date('2024-01-02T10:00:00.000Z');
+    const newerConnectionDate = new Date('2025-06-07T11:00:00.000Z');
+
+    connectionRepository.find.mockResolvedValue([
+      buildConnection({ connectedAt: olderConnectionDate }),
+      buildConnection({
+        id: '20202020-3333-4333-8333-333333333333',
+        connectedAt: newerConnectionDate,
+      }),
+    ]);
+    personRepository.find.mockResolvedValue([
+      buildPerson({
+        linkedinLink: {
+          primaryLinkLabel: '',
+          primaryLinkUrl: 'https://linkedin.com/in/ada-lovelace',
+          secondaryLinks: null,
+        },
+      }),
+    ]);
+
+    await service.matchConnectionsByIds({
+      connectionIds: [CONNECTION_ID],
+      workspaceId: WORKSPACE_ID,
+    });
+
+    expect(personRepository.updateMany).toHaveBeenCalledWith([
+      {
+        criteria: PERSON_ID,
+        partialEntity: {
+          linkedinConnectedAt: newerConnectionDate,
+          linkedinConnectionState: LINKEDIN_CONNECTION_STATES.CONNECTED,
+        },
+      },
+    ]);
+  });
+
+  it('does not replace a newer connection date already stored on the Person', async () => {
+    const storedConnectionDate = new Date('2026-01-02T10:00:00.000Z');
+
+    personRepository.find.mockResolvedValue([
+      buildPerson({
+        linkedinConnectedAt: storedConnectionDate,
+        linkedinLink: {
+          primaryLinkLabel: '',
+          primaryLinkUrl: 'https://linkedin.com/in/ada-lovelace',
+          secondaryLinks: null,
+        },
+      }),
+    ]);
+
+    await service.matchConnectionsByIds({
+      connectionIds: [CONNECTION_ID],
+      workspaceId: WORKSPACE_ID,
+    });
+
+    expect(personRepository.updateMany).toHaveBeenCalledWith([
+      {
+        criteria: PERSON_ID,
+        partialEntity: {
+          linkedinConnectedAt: storedConnectionDate,
+          linkedinConnectionState: LINKEDIN_CONNECTION_STATES.CONNECTED,
+        },
+      },
+    ]);
   });
 
   it('back-links historical connections when a matching Person changes', async () => {

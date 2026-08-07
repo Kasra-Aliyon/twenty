@@ -18,6 +18,7 @@ import {
 import { WasIntroducedInUpgrade } from 'src/engine/core-modules/upgrade/decorators/was-introduced-in-upgrade.decorator';
 import { FieldMetadataEntity } from 'src/engine/metadata-modules/field-metadata/field-metadata.entity';
 import { ADD_IS_SYSTEM_SIDE_EFFECT_UPGRADE_COMMAND_NAME } from 'src/database/commands/upgrade-version-command/2-15/is-system-side-effect-upgrade-command-name.constant';
+import { ADD_VIEW_FIELD_SUB_FIELD_NAME_UPGRADE_COMMAND_NAME } from 'src/database/commands/upgrade-version-command/2-15/add-view-field-sub-field-name-upgrade-command-name.constant';
 import { ViewFieldGroupEntity } from 'src/engine/metadata-modules/view-field-group/entities/view-field-group.entity';
 import { ViewEntity } from 'src/engine/metadata-modules/view/entities/view.entity';
 import { OverridableEntity } from 'src/engine/workspace-manager/types/overridable-entity';
@@ -27,6 +28,7 @@ export type ViewFieldOverrides = {
   size?: number;
   position?: number;
   aggregateOperation?: AggregateOperations | null;
+  subFieldName?: string | null;
   viewFieldGroupId?: SerializedRelation | null;
 };
 
@@ -75,6 +77,12 @@ export class ViewFieldEntity
     default: null,
   })
   aggregateOperation: AggregateOperations | null;
+
+  @WasIntroducedInUpgrade({
+    upgradeCommandName: ADD_VIEW_FIELD_SUB_FIELD_NAME_UPGRADE_COMMAND_NAME,
+  })
+  @Column({ nullable: true, type: 'varchar' })
+  subFieldName: string | null;
 
   @Column({ nullable: false, type: 'uuid' })
   viewId: string;

@@ -1,5 +1,6 @@
 import { STANDARD_OBJECTS } from 'twenty-shared/metadata';
 import {
+  DateDisplayFormat,
   FieldMetadataType,
   RelationOnDeleteAction,
   RelationType,
@@ -213,6 +214,37 @@ describe('Unibox LinkedIn standard metadata build', () => {
     expect(threadParticipants?.isActive).toBe(false);
     expect(personParticipants?.isActive).toBe(false);
     expect(personConnections?.isActive).toBe(false);
+  });
+
+  it('exposes the LinkedIn connection date on People', () => {
+    const connectedAtField = getField('person', 'linkedinConnectedAt');
+    const allPeopleConnectedAtViewField =
+      allFlatEntityMaps.flatViewFieldMaps.byUniversalIdentifier[
+        STANDARD_OBJECTS.person.views.allPeople.viewFields.linkedinConnectedAt
+          .universalIdentifier
+      ];
+    const personRecordConnectedAtViewField =
+      allFlatEntityMaps.flatViewFieldMaps.byUniversalIdentifier[
+        STANDARD_OBJECTS.person.views.personRecordPageFields.viewFields
+          .linkedinConnectedAt.universalIdentifier
+      ];
+
+    expect(connectedAtField).toMatchObject({
+      type: FieldMetadataType.DATE_TIME,
+      isNullable: true,
+      isUIEditable: false,
+      settings: { displayFormat: DateDisplayFormat.USER_SETTINGS },
+    });
+    expect(allPeopleConnectedAtViewField).toMatchObject({
+      fieldMetadataId: connectedAtField?.id,
+      isVisible: true,
+      position: 8,
+    });
+    expect(personRecordConnectedAtViewField).toMatchObject({
+      fieldMetadataId: connectedAtField?.id,
+      isVisible: true,
+      position: 1,
+    });
   });
 
   it('builds partial external-id uniqueness and query indexes', () => {

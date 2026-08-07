@@ -23,6 +23,7 @@ export type CreateStandardViewFieldOptions<
   isVisible: boolean;
   size: number;
   aggregateOperation?: AggregateOperations | null;
+  subFieldName?: string | null;
   viewFieldGroupName?: AllStandardObjectViewFieldGroupName<O, V> | null;
 };
 
@@ -48,6 +49,7 @@ export const createStandardViewFieldFlatMetadata = <
     isVisible,
     size,
     aggregateOperation = null,
+    subFieldName = null,
     viewFieldGroupName = null,
   },
   standardObjectMetadataRelatedEntityIds,
@@ -120,6 +122,7 @@ export const createStandardViewFieldFlatMetadata = <
     isVisible,
     size,
     aggregateOperation,
+    subFieldName,
     isActive: true,
     isSystemSideEffect: false,
     overrides: null,

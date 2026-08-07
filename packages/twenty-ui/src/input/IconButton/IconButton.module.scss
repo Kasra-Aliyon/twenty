@@ -24,12 +24,16 @@
   display: flex;
   flex-direction: row;
   font-family: var(--t-font-family);
-  font-weight: 500;
+  font-weight: var(--t-font-weight-medium);
   gap: var(--t-spacing-1);
   justify-content: center;
   opacity: var(--icon-button-opacity, 1);
   padding: 0;
-  transition: background 0.1s ease;
+  transition:
+    background duration(fast) ease,
+    border-color duration(fast) ease,
+    box-shadow duration(fast) ease,
+    color duration(fast) ease;
   white-space: nowrap;
 
   &:hover {

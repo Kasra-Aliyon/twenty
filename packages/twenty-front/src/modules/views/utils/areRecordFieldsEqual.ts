@@ -11,6 +11,7 @@ export const areRecordFieldsEqual = (
     'position',
     'size',
     'aggregateOperation',
+    'subFieldName',
   ];
 
   return propertiesToCompare.every((property) =>

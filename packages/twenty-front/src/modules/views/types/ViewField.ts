@@ -12,6 +12,7 @@ export type ViewField = {
   isVisible: boolean;
   size: number;
   aggregateOperation?: AggregateOperations | null;
+  subFieldName?: string | null;
   viewFieldGroupId?: string | null;
   definition?:
     | ColumnDefinition<FieldMetadata>

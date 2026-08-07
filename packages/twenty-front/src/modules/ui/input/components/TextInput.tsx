@@ -42,7 +42,7 @@ type StyledAdornmentContainerProps = {
 
 const StyledAdornmentContainer = styled.div<StyledAdornmentContainerProps>`
   align-items: center;
-  background-color: ${themeCssVariables.background.transparent.light};
+  background-color: ${themeCssVariables.background.secondary};
   border: 1px solid ${themeCssVariables.border.color.medium};
   border-left-style: ${({ position }) =>
     position === 'right' ? 'none' : 'solid'};
@@ -94,7 +94,7 @@ const StyledInput = styled.input<
     | 'leftAdornment'
   >
 >`
-  background-color: ${themeCssVariables.background.transparent.lighter};
+  background-color: ${themeCssVariables.background.secondary};
   border: 1px solid
     ${({ error }) =>
       error
@@ -146,6 +146,10 @@ const StyledInput = styled.input<
         ? `calc(${themeCssVariables.spacing[3]} + 16px)`
         : themeCssVariables.spacing[2]};
   text-overflow: ellipsis;
+  transition:
+    background calc(${themeCssVariables.animation.duration.fast} * 1s) ease,
+    border-color calc(${themeCssVariables.animation.duration.fast} * 1s) ease,
+    box-shadow calc(${themeCssVariables.animation.duration.fast} * 1s) ease;
   width: ${({ width }) =>
     isDefined(width)
       ? `calc(${width}px + ${themeCssVariables.spacing[0.5]})`
@@ -158,7 +162,15 @@ const StyledInput = styled.input<
   }
 
   &:disabled {
+    background-color: ${themeCssVariables.background.tertiary};
     color: ${themeCssVariables.font.color.tertiary};
+  }
+
+  &:hover:not(:disabled) {
+    border-color: ${({ error }) =>
+      error
+        ? themeCssVariables.border.color.danger
+        : themeCssVariables.border.color.strong};
   }
 
   &[readonly] {
@@ -170,6 +182,11 @@ const StyledInput = styled.input<
       error
         ? themeCssVariables.border.color.danger
         : themeCssVariables.color.blue};
+    box-shadow: 0 0 0 2px
+      ${({ error }) =>
+        error
+          ? themeCssVariables.background.transparent.danger
+          : themeCssVariables.color.transparent.blue2};
   }
 `;
 

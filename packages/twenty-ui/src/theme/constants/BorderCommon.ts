@@ -3,6 +3,7 @@ export const BORDER_COMMON = {
     xs: '4px',
     sm: '6px',
     md: '8px',
+    lg: '12px',
     xl: '16px',
     xxl: '24px',
     pill: '9999px',

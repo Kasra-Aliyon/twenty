@@ -26,14 +26,15 @@ import { AnimatePresence, LayoutGroup } from 'framer-motion';
 import { Outlet } from 'react-router-dom';
 import { themeCssVariables } from 'twenty-ui/theme-constants';
 const StyledLayout = styled.div`
-  background: ${themeCssVariables.grayScale.gray3};
+  background: ${themeCssVariables.background.secondary};
   display: flex;
   flex-direction: column;
   height: 100dvh;
   overflow: hidden;
   overscroll-behavior-y: none;
   position: relative;
-  scrollbar-color: ${themeCssVariables.border.color.medium} transparent;
+  scrollbar-color: ${themeCssVariables.background.transparent.strong}
+    transparent;
   scrollbar-width: 4px;
   width: 100%;
 

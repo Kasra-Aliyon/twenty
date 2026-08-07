@@ -27,9 +27,9 @@ import { ThemeContext, themeCssVariables } from 'twenty-ui/theme-constants';
 
 const StyledInputContainer = styled.div<{ isMobile: boolean }>`
   align-items: center;
-  background-color: ${themeCssVariables.background.secondary};
+  background-color: ${themeCssVariables.background.primary};
   border: none;
-  border-bottom: 1px solid ${themeCssVariables.border.color.medium};
+  border-bottom: 1px solid ${themeCssVariables.border.color.light};
   border-radius: 0;
   box-sizing: border-box;
 
