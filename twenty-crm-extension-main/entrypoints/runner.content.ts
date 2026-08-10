@@ -11,7 +11,6 @@ import type {
 } from '../types';
 import {
   getLinkedInAutomationBlockReason,
-  isInvitationManagerPath,
   sendConnectionRequest,
   sendDirectMessage,
   withdrawConnectionRequest,
@@ -45,7 +44,6 @@ import { linkedInVoyagerClient } from '../utils/linkedin-voyager-client';
 const RUNNER_LOCAL_MINIMUM_GAP_MILLISECONDS =
   LINKEDIN_OUTBOUND_MINIMUM_GAP_MILLISECONDS;
 const RUNNER_POLL_INTERVAL_MILLISECONDS = 60_000;
-const LINKEDIN_INVITATION_MANAGER_PATH = '/mynetwork/invitation-manager/sent/';
 const HARVEST_AUTO_SYNC_INTERVAL_MILLISECONDS = 60_000;
 const HARVEST_COMPLETED_SYNC_GAP_MILLISECONDS = 30 * 60_000;
 const HARVEST_RECENT_SYNC_TTL_MILLISECONDS = 2 * 60_000;
@@ -660,20 +658,6 @@ export default defineContentScript({
     };
 
     const ensureActionPage = (action: TwentyLinkedInAction): boolean => {
-      if (action.type === 'WITHDRAW_CONNECTION_REQUEST') {
-        // The accepted-path check has to match the one the withdrawal itself
-        // uses, otherwise LinkedIn's redirect between invitation-manager paths
-        // leaves the runner navigating in a loop.
-        if (!isInvitationManagerPath(window.location.pathname)) {
-          window.location.assign(
-            `${window.location.origin}${LINKEDIN_INVITATION_MANAGER_PATH}`,
-          );
-          return false;
-        }
-
-        return true;
-      }
-
       const targetHandle = getProfileHandle(action.linkedinUrl)?.toLowerCase();
       const currentHandle = getProfileHandle(
         window.location.href,
@@ -692,10 +676,7 @@ export default defineContentScript({
     };
 
     const executeAction = async (action: TwentyLinkedInAction) => {
-      if (
-        action.type !== 'WITHDRAW_CONNECTION_REQUEST' &&
-        !getProfileHandle(action.linkedinUrl)
-      ) {
+      if (!getProfileHandle(action.linkedinUrl)) {
         const reportResponse = await sendMessage('REPORT_LINKEDIN_ACTION', {
           id: action.id,
           claimedAt: action.claimedAt,

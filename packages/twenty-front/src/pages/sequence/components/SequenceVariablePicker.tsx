@@ -13,6 +13,7 @@ const SEQUENCE_VARIABLES = [
   { name: 'lastName', label: t`Last name` },
   { name: 'fullName', label: t`Full name` },
   { name: 'email', label: t`Email` },
+  { name: 'linkedinUrl', label: t`LinkedIn URL` },
   { name: 'jobTitle', label: t`Job title` },
   { name: 'companyName', label: t`Company name` },
   { name: 'senderName', label: t`Sender name` },

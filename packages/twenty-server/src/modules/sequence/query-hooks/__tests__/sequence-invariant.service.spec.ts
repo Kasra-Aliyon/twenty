@@ -1,5 +1,7 @@
 import {
   SEQUENCE_ENROLLMENT_STATUSES,
+  SEQUENCE_CONDITION_TYPES,
+  SEQUENCE_CONDITION_BRANCHES,
   SEQUENCE_STATUSES,
   SEQUENCE_STEP_TYPES,
   SEQUENCE_WAITING_ON,
@@ -33,6 +35,10 @@ describe('SequenceInvariantService', () => {
   let sequenceRepository: {
     find: jest.Mock;
   };
+  let stepRepository: {
+    find: jest.Mock;
+    count: jest.Mock;
+  };
   let service: SequenceInvariantService;
   const sequenceSenderService = {
     getReadySenderOrThrow: jest.fn(),
@@ -44,7 +50,7 @@ describe('SequenceInvariantService', () => {
     sequenceRepository = {
       find: jest.fn().mockResolvedValue([sequence]),
     };
-    const stepRepository = {
+    stepRepository = {
       find: jest.fn().mockResolvedValue([
         {
           id: 'step-id',
@@ -218,6 +224,58 @@ describe('SequenceInvariantService', () => {
         data: { status: SEQUENCE_STATUSES.ACTIVE },
       }),
     ).rejects.toThrow('Enable inbox sync');
+  });
+
+  it('requires a sender for LinkedIn conditions even without an automated action', async () => {
+    sequenceRepository.find.mockResolvedValue([
+      { ...sequence, senderConnectedAccountId: null },
+    ]);
+    stepRepository.find.mockResolvedValue([
+      {
+        id: 'condition-step-id',
+        sequenceId: sequence.id,
+        settings: {
+          type: SEQUENCE_STEP_TYPES.CONDITION,
+          condition: SEQUENCE_CONDITION_TYPES.IS_IN_LINKEDIN_NETWORK,
+          expected: true,
+        },
+      },
+    ]);
+
+    await expect(
+      service.assertSequenceUpdateAllowed({
+        authContext,
+        sequenceId: sequence.id,
+        data: { status: SEQUENCE_STATUSES.ACTIVE },
+      }),
+    ).rejects.toThrow('Choose a sender');
+  });
+
+  it('blocks activation when a conditional route references a missing condition', async () => {
+    stepRepository.find.mockResolvedValue([
+      {
+        id: 'orphan-branch-step-id',
+        sequenceId: sequence.id,
+        settings: {
+          type: SEQUENCE_STEP_TYPES.DELAY,
+          branch: {
+            conditionStepId: 'missing-condition-id',
+            outcome: SEQUENCE_CONDITION_BRANCHES.YES,
+          },
+          days: 1,
+          hours: 0,
+          minutes: 0,
+        },
+      },
+    ]);
+
+    await expect(
+      service.assertSequenceUpdateAllowed({
+        authContext,
+        sequenceId: sequence.id,
+        data: { status: SEQUENCE_STATUSES.ACTIVE },
+      }),
+    ).rejects.toThrow('missing condition branch');
   });
 
   it('allows an active sequence to be archived so its open work can be stopped', async () => {

@@ -39,6 +39,7 @@ export class SequenceVariableService {
       lastName,
       fullName: [firstName, lastName].filter(Boolean).join(' '),
       email: person.emails?.primaryEmail ?? '',
+      linkedinUrl: person.linkedinLink?.primaryLinkUrl ?? '',
       jobTitle: person.jobTitle ?? '',
       companyName: person.company?.name ?? '',
       senderName: connectedAccount?.name ?? connectedAccount?.handle ?? '',

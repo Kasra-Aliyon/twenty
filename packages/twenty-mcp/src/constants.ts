@@ -126,6 +126,11 @@ export const SEQUENCE_TEMPLATE_VARIABLES = [
     description: "Recipient's primary email",
   },
   {
+    key: 'linkedinUrl',
+    token: '{{linkedinUrl}}',
+    description: "Recipient's LinkedIn profile URL",
+  },
+  {
     key: 'jobTitle',
     token: '{{jobTitle}}',
     description: "Recipient's job title",

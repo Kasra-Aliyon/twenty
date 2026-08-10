@@ -578,19 +578,22 @@ const SEQUENCE_CAPABILITIES = {
       fields: ['noteTemplate', 'skipIfAlreadyConnected'],
       limits: 'The rendered note is truncated to 200 characters.',
       automated: 'Queues a LinkedIn connection action for the browser runner.',
-      manual: 'Creates a LINKEDIN_CONNECTION task.',
+      manual:
+        'Creates a LINKEDIN_CONNECTION task with the profile URL and rendered note, unless the person is already connected or invited.',
     },
     SEND_LINKEDIN_MESSAGE: {
       fields: ['messageTemplate'],
       limits: 'Rendered message must contain 1-2000 characters.',
       automated:
         'Queues a LinkedIn message for a recognized first-degree connection.',
-      manual: 'Creates a LINKEDIN_MESSAGE task.',
+      manual:
+        'Creates a LINKEDIN_MESSAGE task with the profile URL and rendered message for a recognized first-degree connection.',
     },
     WITHDRAW_CONNECTION_REQUEST: {
       fields: ['withdrawAfterDays', 'withdrawAfterHours'],
       automated: 'Queues a delayed LinkedIn invitation withdrawal.',
-      manual: 'Creates a CUSTOM task.',
+      manual:
+        'Creates a CUSTOM task due after the configured withdrawal delay.',
     },
     CONDITION: {
       fields: ['condition'],
@@ -598,7 +601,8 @@ const SEQUENCE_CAPABILITIES = {
         IS_IN_LINKEDIN_NETWORK:
           'True for a synced or recorded first-degree LinkedIn connection.',
         HAS_EMAIL_ADDRESS: 'True when the person has a primary email.',
-        HAS_LINKEDIN_URL: 'True when the person has a primary LinkedIn URL.',
+        HAS_LINKEDIN_URL:
+          'True when the person has a valid LinkedIn profile URL.',
         ACCEPTED_LINKEDIN_INVITE:
           'True for a synced or recorded first-degree LinkedIn connection.',
         OPENED_LINKEDIN_MESSAGE:

@@ -1,5 +1,6 @@
 import {
   LINKEDIN_ACTION_STATUSES,
+  LINKEDIN_ACTION_TYPES,
   SEQUENCE_ENROLLMENT_STATUSES,
   SEQUENCE_STATUSES,
   SEQUENCE_STEP_TYPES,
@@ -78,6 +79,7 @@ describe('SequenceSchedulerService', () => {
     futureScheduledEnrollments = [],
     linkedinWaitingEnrollments = [],
     linkedinActions = [],
+    expiredClaimedActions = [],
     dailyStartLimitEnabled = true,
   }: {
     startedToday: number;
@@ -86,6 +88,7 @@ describe('SequenceSchedulerService', () => {
     futureScheduledEnrollments?: SequenceEnrollmentWorkspaceEntity[];
     linkedinWaitingEnrollments?: SequenceEnrollmentWorkspaceEntity[];
     linkedinActions?: LinkedinActionWorkspaceEntity[];
+    expiredClaimedActions?: LinkedinActionWorkspaceEntity[];
     dailyStartLimitEnabled?: boolean;
   }) => {
     const activeSequence = {
@@ -122,11 +125,17 @@ describe('SequenceSchedulerService', () => {
       find: jest.fn().mockResolvedValue([step]),
     };
     const linkedinActionRepository = {
-      find: jest
-        .fn()
-        .mockImplementation(async (options) =>
-          options.where.sequenceEnrollmentId ? linkedinActions : [],
-        ),
+      find: jest.fn().mockImplementation(async (options) => {
+        if (options.where.sequenceEnrollmentId) {
+          return linkedinActions;
+        }
+
+        if (options.where.status === LINKEDIN_ACTION_STATUSES.CLAIMED) {
+          return expiredClaimedActions;
+        }
+
+        return [];
+      }),
       update: jest.fn().mockResolvedValue({ affected: 1 }),
     };
     const repositories = new Map<object, object>([
@@ -170,11 +179,63 @@ describe('SequenceSchedulerService', () => {
       service,
       sequenceRepository,
       enrollmentRepository,
+      linkedinActionRepository,
       enqueueProcess,
       acquireSendLock,
       releaseSendLock,
     };
   };
+
+  it('does not retry a direct message whose claimed browser outcome is unknown', async () => {
+    const expiredMessage = {
+      id: 'message-action-id',
+      type: LINKEDIN_ACTION_TYPES.SEND_MESSAGE,
+      status: LINKEDIN_ACTION_STATUSES.CLAIMED,
+      claimedAt: new Date('2024-01-01T09:00:00.000Z'),
+      attemptCount: 0,
+    } as LinkedinActionWorkspaceEntity;
+    const { service, linkedinActionRepository } = setup({
+      startedToday: 0,
+      expiredClaimedActions: [expiredMessage],
+    });
+
+    await service.tick(workspaceId, now);
+
+    expect(linkedinActionRepository.update).toHaveBeenCalledWith(
+      expect.objectContaining({ id: expiredMessage.id }),
+      expect.objectContaining({
+        status: LINKEDIN_ACTION_STATUSES.FAILED,
+        executedAt: now,
+        errorMessage: 'LINKEDIN_ACTION_OUTCOME_UNKNOWN',
+      }),
+    );
+  });
+
+  it('requeues an expired connection claim because the runner rechecks live state', async () => {
+    const expiredRequest = {
+      id: 'request-action-id',
+      type: LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST,
+      status: LINKEDIN_ACTION_STATUSES.CLAIMED,
+      claimedAt: new Date('2024-01-01T09:00:00.000Z'),
+      attemptCount: 2,
+    } as LinkedinActionWorkspaceEntity;
+    const { service, linkedinActionRepository } = setup({
+      startedToday: 0,
+      expiredClaimedActions: [expiredRequest],
+    });
+
+    await service.tick(workspaceId, now);
+
+    expect(linkedinActionRepository.update).toHaveBeenCalledWith(
+      expect.objectContaining({ id: expiredRequest.id }),
+      expect.objectContaining({
+        status: LINKEDIN_ACTION_STATUSES.SCHEDULED,
+        claimedAt: null,
+        claimedBy: null,
+        attemptCount: 3,
+      }),
+    );
+  });
 
   it('admits only the remaining daily starts', async () => {
     const pendingEnrollment = buildEnrollment(

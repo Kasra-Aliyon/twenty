@@ -4,8 +4,9 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import {
   detectConnectionDegree,
-  isInvitationManagerPath,
   sendConnectionRequest,
+  sendDirectMessage,
+  withdrawConnectionRequest,
 } from '../linkedin-automation';
 
 // jsdom reports zero-sized boxes, so visibility has to be forced for the
@@ -687,20 +688,130 @@ describe('sendConnectionRequest', () => {
   });
 });
 
-describe('isInvitationManagerPath', () => {
-  it.each([
-    '/mynetwork/invitation-manager/sent/',
-    '/mynetwork/invitation-manager/sent',
-    '/mynetwork/invitation-manager/',
-    '/mynetwork/invite-connect/invitations/',
-  ])('accepts %s', (pathname) => {
-    expect(isInvitationManagerPath(pathname)).toBe(true);
+describe('LinkedIn message and withdrawal automation', () => {
+  beforeEach(() => {
+    window.history.replaceState({}, '', '/in/ada-lovelace/');
+    document.body.innerHTML = '';
   });
 
-  it.each(['/in/ada-lovelace/', '/mynetwork/', '/feed/'])(
-    'rejects %s',
-    (pathname) => {
-      expect(isInvitationManagerPath(pathname)).toBe(false);
-    },
-  );
+  it('skips a live first-degree profile even when CRM-side skipping is disabled', async () => {
+    renderProfile(`
+      <main>
+        <section class="pv-top-card">
+          <h1>Ada Lovelace</h1>
+          <span class="dist-value">1st</span>
+          <button aria-label="Message Ada">Message</button>
+        </section>
+      </main>
+    `);
+
+    expect(await sendConnectionRequest('', false)).toEqual({
+      status: 'SKIPPED',
+      connectionState: 'CONNECTED',
+    });
+  });
+
+  it('reports a direct message only after the composer confirms the send', async () => {
+    renderProfile(`
+      <main>
+        <section class="pv-top-card">
+          <h1>Ada Lovelace</h1>
+          <span class="dist-value">1st</span>
+          <button id="message" aria-label="Message Ada">Message</button>
+        </section>
+      </main>
+      <div id="composer-host"></div>
+    `);
+    let didClickSend = false;
+
+    document
+      .querySelector<HTMLButtonElement>('#message')!
+      .addEventListener('click', () => {
+        document.querySelector<HTMLElement>('#composer-host')!.innerHTML = `
+          <form class="msg-form">
+            <textarea name="message"></textarea>
+            <button type="submit">Send</button>
+          </form>
+        `;
+        const form = document.querySelector<HTMLFormElement>('.msg-form')!;
+
+        form.addEventListener('submit', (event) => {
+          event.preventDefault();
+          didClickSend = true;
+          form.querySelector<HTMLTextAreaElement>('textarea')!.value = '';
+        });
+      });
+
+    expect(await sendDirectMessage('Hello Ada')).toEqual({
+      status: 'COMPLETED',
+      connectionState: 'CONNECTED',
+    });
+    expect(didClickSend).toBe(true);
+  });
+
+  it('withdraws from the target profile and waits for the pending state to clear', async () => {
+    renderProfile(`
+      <main>
+        <section class="pv-top-card">
+          <h1>Ada Lovelace</h1>
+          <span class="dist-value">2nd</span>
+          <button id="pending" aria-label="Pending invitation">Pending</button>
+        </section>
+      </main>
+      <div id="overlay-host"></div>
+    `);
+    const pendingButton =
+      document.querySelector<HTMLButtonElement>('#pending')!;
+    const overlayHost = document.querySelector<HTMLElement>('#overlay-host')!;
+
+    pendingButton.addEventListener('click', () => {
+      overlayHost.innerHTML = `
+        <div role="menu"><button id="withdraw">Withdraw</button></div>
+      `;
+      overlayHost
+        .querySelector<HTMLButtonElement>('#withdraw')!
+        .addEventListener('click', () => {
+          overlayHost.innerHTML = `
+            <div role="dialog"><button id="confirm-withdraw">Withdraw</button></div>
+          `;
+          overlayHost
+            .querySelector<HTMLButtonElement>('#confirm-withdraw')!
+            .addEventListener('click', () => {
+              overlayHost.replaceChildren();
+              pendingButton.textContent = 'Connect';
+              pendingButton.setAttribute('aria-label', 'Connect with Ada');
+            });
+        });
+    });
+
+    expect(
+      await withdrawConnectionRequest(
+        'https://www.linkedin.com/in/ada-lovelace/',
+      ),
+    ).toEqual({
+      status: 'COMPLETED',
+      connectionState: 'WITHDRAWN',
+    });
+  });
+
+  it('skips withdrawal when the profile proves no invitation is pending', async () => {
+    renderProfile(`
+      <main>
+        <section class="pv-top-card">
+          <h1>Ada Lovelace</h1>
+          <span class="dist-value">2nd</span>
+          <button aria-label="Connect with Ada">Connect</button>
+        </section>
+      </main>
+    `);
+
+    expect(
+      await withdrawConnectionRequest(
+        'https://www.linkedin.com/in/ada-lovelace/',
+      ),
+    ).toEqual({
+      status: 'SKIPPED',
+      connectionState: 'NOT_CONNECTED',
+    });
+  });
 });

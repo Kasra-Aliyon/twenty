@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 
 import {
   LINKEDIN_ACTION_STATUSES,
+  LINKEDIN_ACTION_TYPES,
   SEQUENCE_ACTION_EXECUTION_MODES,
   SEQUENCE_ENROLLMENT_STATUSES,
   SEQUENCE_STATUSES,
@@ -241,6 +242,13 @@ export class SequenceSchedulerService {
     ]);
 
     for (const action of expiredClaims) {
+      // Connection requests and withdrawals can be retried safely because the
+      // runner first observes LinkedIn's current state. A direct message is not
+      // idempotent: if it was sent just before the runner lost its report, a
+      // retry would send the person the same message twice.
+      const isMessageWithUnknownOutcome =
+        action.type === LINKEDIN_ACTION_TYPES.SEND_MESSAGE;
+
       await linkedinActionRepository.update(
         {
           id: action.id,
@@ -248,10 +256,19 @@ export class SequenceSchedulerService {
           claimedAt: LessThanOrEqual(claimExpiredBefore),
         },
         {
-          status: LINKEDIN_ACTION_STATUSES.SCHEDULED,
+          status: isMessageWithUnknownOutcome
+            ? LINKEDIN_ACTION_STATUSES.FAILED
+            : LINKEDIN_ACTION_STATUSES.SCHEDULED,
           claimedAt: null,
           claimedBy: null,
           attemptCount: action.attemptCount + 1,
+          ...(isMessageWithUnknownOutcome
+            ? {
+                executedAt: now,
+                errorMessage:
+                  SEQUENCE_EXECUTION_ERROR.LINKEDIN_ACTION_OUTCOME_UNKNOWN,
+              }
+            : {}),
         },
       );
     }

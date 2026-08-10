@@ -56,12 +56,6 @@ const LINKEDIN_SELECTORS = {
     'textarea[name="message"]',
     'textarea',
   ],
-  invitationRows: [
-    'main li.invitation-card',
-    'main .invitation-card',
-    'main [data-view-name*="invitation"]',
-    'main li',
-  ],
 } as const;
 
 // Recommendation rails ("More profiles for you", "People also viewed") render
@@ -827,7 +821,7 @@ const confirmInvitationSent = async (
 
 export const sendConnectionRequest = async (
   noteText: string,
-  skipIfAlreadyConnected = true,
+  _skipIfAlreadyConnected = true,
 ): Promise<LinkedInAutomationResult> => {
   const blockReason = getLinkedInAutomationBlockReason();
 
@@ -862,7 +856,10 @@ export const sendConnectionRequest = async (
       return { status: 'SKIPPED', connectionState: 'PENDING' };
     }
 
-    if (skipIfAlreadyConnected && degree === 'FIRST') {
+    // The CRM setting controls whether synced data can skip scheduling. Once
+    // the runner is looking at LinkedIn itself, a first-degree badge is
+    // authoritative and attempting another invitation is impossible.
+    if (degree === 'FIRST') {
       return { status: 'SKIPPED', connectionState: 'CONNECTED' };
     }
 
@@ -874,11 +871,9 @@ export const sendConnectionRequest = async (
       if (!moreButton) {
         return {
           status: 'FAILED',
-          connectionState: degree === 'FIRST' ? 'CONNECTED' : 'UNKNOWN',
+          connectionState: 'UNKNOWN',
           errorMessage:
-            degree === 'FIRST'
-              ? 'LinkedIn shows this profile as an existing connection and offered no Connect control'
-              : 'Could not find a recognized Connect or More control on the profile',
+            'Could not find a recognized Connect or More control on the profile',
         };
       }
 
@@ -1108,18 +1103,51 @@ export const sendDirectMessage = async (
   }
 
   sendButton.click();
-  await wait(1_500);
-  const postSendBlockReason = getLinkedInAutomationBlockReason();
+  const sendConfirmationDeadline =
+    Date.now() + SEND_CONFIRMATION_TIMEOUT_MILLISECONDS;
 
-  if (postSendBlockReason) {
-    return {
-      status: 'FAILED',
-      connectionState: 'UNKNOWN',
-      errorMessage: postSendBlockReason,
-    };
+  while (Date.now() < sendConfirmationDeadline) {
+    const postSendBlockReason = getLinkedInAutomationBlockReason();
+
+    if (postSendBlockReason) {
+      return {
+        status: 'FAILED',
+        connectionState: 'UNKNOWN',
+        errorMessage: postSendBlockReason,
+      };
+    }
+
+    const currentInputText =
+      input instanceof HTMLTextAreaElement
+        ? input.value.trim()
+        : (input.textContent ?? '').trim();
+    const didComposerClose =
+      !composer.isConnected || !input.isConnected || !isVisible(composer);
+    const didInputClear = currentInputText.length === 0;
+    const hasMessageSentToast = getAccessibleLinkedInRoots().some(
+      (currentRoot) =>
+        LINKEDIN_SELECTORS.confirmation.some((selector) =>
+          [...currentRoot.querySelectorAll<HTMLElement>(selector)].some(
+            (element) =>
+              isVisible(element) &&
+              /message (?:was )?sent/i.test(normalizedText(element)),
+          ),
+        ),
+    );
+
+    if (didComposerClose || didInputClear || hasMessageSentToast) {
+      return { status: 'COMPLETED', connectionState: 'CONNECTED' };
+    }
+
+    await wait(150);
   }
 
-  return { status: 'COMPLETED', connectionState: 'CONNECTED' };
+  return {
+    status: 'FAILED',
+    connectionState: 'CONNECTED',
+    errorMessage:
+      'LinkedIn did not confirm that the direct message was sent; it will not be retried automatically',
+  };
 };
 
 const getProfileHandle = (profileUrl: string): string | null => {
@@ -1132,11 +1160,6 @@ const getProfileHandle = (profileUrl: string): string | null => {
     return null;
   }
 };
-
-export const isInvitationManagerPath = (pathname: string): boolean =>
-  /^\/mynetwork\/(invitation-manager|invite-connect\/invitations)\b/.test(
-    pathname,
-  );
 
 export const withdrawConnectionRequest = async (
   profileUrl: string,
@@ -1151,16 +1174,6 @@ export const withdrawConnectionRequest = async (
     };
   }
 
-  // LinkedIn redirects between several invitation-manager paths, so the check
-  // accepts any of them instead of looping on a single exact prefix.
-  if (!isInvitationManagerPath(window.location.pathname)) {
-    window.location.assign(
-      `${window.location.origin}/mynetwork/invitation-manager/sent/`,
-    );
-
-    return { status: 'NAVIGATING', connectionState: 'UNKNOWN' };
-  }
-
   const profileHandle = getProfileHandle(profileUrl);
 
   if (!profileHandle) {
@@ -1171,40 +1184,83 @@ export const withdrawConnectionRequest = async (
     };
   }
 
-  const matchingRow = [
-    ...document.querySelectorAll<HTMLElement>(
-      LINKEDIN_SELECTORS.invitationRows.join(','),
-    ),
-  ].find((row) =>
-    [...row.querySelectorAll<HTMLAnchorElement>('a[href*="/in/"]')].some(
-      (link) => getProfileHandle(link.href) === profileHandle,
-    ),
-  );
+  const currentProfileHandle = getProfileHandle(window.location.href);
 
-  // An absent row means the invitation is no longer outstanding. It may have
-  // been accepted, withdrawn, or expired, and the page cannot tell them apart,
-  // so the connection state is left unknown rather than asserted as connected.
-  if (!matchingRow) {
-    return { status: 'SKIPPED', connectionState: 'UNKNOWN' };
+  if (currentProfileHandle !== profileHandle) {
+    return {
+      status: 'FAILED',
+      connectionState: 'UNKNOWN',
+      errorMessage: 'The runner was not on the LinkedIn profile to withdraw',
+    };
   }
 
-  const withdrawButton = findControl('withdraw', matchingRow);
+  const degree = detectConnectionDegree();
+
+  if (degree === 'FIRST') {
+    return { status: 'SKIPPED', connectionState: 'CONNECTED' };
+  }
+
+  const controls = getProfileActionControls();
+  let pendingControl = controls.pending;
+
+  if (!pendingControl && controls.more) {
+    const controlsBeforeOpening = new Set(findControls('pending'));
+
+    controls.more.click();
+    pendingControl = await waitForElement(() =>
+      findControlInOpenMenu('pending', controlsBeforeOpening),
+    );
+  }
+
+  if (!pendingControl) {
+    if (controls.connect || degree === 'SECOND' || degree === 'THIRD') {
+      return { status: 'SKIPPED', connectionState: 'NOT_CONNECTED' };
+    }
+
+    return {
+      status: 'FAILED',
+      connectionState: 'UNKNOWN',
+      errorMessage:
+        'LinkedIn did not show Pending, Connect, or a recognized connection state on the profile',
+    };
+  }
+
+  const withdrawControlsBeforeOpening = new Set(findControls('withdraw'));
+
+  pendingControl.click();
+  const withdrawButton = await waitForElement(() => {
+    const currentWithdrawControls = findControls('withdraw');
+
+    return (
+      currentWithdrawControls.find(
+        (candidate) => !withdrawControlsBeforeOpening.has(candidate),
+      ) ?? null
+    );
+  });
 
   if (!withdrawButton) {
     return {
       status: 'FAILED',
       connectionState: 'PENDING',
-      errorMessage: 'The matching invitation did not contain Withdraw',
+      errorMessage: 'LinkedIn did not show a recognized Withdraw control',
     };
   }
 
   withdrawButton.click();
-  const dialog = await waitForElement(() =>
-    findVisibleElement<HTMLElement>(LINKEDIN_SELECTORS.dialog),
+  const dialog = await waitForElement(
+    () =>
+      LINKEDIN_SELECTORS.dialog
+        .flatMap((selector) =>
+          querySelectorAllAcrossRoots<HTMLElement>(selector),
+        )
+        .find(
+          (candidate) =>
+            isVisible(candidate) && Boolean(findControl('withdraw', candidate)),
+        ) ?? null,
   );
   const confirmButton = dialog ? findControl('withdraw', dialog) : null;
 
-  if (!confirmButton) {
+  if (!dialog || !confirmButton) {
     return {
       status: 'FAILED',
       connectionState: 'PENDING',
@@ -1215,5 +1271,45 @@ export const withdrawConnectionRequest = async (
 
   confirmButton.click();
 
-  return { status: 'COMPLETED', connectionState: 'WITHDRAWN' };
+  const confirmationDeadline =
+    Date.now() + SEND_CONFIRMATION_TIMEOUT_MILLISECONDS;
+
+  while (Date.now() < confirmationDeadline) {
+    const postWithdrawBlockReason = getLinkedInAutomationBlockReason();
+
+    if (postWithdrawBlockReason) {
+      return {
+        status: 'FAILED',
+        connectionState: 'UNKNOWN',
+        errorMessage: postWithdrawBlockReason,
+      };
+    }
+
+    const hasWithdrawalToast = getAccessibleLinkedInRoots().some(
+      (currentRoot) =>
+        LINKEDIN_SELECTORS.confirmation.some((selector) =>
+          [...currentRoot.querySelectorAll<HTMLElement>(selector)].some(
+            (element) =>
+              isVisible(element) &&
+              /invitation (?:was )?withdrawn/i.test(normalizedText(element)),
+          ),
+        ),
+    );
+    const didDialogClose = !dialog.isConnected || !isVisible(dialog);
+    const hasPendingControl = Boolean(
+      findControl('pending', document, { profileLevelOnly: true }),
+    );
+
+    if (hasWithdrawalToast || (didDialogClose && !hasPendingControl)) {
+      return { status: 'COMPLETED', connectionState: 'WITHDRAWN' };
+    }
+
+    await wait(150);
+  }
+
+  return {
+    status: 'FAILED',
+    connectionState: 'PENDING',
+    errorMessage: 'LinkedIn did not confirm that the invitation was withdrawn',
+  };
 };

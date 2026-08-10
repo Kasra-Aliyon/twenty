@@ -35,11 +35,11 @@ export const getSequenceConditionLabel = (
     case SEQUENCE_CONDITION_TYPES.HAS_EMAIL_ADDRESS:
       return t`Has email address`;
     case SEQUENCE_CONDITION_TYPES.HAS_LINKEDIN_URL:
-      return t`Has LinkedIn URL`;
+      return t`Has valid LinkedIn profile URL`;
     case SEQUENCE_CONDITION_TYPES.ACCEPTED_LINKEDIN_INVITE:
       return t`Accepted LinkedIn invite`;
     case SEQUENCE_CONDITION_TYPES.OPENED_LINKEDIN_MESSAGE:
-      return t`Opened LinkedIn message`;
+      return t`Received LinkedIn reply`;
     case SEQUENCE_CONDITION_TYPES.HAS_PHONE_NUMBER:
       return t`Has phone number`;
   }

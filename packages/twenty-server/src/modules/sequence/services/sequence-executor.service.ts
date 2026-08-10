@@ -26,7 +26,7 @@ import {
   type SequenceWithdrawConnectionRequestStepSettings,
 } from 'twenty-shared/types';
 import { isDefined } from 'twenty-shared/utils';
-import { In, IsNull, LessThanOrEqual } from 'typeorm';
+import { ILike, In, IsNull, LessThanOrEqual } from 'typeorm';
 
 import { type WorkspaceEntityManager } from 'src/engine/twenty-orm/entity-manager/workspace-entity-manager';
 import { GlobalWorkspaceOrmManager } from 'src/engine/twenty-orm/global-workspace-datasource/global-workspace-orm.manager';
@@ -233,6 +233,9 @@ export class SequenceExecutorService {
             id: enrollment.id,
             status: SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
             currentStepPosition: enrollment.currentStepPosition,
+            currentStepId: isDefined(enrollment.currentStepId)
+              ? enrollment.currentStepId
+              : IsNull(),
           },
           {
             status: SEQUENCE_ENROLLMENT_STATUSES.COMPLETED,
@@ -287,16 +290,15 @@ export class SequenceExecutorService {
           return;
         case SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST:
           if (this.isManualExecution(nextStep.settings)) {
-            await this.processManualActionStep({
+            await this.processManualConnectionRequestStep({
               workspaceId,
               enrollmentRepository,
               enrollment,
               person,
+              sequenceSenderConnectedAccountId:
+                sequence.senderConnectedAccountId,
               step: nextStep,
               settings: nextStep.settings,
-              taskType: SEQUENCE_TASK_TYPES.LINKEDIN_CONNECTION,
-              defaultTitle:
-                'Send LinkedIn connection request to {{ fullName }}',
             });
 
             return;
@@ -316,15 +318,15 @@ export class SequenceExecutorService {
           return;
         case SEQUENCE_STEP_TYPES.SEND_LINKEDIN_MESSAGE:
           if (this.isManualExecution(nextStep.settings)) {
-            await this.processManualActionStep({
+            await this.processManualLinkedInMessageStep({
               workspaceId,
               enrollmentRepository,
               enrollment,
               person,
+              sequenceSenderConnectedAccountId:
+                sequence.senderConnectedAccountId,
               step: nextStep,
               settings: nextStep.settings,
-              taskType: SEQUENCE_TASK_TYPES.LINKEDIN_MESSAGE,
-              defaultTitle: 'Send LinkedIn message to {{ fullName }}',
             });
 
             return;
@@ -344,15 +346,15 @@ export class SequenceExecutorService {
           return;
         case SEQUENCE_STEP_TYPES.WITHDRAW_CONNECTION_REQUEST:
           if (this.isManualExecution(nextStep.settings)) {
-            await this.processManualActionStep({
+            await this.processManualWithdrawConnectionRequestStep({
               workspaceId,
               enrollmentRepository,
               enrollment,
               person,
+              sequenceSenderConnectedAccountId:
+                sequence.senderConnectedAccountId,
               step: nextStep,
               settings: nextStep.settings,
-              taskType: SEQUENCE_TASK_TYPES.CUSTOM,
-              defaultTitle: 'Withdraw LinkedIn invitation for {{ fullName }}',
             });
 
             return;
@@ -460,6 +462,9 @@ export class SequenceExecutorService {
         id: enrollment.id,
         status: SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
         currentStepPosition: enrollment.currentStepPosition,
+        currentStepId: isDefined(enrollment.currentStepId)
+          ? enrollment.currentStepId
+          : IsNull(),
       },
       {
         currentStepId: step.id,
@@ -517,6 +522,9 @@ export class SequenceExecutorService {
             id: enrollment.id,
             status: SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
             currentStepPosition: enrollment.currentStepPosition,
+            currentStepId: isDefined(enrollment.currentStepId)
+              ? enrollment.currentStepId
+              : IsNull(),
           },
           {
             currentStepId: step.id,
@@ -566,6 +574,8 @@ export class SequenceExecutorService {
     settings,
     taskType,
     defaultTitle,
+    defaultNotes = '',
+    deadlineDays = null,
   }: {
     workspaceId: string;
     enrollmentRepository: WorkspaceRepository<SequenceEnrollmentWorkspaceEntity>;
@@ -575,6 +585,8 @@ export class SequenceExecutorService {
     settings: SequenceActionExecutionSettings;
     taskType: SequenceCreateTaskStepSettings['taskType'];
     defaultTitle: string;
+    defaultNotes?: string;
+    deadlineDays?: number | null;
   }): Promise<void> {
     await this.processCreateTaskStep({
       workspaceId,
@@ -588,12 +600,257 @@ export class SequenceExecutorService {
         titleTemplate: isNonEmptyString(settings.manualTaskTitle)
           ? settings.manualTaskTitle
           : defaultTitle,
-        notesTemplate: settings.manualTaskDescription ?? '',
+        notesTemplate: isNonEmptyString(settings.manualTaskDescription)
+          ? settings.manualTaskDescription
+          : defaultNotes,
         priority: TASK_PRIORITIES.MEDIUM,
         assigneeWorkspaceMemberId: null,
         continueMode: 'ON_DONE',
-        deadlineDays: null,
+        deadlineDays,
       },
+    });
+  }
+
+  private async processManualConnectionRequestStep({
+    workspaceId,
+    enrollmentRepository,
+    enrollment,
+    person,
+    sequenceSenderConnectedAccountId,
+    step,
+    settings,
+  }: {
+    workspaceId: string;
+    enrollmentRepository: WorkspaceRepository<SequenceEnrollmentWorkspaceEntity>;
+    enrollment: SequenceEnrollmentWorkspaceEntity;
+    person: PersonWorkspaceEntity;
+    sequenceSenderConnectedAccountId: string | null;
+    step: SequenceStepWorkspaceEntity;
+    settings: SequenceConnectionRequestStepSettings;
+  }): Promise<void> {
+    if (!this.hasLinkedinProfileUrl(person)) {
+      await this.failEnrollment({
+        enrollmentRepository,
+        enrollment,
+        errorMessage: SEQUENCE_EXECUTION_ERROR.MISSING_LINKEDIN_URL,
+        stepId: step.id,
+        stepPosition: step.position,
+      });
+
+      return;
+    }
+
+    try {
+      const senderConnectedAccountId =
+        enrollment.senderConnectedAccountId ?? sequenceSenderConnectedAccountId;
+      const ownerWorkspaceMemberId = await this.getSenderOwnerWorkspaceMemberId(
+        {
+          workspaceId,
+          senderConnectedAccountId,
+        },
+      );
+      const [hasOutstandingRequest, isConnected] = await Promise.all([
+        this.hasOutstandingConnectionRequest({
+          workspaceId,
+          person,
+          ownerWorkspaceMemberId,
+        }),
+        this.isPersonConnectedToSender({
+          workspaceId,
+          person,
+          senderConnectedAccountId,
+        }),
+      ]);
+
+      // A human cannot send another invitation in either state. Avoid creating
+      // a task whose only possible outcome is to discover it was unnecessary.
+      if (hasOutstandingRequest || isConnected) {
+        await this.advanceEnrollmentStep({
+          enrollmentRepository,
+          enrollment,
+          step,
+        });
+
+        return;
+      }
+    } catch (error) {
+      await this.failEnrollment({
+        enrollmentRepository,
+        enrollment,
+        errorMessage: this.toErrorMessage(error),
+        stepId: step.id,
+        stepPosition: step.position,
+      });
+
+      return;
+    }
+
+    const noteTemplate = isNonEmptyString(settings.noteTemplate)
+      ? `\n\nConnection note:\n${settings.noteTemplate}`
+      : '';
+
+    await this.processManualActionStep({
+      workspaceId,
+      enrollmentRepository,
+      enrollment,
+      person,
+      step,
+      settings,
+      taskType: SEQUENCE_TASK_TYPES.LINKEDIN_CONNECTION,
+      defaultTitle: 'Send LinkedIn connection request to {{ fullName }}',
+      defaultNotes: `LinkedIn profile: {{ linkedinUrl }}${noteTemplate}`,
+    });
+  }
+
+  private async processManualLinkedInMessageStep({
+    workspaceId,
+    enrollmentRepository,
+    enrollment,
+    person,
+    sequenceSenderConnectedAccountId,
+    step,
+    settings,
+  }: {
+    workspaceId: string;
+    enrollmentRepository: WorkspaceRepository<SequenceEnrollmentWorkspaceEntity>;
+    enrollment: SequenceEnrollmentWorkspaceEntity;
+    person: PersonWorkspaceEntity;
+    sequenceSenderConnectedAccountId: string | null;
+    step: SequenceStepWorkspaceEntity;
+    settings: SequenceLinkedInMessageStepSettings;
+  }): Promise<void> {
+    if (!this.hasLinkedinProfileUrl(person)) {
+      await this.failEnrollment({
+        enrollmentRepository,
+        enrollment,
+        errorMessage: SEQUENCE_EXECUTION_ERROR.MISSING_LINKEDIN_URL,
+        stepId: step.id,
+        stepPosition: step.position,
+      });
+
+      return;
+    }
+
+    try {
+      const isConnected = await this.isPersonConnectedToSender({
+        workspaceId,
+        person,
+        senderConnectedAccountId:
+          enrollment.senderConnectedAccountId ??
+          sequenceSenderConnectedAccountId,
+      });
+
+      if (!isConnected) {
+        await this.failEnrollment({
+          enrollmentRepository,
+          enrollment,
+          errorMessage: SEQUENCE_EXECUTION_ERROR.LINKEDIN_NOT_CONNECTED,
+          stepId: step.id,
+          stepPosition: step.position,
+        });
+
+        return;
+      }
+    } catch (error) {
+      await this.failEnrollment({
+        enrollmentRepository,
+        enrollment,
+        errorMessage: this.toErrorMessage(error),
+        stepId: step.id,
+        stepPosition: step.position,
+      });
+
+      return;
+    }
+
+    await this.processManualActionStep({
+      workspaceId,
+      enrollmentRepository,
+      enrollment,
+      person,
+      step,
+      settings,
+      taskType: SEQUENCE_TASK_TYPES.LINKEDIN_MESSAGE,
+      defaultTitle: 'Send LinkedIn message to {{ fullName }}',
+      defaultNotes:
+        'LinkedIn profile: {{ linkedinUrl }}\n\nMessage:\n' +
+        settings.messageTemplate,
+    });
+  }
+
+  private async processManualWithdrawConnectionRequestStep({
+    workspaceId,
+    enrollmentRepository,
+    enrollment,
+    person,
+    sequenceSenderConnectedAccountId,
+    step,
+    settings,
+  }: {
+    workspaceId: string;
+    enrollmentRepository: WorkspaceRepository<SequenceEnrollmentWorkspaceEntity>;
+    enrollment: SequenceEnrollmentWorkspaceEntity;
+    person: PersonWorkspaceEntity;
+    sequenceSenderConnectedAccountId: string | null;
+    step: SequenceStepWorkspaceEntity;
+    settings: SequenceWithdrawConnectionRequestStepSettings;
+  }): Promise<void> {
+    if (!this.hasLinkedinProfileUrl(person)) {
+      await this.failEnrollment({
+        enrollmentRepository,
+        enrollment,
+        errorMessage: SEQUENCE_EXECUTION_ERROR.MISSING_LINKEDIN_URL,
+        stepId: step.id,
+        stepPosition: step.position,
+      });
+
+      return;
+    }
+
+    try {
+      const isConnected = await this.isPersonConnectedToSender({
+        workspaceId,
+        person,
+        senderConnectedAccountId:
+          enrollment.senderConnectedAccountId ??
+          sequenceSenderConnectedAccountId,
+      });
+
+      if (isConnected) {
+        await this.advanceEnrollmentStep({
+          enrollmentRepository,
+          enrollment,
+          step,
+        });
+
+        return;
+      }
+    } catch (error) {
+      await this.failEnrollment({
+        enrollmentRepository,
+        enrollment,
+        errorMessage: this.toErrorMessage(error),
+        stepId: step.id,
+        stepPosition: step.position,
+      });
+
+      return;
+    }
+
+    await this.processManualActionStep({
+      workspaceId,
+      enrollmentRepository,
+      enrollment,
+      person,
+      step,
+      settings,
+      taskType: SEQUENCE_TASK_TYPES.CUSTOM,
+      defaultTitle: 'Withdraw LinkedIn invitation for {{ fullName }}',
+      defaultNotes:
+        'LinkedIn profile: {{ linkedinUrl }}\n\nConfirm the invitation is still pending before withdrawing it.',
+      deadlineDays:
+        this.toNonNegativeNumber(settings.withdrawAfterDays) +
+        this.toNonNegativeNumber(settings.withdrawAfterHours) / 24,
     });
   }
 
@@ -651,7 +908,7 @@ export class SequenceExecutorService {
       case SEQUENCE_CONDITION_TYPES.IS_IN_LINKEDIN_NETWORK: {
         return this.isPersonConnectedToSender({
           workspaceId,
-          personId: person.id,
+          person,
           senderConnectedAccountId,
         });
       }
@@ -667,7 +924,7 @@ export class SequenceExecutorService {
         const [isConnected, wasInvitationSent] = await Promise.all([
           this.isPersonConnectedToSender({
             workspaceId,
-            personId: person.id,
+            person,
             senderConnectedAccountId,
           }),
           this.wasLinkedinInvitationSent({
@@ -682,7 +939,7 @@ export class SequenceExecutorService {
       case SEQUENCE_CONDITION_TYPES.HAS_EMAIL_ADDRESS:
         return isNonEmptyString(person.emails?.primaryEmail);
       case SEQUENCE_CONDITION_TYPES.HAS_LINKEDIN_URL:
-        return isNonEmptyString(person.linkedinLink?.primaryLinkUrl);
+        return this.hasLinkedinProfileUrl(person);
       case SEQUENCE_CONDITION_TYPES.HAS_PHONE_NUMBER:
         return isNonEmptyString(person.phones?.primaryPhoneNumber);
       case SEQUENCE_CONDITION_TYPES.OPENED_LINKEDIN_MESSAGE: {
@@ -819,6 +1076,9 @@ export class SequenceExecutorService {
         id: enrollment.id,
         status: SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
         currentStepPosition: enrollment.currentStepPosition,
+        currentStepId: isDefined(enrollment.currentStepId)
+          ? enrollment.currentStepId
+          : IsNull(),
       },
       {
         currentStepId: step.id,
@@ -848,7 +1108,7 @@ export class SequenceExecutorService {
     step: SequenceStepWorkspaceEntity;
     settings: SequenceConnectionRequestStepSettings;
   }): Promise<void> {
-    if (!isNonEmptyString(person.linkedinLink?.primaryLinkUrl)) {
+    if (!this.hasLinkedinProfileUrl(person)) {
       await this.failEnrollment({
         enrollmentRepository,
         enrollment,
@@ -889,12 +1149,13 @@ export class SequenceExecutorService {
         return;
       }
 
-      const shouldSkipIfAlreadyConnected = settings.skipIfAlreadyConnected !== false;
+      const shouldSkipIfAlreadyConnected =
+        settings.skipIfAlreadyConnected !== false;
 
       if (shouldSkipIfAlreadyConnected) {
         const isConnected = await this.isPersonConnectedToSender({
           workspaceId,
-          personId: person.id,
+          person,
           senderConnectedAccountId,
         });
 
@@ -972,11 +1233,41 @@ export class SequenceExecutorService {
     step: SequenceStepWorkspaceEntity;
     settings: SequenceWithdrawConnectionRequestStepSettings;
   }): Promise<void> {
-    if (!isNonEmptyString(person.linkedinLink?.primaryLinkUrl)) {
+    if (!this.hasLinkedinProfileUrl(person)) {
       await this.failEnrollment({
         enrollmentRepository,
         enrollment,
         errorMessage: SEQUENCE_EXECUTION_ERROR.MISSING_LINKEDIN_URL,
+        stepId: step.id,
+        stepPosition: step.position,
+      });
+
+      return;
+    }
+
+    try {
+      const isConnected = await this.isPersonConnectedToSender({
+        workspaceId,
+        person,
+        senderConnectedAccountId:
+          enrollment.senderConnectedAccountId ??
+          sequenceSenderConnectedAccountId,
+      });
+
+      if (isConnected) {
+        await this.advanceEnrollmentStep({
+          enrollmentRepository,
+          enrollment,
+          step,
+        });
+
+        return;
+      }
+    } catch (error) {
+      await this.failEnrollment({
+        enrollmentRepository,
+        enrollment,
+        errorMessage: this.toErrorMessage(error),
         stepId: step.id,
         stepPosition: step.position,
       });
@@ -1022,7 +1313,7 @@ export class SequenceExecutorService {
     step: SequenceStepWorkspaceEntity;
     settings: SequenceLinkedInMessageStepSettings;
   }): Promise<void> {
-    if (!isNonEmptyString(person.linkedinLink?.primaryLinkUrl)) {
+    if (!this.hasLinkedinProfileUrl(person)) {
       await this.failEnrollment({
         enrollmentRepository,
         enrollment,
@@ -1041,7 +1332,7 @@ export class SequenceExecutorService {
     try {
       const isConnected = await this.isPersonConnectedToSender({
         workspaceId,
-        personId: person.id,
+        person,
         senderConnectedAccountId:
           enrollment.senderConnectedAccountId ??
           sequenceSenderConnectedAccountId,
@@ -1186,6 +1477,9 @@ export class SequenceExecutorService {
             id: enrollment.id,
             status: SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
             currentStepPosition: enrollment.currentStepPosition,
+            currentStepId: isDefined(enrollment.currentStepId)
+              ? enrollment.currentStepId
+              : IsNull(),
           },
           {
             currentStepId: step.id,
@@ -1242,11 +1536,11 @@ export class SequenceExecutorService {
 
   private async isPersonConnectedToSender({
     workspaceId,
-    personId,
+    person,
     senderConnectedAccountId,
   }: {
     workspaceId: string;
-    personId: string;
+    person: PersonWorkspaceEntity;
     senderConnectedAccountId: string | null;
   }): Promise<boolean> {
     const ownerWorkspaceMemberId = await this.getSenderOwnerWorkspaceMemberId({
@@ -1260,14 +1554,46 @@ export class SequenceExecutorService {
         { shouldBypassPermissionChecks: true },
       );
 
-    return (
-      (await connectionRepository.count({
-        where: {
-          ownerWorkspaceMemberId,
-          personId,
-        },
-      })) > 0
-    );
+    const handle = normalizeLinkedinHandle(person.linkedinLink?.primaryLinkUrl);
+    const where = [
+      {
+        ownerWorkspaceMemberId,
+        personId: person.id,
+      },
+      ...(isNonEmptyString(handle)
+        ? [
+            {
+              ownerWorkspaceMemberId,
+              handle: ILike(handle),
+            },
+          ]
+        : []),
+    ];
+
+    return (await connectionRepository.count({ where })) > 0;
+  }
+
+  private hasLinkedinProfileUrl(person: PersonWorkspaceEntity): boolean {
+    const linkedinUrl = person.linkedinLink?.primaryLinkUrl;
+
+    if (!isNonEmptyString(linkedinUrl)) {
+      return false;
+    }
+
+    try {
+      const parsedUrl = new URL(linkedinUrl);
+      const isLinkedinHost =
+        parsedUrl.hostname === 'linkedin.com' ||
+        parsedUrl.hostname.endsWith('.linkedin.com');
+
+      return (
+        isLinkedinHost &&
+        /^\/in\/[^/]+\/?$/i.test(parsedUrl.pathname) &&
+        isNonEmptyString(normalizeLinkedinHandle(linkedinUrl))
+      );
+    } catch {
+      return false;
+    }
   }
 
   // "Did we invite this person?" is answered from what this workspace actually
@@ -1346,14 +1672,38 @@ export class SequenceExecutorService {
         status: In([
           LINKEDIN_ACTION_STATUSES.SCHEDULED,
           LINKEDIN_ACTION_STATUSES.CLAIMED,
-          LINKEDIN_ACTION_STATUSES.COMPLETED,
-          LINKEDIN_ACTION_STATUSES.SKIPPED,
         ]),
       },
     });
 
     if (inFlightCount > 0) {
       return true;
+    }
+
+    const latestTerminalAction = await linkedinActionRepository.findOne({
+      where: {
+        personId: person.id,
+        ownerWorkspaceMemberId,
+        type: In([
+          LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST,
+          LINKEDIN_ACTION_TYPES.WITHDRAW_CONNECTION_REQUEST,
+        ]),
+        status: In([
+          LINKEDIN_ACTION_STATUSES.COMPLETED,
+          LINKEDIN_ACTION_STATUSES.SKIPPED,
+        ]),
+      },
+      order: { createdAt: 'DESC' },
+    });
+
+    if (isDefined(latestTerminalAction)) {
+      // A completed withdrawal supersedes the historical sent-invitation row.
+      // Without this ordering, a person could never be invited again after a
+      // withdrawal because connector sync intentionally retains history.
+      return (
+        latestTerminalAction.type ===
+        LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST
+      );
     }
 
     const handle = normalizeLinkedinHandle(person.linkedinLink?.primaryLinkUrl);
@@ -1723,6 +2073,9 @@ export class SequenceExecutorService {
         id: enrollment.id,
         status: SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
         currentStepPosition: enrollment.currentStepPosition,
+        currentStepId: isDefined(enrollment.currentStepId)
+          ? enrollment.currentStepId
+          : IsNull(),
       },
       {
         status: SEQUENCE_ENROLLMENT_STATUSES.FAILED,

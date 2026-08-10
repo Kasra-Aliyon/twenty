@@ -109,6 +109,7 @@ describe('SequenceExecutorService', () => {
     connectionCount = 0,
     sentInvitationCount = 0,
     linkedinActionCount = 0,
+    latestLinkedinAction = null,
   }: {
     currentEnrollment?: SequenceEnrollmentWorkspaceEntity;
     currentSequence?: SequenceWorkspaceEntity;
@@ -117,6 +118,7 @@ describe('SequenceExecutorService', () => {
     connectionCount?: number;
     sentInvitationCount?: number;
     linkedinActionCount?: number;
+    latestLinkedinAction?: LinkedinActionWorkspaceEntity | null;
   } = {}) => {
     const enrollmentRepository = {
       findOne: jest.fn().mockResolvedValue(currentEnrollment),
@@ -134,6 +136,7 @@ describe('SequenceExecutorService', () => {
     const linkedinActionRepository = {
       insert: jest.fn(),
       count: jest.fn().mockResolvedValue(linkedinActionCount),
+      findOne: jest.fn().mockResolvedValue(latestLinkedinAction),
     };
     const linkedinConnectionRepository = {
       count: jest.fn().mockResolvedValue(connectionCount),
@@ -854,6 +857,182 @@ describe('SequenceExecutorService', () => {
     );
   });
 
+  it('fails a LinkedIn action before queueing when the stored profile URL is invalid', async () => {
+    const connectionStep = {
+      id: 'connection-step-id',
+      sequenceId: sequence.id,
+      position: 0,
+      settings: {
+        type: SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST,
+        noteTemplate: '',
+        skipIfAlreadyConnected: true,
+      },
+    } as SequenceStepWorkspaceEntity;
+    const person = {
+      ...buildPerson(),
+      linkedinLink: {
+        primaryLinkUrl: 'https://example.com/ada-lovelace',
+        primaryLinkLabel: 'Not LinkedIn',
+        secondaryLinks: null,
+      },
+    } as PersonWorkspaceEntity;
+    const { service, enrollmentRepository, linkedinActionRepository } = setup({
+      currentEnrollment: {
+        ...enrollment,
+        waitingOn: SEQUENCE_WAITING_ON.DELAY,
+      },
+      person,
+      steps: [connectionStep],
+    });
+
+    await service.process({ workspaceId, enrollmentId });
+
+    expect(linkedinActionRepository.insert).not.toHaveBeenCalled();
+    expect(enrollmentRepository.update).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        status: SEQUENCE_ENROLLMENT_STATUSES.FAILED,
+        errorMessage: SEQUENCE_EXECUTION_ERROR.MISSING_LINKEDIN_URL,
+      }),
+    );
+  });
+
+  it('uses the exact current step id when claiming a tied-position next step', async () => {
+    const currentStep = {
+      id: 'current-step-id',
+      sequenceId: sequence.id,
+      position: 0,
+      settings: {
+        type: SEQUENCE_STEP_TYPES.DELAY,
+        days: 0,
+        hours: 0,
+        minutes: 0,
+      },
+    } as SequenceStepWorkspaceEntity;
+    const tiedTaskStep = {
+      id: 'tied-task-step-id',
+      sequenceId: sequence.id,
+      position: 0,
+      settings: {
+        type: SEQUENCE_STEP_TYPES.CREATE_TASK,
+        taskType: SEQUENCE_TASK_TYPES.TODO,
+        titleTemplate: 'Review {{ fullName }}',
+        notesTemplate: '',
+        priority: TASK_PRIORITIES.MEDIUM,
+        assigneeWorkspaceMemberId: null,
+        continueMode: 'ON_DONE',
+        deadlineDays: null,
+      },
+    } as SequenceStepWorkspaceEntity;
+    const { service, enrollmentRepository, transactionManager } = setup({
+      currentEnrollment: {
+        ...enrollment,
+        currentStepId: currentStep.id,
+        currentStepPosition: currentStep.position,
+        waitingOn: SEQUENCE_WAITING_ON.DELAY,
+      },
+      steps: [currentStep, tiedTaskStep],
+    });
+
+    await service.process({ workspaceId, enrollmentId });
+
+    expect(enrollmentRepository.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: enrollmentId,
+        currentStepId: currentStep.id,
+        currentStepPosition: currentStep.position,
+      }),
+      expect.objectContaining({ currentStepId: tiedTaskStep.id }),
+      transactionManager,
+    );
+  });
+
+  it('creates a complete manual LinkedIn message task only for a connection', async () => {
+    const messageStep = {
+      id: 'manual-message-step-id',
+      sequenceId: sequence.id,
+      position: 0,
+      settings: {
+        type: SEQUENCE_STEP_TYPES.SEND_LINKEDIN_MESSAGE,
+        executionMode: SEQUENCE_ACTION_EXECUTION_MODES.MANUAL,
+        messageTemplate: 'Hello {{ firstName }}',
+      },
+    } as SequenceStepWorkspaceEntity;
+    const person = {
+      ...buildPerson(),
+      linkedinLink: {
+        primaryLinkUrl: 'https://www.linkedin.com/in/ada-lovelace/',
+        primaryLinkLabel: 'LinkedIn',
+        secondaryLinks: null,
+      },
+    } as PersonWorkspaceEntity;
+    const { service, createTask } = setup({
+      currentEnrollment: {
+        ...enrollment,
+        waitingOn: SEQUENCE_WAITING_ON.DELAY,
+      },
+      person,
+      steps: [messageStep],
+      connectionCount: 1,
+    });
+
+    await service.process({ workspaceId, enrollmentId });
+
+    expect(createTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        settings: expect.objectContaining({
+          taskType: SEQUENCE_TASK_TYPES.LINKEDIN_MESSAGE,
+          titleTemplate: 'Send LinkedIn message to {{ fullName }}',
+          notesTemplate:
+            'LinkedIn profile: {{ linkedinUrl }}\n\nMessage:\nHello {{ firstName }}',
+          continueMode: 'ON_DONE',
+        }),
+      }),
+    );
+  });
+
+  it('preserves the configured timing on a manual withdrawal task', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-07-20T09:00:00.000Z'));
+    const withdrawStep = {
+      id: 'manual-withdraw-step-id',
+      sequenceId: sequence.id,
+      position: 0,
+      settings: {
+        type: SEQUENCE_STEP_TYPES.WITHDRAW_CONNECTION_REQUEST,
+        executionMode: SEQUENCE_ACTION_EXECUTION_MODES.MANUAL,
+        withdrawAfterDays: 1,
+        withdrawAfterHours: 12,
+      },
+    } as SequenceStepWorkspaceEntity;
+    const person = {
+      ...buildPerson(),
+      linkedinLink: {
+        primaryLinkUrl: 'https://www.linkedin.com/in/ada-lovelace/',
+        primaryLinkLabel: 'LinkedIn',
+        secondaryLinks: null,
+      },
+    } as PersonWorkspaceEntity;
+    const { service, createTask } = setup({
+      currentEnrollment: {
+        ...enrollment,
+        waitingOn: SEQUENCE_WAITING_ON.DELAY,
+      },
+      person,
+      steps: [withdrawStep],
+    });
+
+    await service.process({ workspaceId, enrollmentId });
+
+    expect(createTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dueAt: new Date('2026-07-21T21:00:00.000Z'),
+        settings: expect.objectContaining({ deadlineDays: 1.5 }),
+      }),
+    );
+
+    jest.useRealTimers();
+  });
+
   it('renders and schedules a direct LinkedIn message', async () => {
     const messageStep = {
       id: 'message-step-id',
@@ -915,7 +1094,12 @@ describe('SequenceExecutorService', () => {
         secondaryLinks: null,
       },
     } as PersonWorkspaceEntity;
-    const { service, linkedinActionRepository, enrollmentRepository } = setup({
+    const {
+      service,
+      linkedinActionRepository,
+      linkedinConnectionRepository,
+      enrollmentRepository,
+    } = setup({
       currentEnrollment: {
         ...enrollment,
         waitingOn: SEQUENCE_WAITING_ON.DELAY,
@@ -928,6 +1112,15 @@ describe('SequenceExecutorService', () => {
     await service.process({ workspaceId, enrollmentId });
 
     expect(linkedinActionRepository.insert).not.toHaveBeenCalled();
+    expect(linkedinConnectionRepository.count).toHaveBeenCalledWith({
+      where: [
+        expect.objectContaining({ personId: person.id }),
+        expect.objectContaining({
+          ownerWorkspaceMemberId: 'owner-workspace-member-id',
+          handle: expect.anything(),
+        }),
+      ],
+    });
     expect(enrollmentRepository.update).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
@@ -1008,17 +1201,10 @@ describe('SequenceExecutorService', () => {
       steps: [connectionStep],
     });
 
-    (linkedinActionRepository.count as jest.Mock).mockImplementation(
-      async ({ where }) => {
-        const status = (where as { status?: { value?: string[] } }).status;
-
-        const statuses = Array.isArray(status)
-          ? status
-          : (status as { value?: string[] } | undefined)?.value;
-
-        return statuses?.includes(LINKEDIN_ACTION_STATUSES.COMPLETED) ? 1 : 0;
-      },
-    );
+    linkedinActionRepository.findOne.mockResolvedValue({
+      type: 'SEND_CONNECTION_REQUEST',
+      status: LINKEDIN_ACTION_STATUSES.COMPLETED,
+    });
 
     await service.process({ workspaceId, enrollmentId });
 
@@ -1029,6 +1215,47 @@ describe('SequenceExecutorService', () => {
         currentStepId: 'connection-step-id',
         waitingOn: SEQUENCE_WAITING_ON.DELAY,
       }),
+    );
+  });
+
+  it('allows a new request after a completed withdrawal supersedes request history', async () => {
+    const connectionStep = {
+      id: 'connection-step-id',
+      sequenceId: sequence.id,
+      position: 0,
+      settings: {
+        type: SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST,
+        noteTemplate: '',
+        skipIfAlreadyConnected: true,
+      },
+    } as SequenceStepWorkspaceEntity;
+    const person = {
+      ...buildPerson(),
+      linkedinLink: {
+        primaryLinkUrl: 'https://www.linkedin.com/in/ada-lovelace/',
+        primaryLinkLabel: 'LinkedIn',
+        secondaryLinks: null,
+      },
+    } as PersonWorkspaceEntity;
+    const { service, linkedinActionRepository } = setup({
+      currentEnrollment: {
+        ...enrollment,
+        waitingOn: SEQUENCE_WAITING_ON.DELAY,
+      },
+      person,
+      steps: [connectionStep],
+      sentInvitationCount: 1,
+      latestLinkedinAction: {
+        type: 'WITHDRAW_CONNECTION_REQUEST',
+        status: LINKEDIN_ACTION_STATUSES.COMPLETED,
+      } as LinkedinActionWorkspaceEntity,
+    });
+
+    await service.process({ workspaceId, enrollmentId });
+
+    expect(linkedinActionRepository.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'SEND_CONNECTION_REQUEST' }),
+      expect.anything(),
     );
   });
 

@@ -3,10 +3,13 @@ import { Injectable } from '@nestjs/common';
 import { msg } from '@lingui/core/macro';
 import {
   SEQUENCE_ACTION_EXECUTION_MODES,
+  SEQUENCE_CONDITION_BRANCHES,
+  SEQUENCE_CONDITION_TYPES,
   SEQUENCE_ENROLLMENT_STATUSES,
   SEQUENCE_STATUSES,
   SEQUENCE_STEP_TYPES,
   SEQUENCE_WAITING_ON,
+  type SequenceConditionType,
   type SequenceEnrollmentStatus,
 } from 'twenty-shared/types';
 import { In } from 'typeorm';
@@ -36,6 +39,27 @@ const TERMINAL_USER_STATUSES: ReadonlySet<SequenceEnrollmentStatus> = new Set([
   SEQUENCE_ENROLLMENT_STATUSES.REPLIED,
   SEQUENCE_ENROLLMENT_STATUSES.REMOVED,
 ]);
+
+const SENDER_DEPENDENT_CONDITIONS: ReadonlySet<SequenceConditionType> = new Set(
+  [
+    SEQUENCE_CONDITION_TYPES.IS_IN_LINKEDIN_NETWORK,
+    SEQUENCE_CONDITION_TYPES.ACCEPTED_LINKEDIN_INVITE,
+    SEQUENCE_CONDITION_TYPES.OPENED_LINKEDIN_MESSAGE,
+  ],
+);
+
+const KNOWN_STEP_TYPES: ReadonlySet<string> = new Set(
+  Object.values(SEQUENCE_STEP_TYPES),
+);
+const KNOWN_CONDITION_TYPES: ReadonlySet<string> = new Set(
+  Object.values(SEQUENCE_CONDITION_TYPES),
+);
+const KNOWN_CONDITION_BRANCHES: ReadonlySet<string> = new Set(
+  Object.values(SEQUENCE_CONDITION_BRANCHES),
+);
+const KNOWN_EXECUTION_MODES: ReadonlySet<string> = new Set(
+  Object.values(SEQUENCE_ACTION_EXECUTION_MODES),
+);
 
 @Injectable()
 export class SequenceInvariantService {
@@ -262,6 +286,13 @@ export class SequenceInvariantService {
       });
       const senderConnectedAccountId =
         data.senderConnectedAccountId ?? sequence.senderConnectedAccountId;
+
+      if (steps.length === 0) {
+        this.throwBadRequest('Add a step before activating the sequence');
+      }
+
+      this.assertSequenceStepsValid(steps);
+
       const hasAutomatedOutboundStep = steps.some(({ settings }) => {
         switch (settings.type) {
           case SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST:
@@ -275,16 +306,19 @@ export class SequenceInvariantService {
             return false;
         }
       });
+      const hasSenderDependentCondition = steps.some(
+        ({ settings }) =>
+          settings.type === SEQUENCE_STEP_TYPES.CONDITION &&
+          SENDER_DEPENDENT_CONDITIONS.has(settings.condition),
+      );
+      const requiresReadySender =
+        hasAutomatedOutboundStep || hasSenderDependentCondition;
 
-      if (hasAutomatedOutboundStep && !senderConnectedAccountId) {
+      if (requiresReadySender && !senderConnectedAccountId) {
         this.throwBadRequest('Choose a sender before activating the sequence');
       }
 
-      if (steps.length === 0) {
-        this.throwBadRequest('Add a step before activating the sequence');
-      }
-
-      if (hasAutomatedOutboundStep && senderConnectedAccountId) {
+      if (requiresReadySender && senderConnectedAccountId) {
         try {
           await this.sequenceSenderService.getReadySenderOrThrow({
             connectedAccountId: senderConnectedAccountId,
@@ -300,6 +334,76 @@ export class SequenceInvariantService {
               : 'The selected sender mailbox is not ready',
           );
         }
+      }
+    }
+  }
+
+  private assertSequenceStepsValid(steps: SequenceStepWorkspaceEntity[]): void {
+    const stepById = new Map(steps.map((step) => [step.id, step]));
+
+    for (const step of steps) {
+      const settings = step.settings;
+
+      if (!KNOWN_STEP_TYPES.has(settings.type)) {
+        this.throwBadRequest(`Sequence step ${step.id} has an unknown type`);
+      }
+
+      if (
+        'executionMode' in settings &&
+        settings.executionMode !== undefined &&
+        !KNOWN_EXECUTION_MODES.has(settings.executionMode)
+      ) {
+        this.throwBadRequest(
+          `Sequence step ${step.id} has an invalid execution mode`,
+        );
+      }
+
+      if (
+        settings.type === SEQUENCE_STEP_TYPES.CONDITION &&
+        !KNOWN_CONDITION_TYPES.has(settings.condition)
+      ) {
+        this.throwBadRequest(
+          `Sequence condition ${step.id} has an unknown condition`,
+        );
+      }
+
+      const branch = settings.branch;
+
+      if (!branch) {
+        continue;
+      }
+
+      const parentCondition = stepById.get(branch.conditionStepId);
+
+      if (
+        !parentCondition ||
+        parentCondition.settings.type !== SEQUENCE_STEP_TYPES.CONDITION
+      ) {
+        this.throwBadRequest(
+          `Sequence step ${step.id} references a missing condition branch`,
+        );
+      }
+
+      if (!KNOWN_CONDITION_BRANCHES.has(branch.outcome)) {
+        this.throwBadRequest(
+          `Sequence step ${step.id} has an invalid condition outcome`,
+        );
+      }
+
+      const visitedStepIds = new Set([step.id]);
+      let currentStep: SequenceStepWorkspaceEntity | undefined = step;
+
+      while (currentStep?.settings.branch) {
+        const ancestor = stepById.get(
+          currentStep.settings.branch.conditionStepId,
+        );
+
+        if (!ancestor || visitedStepIds.has(ancestor.id)) {
+          this.throwBadRequest('Sequence condition branches contain a cycle');
+        }
+
+        visitedStepIds.add(ancestor.id);
+        currentStep = ancestor;
       }
     }
   }

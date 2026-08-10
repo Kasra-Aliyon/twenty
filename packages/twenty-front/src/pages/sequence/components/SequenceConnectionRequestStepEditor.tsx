@@ -159,7 +159,7 @@ export const SequenceConnectionRequestStepEditor = ({
       <StyledHint>
         {skipIfAlreadyConnected
           ? t`This step is skipped if the contact is already connected or if a connection request is still outstanding.`
-          : t`Outstanding requests are always skipped; this flag only controls skipping on existing network connections.`}
+          : t`Outstanding requests are always skipped. Existing connections are still verified before an automated or manual action can run.`}
       </StyledHint>
 
       <StyledActions>
