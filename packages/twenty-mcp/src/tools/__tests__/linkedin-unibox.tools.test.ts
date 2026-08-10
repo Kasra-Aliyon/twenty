@@ -167,6 +167,55 @@ describe('LinkedIn and Unibox MCP authentication', () => {
     expect(result.isError).not.toBe(true);
   });
 
+  it('lists LinkedIn connections newest-first', async () => {
+    const { rest, result } = await callTwentyTool({
+      name: 'twenty_list_linkedin_connections',
+      arguments: {},
+      restResult: {
+        data: { linkedinConnections: [] },
+        totalCount: 0,
+      },
+    });
+
+    expect(rest).toHaveBeenCalledWith(
+      'GET',
+      '/rest/linkedinConnections',
+      expect.objectContaining({
+        query: expect.objectContaining({
+          depth: 0,
+          order_by: 'connectedAt[DescNullsLast]',
+        }),
+        token: 'user',
+      }),
+    );
+    expect(result.isError).not.toBe(true);
+  });
+
+  it('lists sent LinkedIn invitation observations newest-first', async () => {
+    const { rest, result } = await callTwentyTool({
+      name: 'twenty_list_linkedin_invitations',
+      arguments: { direction: 'SENT' },
+      restResult: {
+        data: { linkedinInvitations: [] },
+        totalCount: 0,
+      },
+    });
+
+    expect(rest).toHaveBeenCalledWith(
+      'GET',
+      '/rest/linkedinInvitations',
+      expect.objectContaining({
+        query: expect.objectContaining({
+          depth: 0,
+          filter: 'direction[eq]:\"SENT\"',
+          order_by: 'sentAt[DescNullsLast]',
+        }),
+        token: 'user',
+      }),
+    );
+    expect(result.isError).not.toBe(true);
+  });
+
   it('rejects unsupported LinkedIn REST depth before making a request', async () => {
     const { rest, result } = await callTwentyTool({
       name: 'twenty_get_linkedin_thread',

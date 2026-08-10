@@ -240,16 +240,21 @@ export class LinkedinConnectionMatcherService {
     }
 
     if (matchedPersonIds.size > 0) {
-      const matchedPeople = await repositories.personRepository.find({
-        where: { id: In([...matchedPersonIds]) },
-        select: ['id', 'linkedinConnectedAt'],
-      });
-      const existingConnectedAtByPersonId = new Map(
-        matchedPeople.map(({ id, linkedinConnectedAt }) => [
-          id,
-          linkedinConnectedAt,
-        ]),
+      const supportsLinkedinConnectedAt = isDefined(
+        repositories.personRepository.metadata.findColumnWithPropertyPath(
+          'linkedinConnectedAt',
+        ),
       );
+      const existingConnectedAtByPersonId = supportsLinkedinConnectedAt
+        ? new Map(
+            (
+              await repositories.personRepository.find({
+                where: { id: In([...matchedPersonIds]) },
+                select: ['id', 'linkedinConnectedAt'],
+              })
+            ).map(({ id, linkedinConnectedAt }) => [id, linkedinConnectedAt]),
+          )
+        : new Map<string, Date | null>();
 
       await repositories.personRepository.updateMany(
         [...matchedPersonIds].map((personId) => {
@@ -267,7 +272,7 @@ export class LinkedinConnectionMatcherService {
             criteria: personId,
             partialEntity: {
               linkedinConnectionState: LINKEDIN_CONNECTION_STATES.CONNECTED,
-              ...(isDefined(linkedinConnectedAt)
+              ...(supportsLinkedinConnectedAt && isDefined(linkedinConnectedAt)
                 ? { linkedinConnectedAt }
                 : {}),
             },

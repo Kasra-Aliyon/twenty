@@ -88,6 +88,40 @@ export const registerLinkedinTools = (
                 : filterCondition('personId', 'eq', person_id),
             limit,
             depth,
+            orderBy: 'connectedAt[DescNullsLast]',
+            token: requireUserToken(dependencies.client),
+          }),
+        response_format,
+      ),
+  );
+
+  server.registerTool(
+    'twenty_list_linkedin_invitations',
+    {
+      title: 'List harvested LinkedIn invitations',
+      description:
+        'Lists synced LinkedIn invitation observations newest-first, optionally filtered by direction. Invitation records are historical observations and do not by themselves prove that an invitation is still pending.',
+      inputSchema: z.object({
+        direction: z.enum(['SENT', 'RECEIVED']).optional(),
+        limit: listLimitSchema,
+        depth: linkedinDepthSchema.default(0),
+        response_format: responseFormatSchema,
+      }),
+      outputSchema: TOOL_OUTPUT_SCHEMA,
+      annotations: { readOnlyHint: true, idempotentHint: true },
+    },
+    async ({ direction, limit, depth, response_format }) =>
+      runTool(
+        () =>
+          records.list({
+            object: STANDARD_OBJECTS.linkedinInvitations,
+            filter:
+              direction === undefined
+                ? undefined
+                : filterCondition('direction', 'eq', direction),
+            limit,
+            depth,
+            orderBy: 'sentAt[DescNullsLast]',
             token: requireUserToken(dependencies.client),
           }),
         response_format,

@@ -24,6 +24,9 @@ describe('LinkedinConnectionMatcherService', () => {
     find: jest.fn(),
     updateMany: jest.fn(),
     createQueryBuilder: jest.fn(),
+    metadata: {
+      findColumnWithPropertyPath: jest.fn(),
+    },
   };
   const globalWorkspaceOrmManager = {
     executeInWorkspaceContext: jest.fn(async (callback: () => Promise<void>) =>
@@ -74,6 +77,7 @@ describe('LinkedinConnectionMatcherService', () => {
     connectionRepository.updateMany.mockResolvedValue([]);
     personRepository.find.mockResolvedValue([]);
     personRepository.updateMany.mockResolvedValue({ raw: [] });
+    personRepository.metadata.findColumnWithPropertyPath.mockReturnValue({});
     personNameQueryBuilder.select.mockReturnValue(personNameQueryBuilder);
     personNameQueryBuilder.where.mockReturnValue(personNameQueryBuilder);
     personNameQueryBuilder.getMany.mockResolvedValue([]);
@@ -207,6 +211,36 @@ describe('LinkedinConnectionMatcherService', () => {
         criteria: PERSON_ID,
         partialEntity: {
           linkedinConnectedAt: new Date('2025-03-04T12:30:00.000Z'),
+          linkedinConnectionState: LINKEDIN_CONNECTION_STATES.CONNECTED,
+        },
+      },
+    ]);
+  });
+
+  it('marks the Person connected before the connection date field is available', async () => {
+    personRepository.metadata.findColumnWithPropertyPath.mockReturnValue(
+      undefined,
+    );
+    personRepository.find.mockResolvedValue([
+      buildPerson({
+        linkedinLink: {
+          primaryLinkLabel: '',
+          primaryLinkUrl: 'https://linkedin.com/in/ada-lovelace',
+          secondaryLinks: null,
+        },
+      }),
+    ]);
+
+    await service.matchConnectionsByIds({
+      connectionIds: [CONNECTION_ID],
+      workspaceId: WORKSPACE_ID,
+    });
+
+    expect(personRepository.find).toHaveBeenCalledTimes(1);
+    expect(personRepository.updateMany).toHaveBeenCalledWith([
+      {
+        criteria: PERSON_ID,
+        partialEntity: {
           linkedinConnectionState: LINKEDIN_CONNECTION_STATES.CONNECTED,
         },
       },
