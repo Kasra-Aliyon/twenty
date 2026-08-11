@@ -1,4 +1,5 @@
 import {
+  SEQUENCE_ACTION_EXECUTION_MODES,
   SEQUENCE_ENROLLMENT_STATUSES,
   SEQUENCE_CONDITION_TYPES,
   SEQUENCE_CONDITION_BRANCHES,
@@ -274,6 +275,32 @@ describe('SequenceInvariantService', () => {
           type: SEQUENCE_STEP_TYPES.CONDITION,
           condition: SEQUENCE_CONDITION_TYPES.IS_IN_LINKEDIN_NETWORK,
           expected: true,
+        },
+      },
+    ]);
+
+    await expect(
+      service.assertSequenceUpdateAllowed({
+        authContext,
+        sequenceId: sequence.id,
+        data: { status: SEQUENCE_STATUSES.ACTIVE },
+      }),
+    ).rejects.toThrow('Choose a sender');
+  });
+
+  it('requires a sender for manual LinkedIn actions', async () => {
+    sequenceRepository.find.mockResolvedValue([
+      { ...sequence, senderConnectedAccountId: null },
+    ]);
+    stepRepository.find.mockResolvedValue([
+      {
+        id: 'manual-linkedin-step-id',
+        sequenceId: sequence.id,
+        settings: {
+          type: SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST,
+          executionMode: SEQUENCE_ACTION_EXECUTION_MODES.MANUAL,
+          noteTemplate: '',
+          skipIfAlreadyConnected: true,
         },
       },
     ]);

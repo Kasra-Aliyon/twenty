@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { LinkedInSafetyState } from '../../types';
 import {
   emptyLinkedInSafetyState,
+  getLinkedInIdempotentRecoverySafetyDecision,
   getLinkedInOutboundSafetyDecision,
   getLinkedInReadSafetyDecision,
   isLinkedInRestrictionUrl,
@@ -117,6 +118,35 @@ describe('LinkedIn safety policy', () => {
       reason:
         'This action was already attempted today and will not be replayed automatically.',
     });
+  });
+
+  it('allows only idempotent recovery after the mandatory gap', () => {
+    const state = buildState({
+      outboundAttempts: [
+        {
+          actionId: 'recoverable-action',
+          attemptedAt: NOW - LINKEDIN_OUTBOUND_MINIMUM_GAP_MILLISECONDS + 1,
+        },
+      ],
+    });
+
+    expect(
+      getLinkedInIdempotentRecoverySafetyDecision(
+        state,
+        'recoverable-action',
+        NOW,
+      ),
+    ).toMatchObject({
+      allowed: false,
+      reason: 'Waiting for the LinkedIn safety interval before recovery.',
+    });
+    expect(
+      getLinkedInIdempotentRecoverySafetyDecision(
+        state,
+        'recoverable-action',
+        NOW + LINKEDIN_OUTBOUND_MINIMUM_GAP_MILLISECONDS,
+      ),
+    ).toEqual({ allowed: true });
   });
 
   it('clears expired cooldowns and prior-day attempts', () => {

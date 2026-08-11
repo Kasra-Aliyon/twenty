@@ -56,6 +56,7 @@ import { SequenceTaskCreatorService } from 'src/modules/sequence/services/sequen
 import { SequenceVariableService } from 'src/modules/sequence/services/sequence-variable.service';
 import {
   LINKEDIN_CONNECTION_NOTE_MAX_LENGTH,
+  LINKEDIN_CONNECTION_OBSERVATION_MAX_AGE_MS,
   LINKEDIN_DIRECT_MESSAGE_MAX_LENGTH,
   SEQUENCE_ERROR_MESSAGE_MAX_LENGTH,
   SEQUENCE_EXECUTION_ERROR,
@@ -1746,6 +1747,12 @@ export class SequenceExecutorService {
         LinkedinConnectionWorkspaceEntity,
         { shouldBypassPermissionChecks: true },
       );
+    const linkedinActionRepository =
+      await this.globalWorkspaceOrmManager.getRepository(
+        workspaceId,
+        LinkedinActionWorkspaceEntity,
+        { shouldBypassPermissionChecks: true },
+      );
 
     const handle = normalizeLinkedinHandle(person.linkedinLink?.primaryLinkUrl);
     const where = [
@@ -1763,7 +1770,28 @@ export class SequenceExecutorService {
         : []),
     ];
 
-    return (await connectionRepository.count({ where })) > 0;
+    const [observedConnectedCount, syncedConnectionCount] = await Promise.all([
+      linkedinActionRepository.count({
+        where: {
+          personId: person.id,
+          ownerWorkspaceMemberId,
+          status: In([
+            LINKEDIN_ACTION_STATUSES.COMPLETED,
+            LINKEDIN_ACTION_STATUSES.SKIPPED,
+          ]),
+          connectionState: LINKEDIN_CONNECTION_STATES.CONNECTED,
+          executedAt: MoreThanOrEqual(
+            new Date(Date.now() - LINKEDIN_CONNECTION_OBSERVATION_MAX_AGE_MS),
+          ),
+        },
+      }),
+      connectionRepository.count({ where }),
+    ]);
+
+    // The browser runner can observe a first-degree connection before the
+    // connector has synced its connection row. Keep that sender-scoped,
+    // positive observation available to the very next sequence condition.
+    return observedConnectedCount > 0 || syncedConnectionCount > 0;
   }
 
   private hasLinkedinProfileUrl(person: PersonWorkspaceEntity): boolean {
@@ -1940,7 +1968,11 @@ export class SequenceExecutorService {
         latestTerminalAction.type ===
         LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST
       ) {
-        return true;
+        return (
+          latestTerminalAction.status === LINKEDIN_ACTION_STATUSES.COMPLETED ||
+          latestTerminalAction.connectionState ===
+            LINKEDIN_CONNECTION_STATES.PENDING
+        );
       }
 
       const withdrawalExecutedAt = latestTerminalAction.executedAt;

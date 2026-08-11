@@ -1,4 +1,8 @@
-import type { LinkedInRunnerSessionState } from '../types';
+import type { LinkedInActionType, LinkedInRunnerSessionState } from '../types';
+
+export const canRecoverLinkedInActionAfterInterruption = (
+  type: LinkedInActionType,
+): boolean => type !== 'SEND_MESSAGE';
 
 export const getRunnerStateAfterTabRemoval = ({
   runnerState,

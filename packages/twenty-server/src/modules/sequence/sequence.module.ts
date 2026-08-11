@@ -27,6 +27,7 @@ import { SequenceQueueService } from 'src/modules/sequence/services/sequence-que
 import { SequenceSchedulerService } from 'src/modules/sequence/services/sequence-scheduler.service';
 import { SequenceSenderService } from 'src/modules/sequence/services/sequence-sender.service';
 import { SequenceTaskCreatorService } from 'src/modules/sequence/services/sequence-task-creator.service';
+import { SequenceTaskCompletionService } from 'src/modules/sequence/services/sequence-task-completion.service';
 import { SequenceVariableService } from 'src/modules/sequence/services/sequence-variable.service';
 
 @Module({
@@ -58,6 +59,7 @@ import { SequenceVariableService } from 'src/modules/sequence/services/sequence-
     SequenceSchedulerService,
     SequenceSenderService,
     SequenceTaskCreatorService,
+    SequenceTaskCompletionService,
     SequenceTaskListener,
     SequenceTickCronCommand,
     SequenceTickCronJob,

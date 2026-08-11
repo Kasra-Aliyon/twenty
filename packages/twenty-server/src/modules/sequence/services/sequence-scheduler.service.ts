@@ -27,6 +27,7 @@ import { buildSystemAuthContext } from 'src/engine/twenty-orm/utils/build-system
 import { LinkedinActionWorkspaceEntity } from 'src/modules/linkedin/standard-objects/linkedin-action.workspace-entity';
 import { SequenceMailboxThrottleService } from 'src/modules/sequence/services/sequence-mailbox-throttle.service';
 import { SequenceQueueService } from 'src/modules/sequence/services/sequence-queue.service';
+import { SequenceTaskCompletionService } from 'src/modules/sequence/services/sequence-task-completion.service';
 import {
   LINKEDIN_ACTION_CLAIM_LEASE_MS,
   LINKEDIN_ACTION_MAX_AGE_MS,
@@ -34,10 +35,12 @@ import {
   SEQUENCE_EXECUTION_ERROR,
   SEQUENCE_LINKEDIN_RECONCILE_GRACE_MS,
   SEQUENCE_SEND_SLOT_LOOKAHEAD_MILLISECONDS,
+  SEQUENCE_TASK_RECONCILE_GRACE_MS,
 } from 'src/modules/sequence/sequence.constants';
 import { SequenceEnrollmentWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence-enrollment.workspace-entity';
 import { SequenceStepWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence-step.workspace-entity';
 import { SequenceWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence.workspace-entity';
+import { TaskWorkspaceEntity } from 'src/modules/task/standard-objects/task.workspace-entity';
 import { findNextSequenceStep } from 'src/modules/sequence/utils/find-next-sequence-step.util';
 import { parseSequenceSettings } from 'src/modules/sequence/utils/parse-sequence-settings.util';
 import {
@@ -57,6 +60,7 @@ export class SequenceSchedulerService {
     private readonly globalWorkspaceOrmManager: GlobalWorkspaceOrmManager,
     private readonly sequenceQueueService: SequenceQueueService,
     private readonly sequenceMailboxThrottleService: SequenceMailboxThrottleService,
+    private readonly sequenceTaskCompletionService: SequenceTaskCompletionService,
   ) {}
 
   async tick(workspaceId: string, now = new Date()): Promise<void> {
@@ -87,6 +91,11 @@ export class SequenceSchedulerService {
         workspaceId,
         enrollmentRepository,
         linkedinActionRepository,
+        now,
+      });
+      await this.reconcileTaskWaitingEnrollments({
+        workspaceId,
+        enrollmentRepository,
         now,
       });
       const stepRepository = await this.globalWorkspaceOrmManager.getRepository(
@@ -419,6 +428,115 @@ export class SequenceSchedulerService {
           errorMessage,
         },
       );
+    }
+  }
+
+  private async reconcileTaskWaitingEnrollments({
+    workspaceId,
+    enrollmentRepository,
+    now,
+  }: {
+    workspaceId: string;
+    enrollmentRepository: WorkspaceRepository<SequenceEnrollmentWorkspaceEntity>;
+    now: Date;
+  }): Promise<void> {
+    const waitingEnrollments = await enrollmentRepository.find({
+      where: {
+        status: SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
+        waitingOn: In([
+          SEQUENCE_WAITING_ON.TASK_DONE,
+          SEQUENCE_WAITING_ON.TASK_DEADLINE,
+        ]),
+        updatedAt: LessThan(
+          new Date(
+            now.getTime() - SEQUENCE_TASK_RECONCILE_GRACE_MS,
+          ).toISOString(),
+        ),
+      },
+      order: { updatedAt: 'ASC' },
+      take: SEQUENCE_SCHEDULER_BATCH_SIZE,
+    });
+
+    if (waitingEnrollments.length === 0) {
+      return;
+    }
+
+    const taskRepository = await this.globalWorkspaceOrmManager.getRepository(
+      workspaceId,
+      TaskWorkspaceEntity,
+      { shouldBypassPermissionChecks: true },
+    );
+    const tasks = await taskRepository.find({
+      where: {
+        sequenceEnrollmentId: In(
+          waitingEnrollments.map((enrollment) => enrollment.id),
+        ),
+      },
+      select: ['sequenceEnrollmentId', 'sequenceStepId', 'status'],
+    });
+
+    for (const enrollment of waitingEnrollments) {
+      if (!isDefined(enrollment.currentStepId)) {
+        await enrollmentRepository.update(
+          {
+            id: enrollment.id,
+            status: SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
+            waitingOn: In([
+              SEQUENCE_WAITING_ON.TASK_DONE,
+              SEQUENCE_WAITING_ON.TASK_DEADLINE,
+            ]),
+          },
+          {
+            status: SEQUENCE_ENROLLMENT_STATUSES.FAILED,
+            waitingOn: null,
+            nextActionAt: null,
+            endedAt: now,
+            errorMessage: SEQUENCE_EXECUTION_ERROR.SEQUENCE_TASK_STEP_MISSING,
+          },
+        );
+
+        continue;
+      }
+
+      const currentStepTasks = tasks.filter(
+        (task) =>
+          task.sequenceEnrollmentId === enrollment.id &&
+          task.sequenceStepId === enrollment.currentStepId,
+      );
+      const completedTask = currentStepTasks.find(
+        (task) => task.status === 'DONE',
+      );
+
+      if (isDefined(completedTask)) {
+        await this.sequenceTaskCompletionService.completeTaskStep({
+          workspaceId,
+          enrollmentId: enrollment.id,
+          stepId: enrollment.currentStepId,
+        });
+
+        continue;
+      }
+
+      if (currentStepTasks.length === 0) {
+        await enrollmentRepository.update(
+          {
+            id: enrollment.id,
+            status: SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
+            currentStepId: enrollment.currentStepId,
+            waitingOn: In([
+              SEQUENCE_WAITING_ON.TASK_DONE,
+              SEQUENCE_WAITING_ON.TASK_DEADLINE,
+            ]),
+          },
+          {
+            status: SEQUENCE_ENROLLMENT_STATUSES.FAILED,
+            waitingOn: null,
+            nextActionAt: null,
+            endedAt: now,
+            errorMessage: SEQUENCE_EXECUTION_ERROR.SEQUENCE_TASK_MISSING,
+          },
+        );
+      }
     }
   }
 

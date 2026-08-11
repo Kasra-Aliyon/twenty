@@ -4,6 +4,7 @@ import type {
   LinkedInSafetyState,
 } from '../types';
 import {
+  getLinkedInIdempotentRecoverySafetyDecision,
   getLinkedInOutboundSafetyDecision,
   getLinkedInReadSafetyDecision,
   LINKEDIN_OUTBOUND_MINIMUM_GAP_MILLISECONDS,
@@ -128,6 +129,30 @@ export const assertLinkedInOutboundAllowed = async (
       getLinkedInOutboundSafetyDecision(await getStoredState(), actionId, now),
     );
   });
+
+export const assertLinkedInIdempotentRecoveryAllowed = async (
+  actionId: string,
+  now = Date.now(),
+): Promise<void> =>
+  withLinkedInSafetyStore(async () => {
+    throwIfBlocked(
+      getLinkedInIdempotentRecoverySafetyDecision(
+        await getStoredState(),
+        actionId,
+        now,
+      ),
+    );
+  });
+
+export const wasLinkedInOutboundActionAttempted = async (
+  actionId: string,
+  now = Date.now(),
+): Promise<boolean> =>
+  withLinkedInSafetyStore(async () =>
+    pruneLinkedInSafetyState(await getStoredState(), now).outboundAttempts.some(
+      (attempt) => attempt.actionId === actionId,
+    ),
+  );
 
 export const getLinkedInSafetySettings =
   async (): Promise<LinkedInSafetySettings> =>

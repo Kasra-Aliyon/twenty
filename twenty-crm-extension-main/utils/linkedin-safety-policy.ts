@@ -142,6 +142,49 @@ export const getLinkedInOutboundSafetyDecision = (
   return { allowed: true };
 };
 
+export const getLinkedInIdempotentRecoverySafetyDecision = (
+  rawState: LinkedInSafetyState,
+  actionId: string,
+  now: number,
+): LinkedInSafetyDecision => {
+  const state = pruneLinkedInSafetyState(rawState, now);
+
+  if (state.cooldownUntil !== null) {
+    return {
+      allowed: false,
+      retryAt: state.cooldownUntil,
+      reason:
+        state.cooldownReason ??
+        'LinkedIn safety cooldown is active after a restriction response.',
+    };
+  }
+
+  const actionAttempt = state.outboundAttempts.find(
+    (attempt) => attempt.actionId === actionId,
+  );
+
+  if (!actionAttempt) {
+    return getLinkedInOutboundSafetyDecision(state, actionId, now);
+  }
+
+  const lastAttemptAt = state.outboundAttempts.reduce(
+    (latest, attempt) => Math.max(latest, attempt.attemptedAt),
+    actionAttempt.attemptedAt,
+  );
+  const nextAttemptAt =
+    lastAttemptAt + LINKEDIN_OUTBOUND_MINIMUM_GAP_MILLISECONDS;
+
+  if (nextAttemptAt > now) {
+    return {
+      allowed: false,
+      retryAt: nextAttemptAt,
+      reason: 'Waiting for the LinkedIn safety interval before recovery.',
+    };
+  }
+
+  return { allowed: true };
+};
+
 export const isLinkedInRestrictionUrl = (url: string): boolean => {
   try {
     const path = new URL(url).pathname.toLowerCase();

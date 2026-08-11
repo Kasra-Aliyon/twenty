@@ -346,26 +346,26 @@ export class SequenceInvariantService {
 
       this.assertSequenceStepsValid(steps);
 
-      const hasAutomatedOutboundStep = steps.some(({ settings }) => {
-        switch (settings.type) {
-          case SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST:
-          case SEQUENCE_STEP_TYPES.SEND_EMAIL:
-          case SEQUENCE_STEP_TYPES.SEND_LINKEDIN_MESSAGE:
-          case SEQUENCE_STEP_TYPES.WITHDRAW_CONNECTION_REQUEST:
-            return (
-              settings.executionMode !== SEQUENCE_ACTION_EXECUTION_MODES.MANUAL
-            );
-          default:
-            return false;
-        }
-      });
+      const hasAutomatedEmailStep = steps.some(
+        ({ settings }) =>
+          settings.type === SEQUENCE_STEP_TYPES.SEND_EMAIL &&
+          settings.executionMode !== SEQUENCE_ACTION_EXECUTION_MODES.MANUAL,
+      );
+      const hasLinkedinActionStep = steps.some(
+        ({ settings }) =>
+          settings.type === SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST ||
+          settings.type === SEQUENCE_STEP_TYPES.SEND_LINKEDIN_MESSAGE ||
+          settings.type === SEQUENCE_STEP_TYPES.WITHDRAW_CONNECTION_REQUEST,
+      );
       const hasSenderDependentCondition = steps.some(
         ({ settings }) =>
           settings.type === SEQUENCE_STEP_TYPES.CONDITION &&
           SENDER_DEPENDENT_CONDITIONS.has(settings.condition),
       );
       const requiresReadySender =
-        hasAutomatedOutboundStep || hasSenderDependentCondition;
+        hasAutomatedEmailStep ||
+        hasLinkedinActionStep ||
+        hasSenderDependentCondition;
 
       if (requiresReadySender && !senderConnectedAccountId) {
         this.throwBadRequest('Choose a sender before activating the sequence');

@@ -24,7 +24,10 @@ import {
   setLinkedInSafetySettings,
 } from '../utils/linkedin-safety';
 import { getStoredLinkedInIdentity } from '../utils/linkedin-sync-state';
-import { getRunnerStateAfterTabRemoval } from '../utils/linkedin-runner-state';
+import {
+  canRecoverLinkedInActionAfterInterruption,
+  getRunnerStateAfterTabRemoval,
+} from '../utils/linkedin-runner-state';
 import type {
   ExtensionMessage,
   ExtensionResponse,
@@ -297,7 +300,11 @@ const handleLinkedinRunnerTabRemoved = async (tabId: number): Promise<void> => {
     runnerState.activeActionStartedAt !== null;
   let didReportInterruptedAction = false;
 
-  if (didStartAction && runnerState.activeAction) {
+  if (
+    didStartAction &&
+    runnerState.activeAction &&
+    !canRecoverLinkedInActionAfterInterruption(runnerState.activeAction.type)
+  ) {
     try {
       const client = await getApiClient();
       const claimedAt = runnerState.activeAction.claimedAt;
@@ -1022,6 +1029,17 @@ async function handleMessage(
             errorMessage,
           },
         );
+
+        if (!action) {
+          await setLinkedinRunnerState({
+            ...runnerState,
+            activeAction: null,
+            activeActionStartedAt: null,
+            lastExecutedAt: Date.now(),
+          });
+
+          return { success: true, data: null };
+        }
 
         await setLinkedinRunnerState({
           ...runnerState,

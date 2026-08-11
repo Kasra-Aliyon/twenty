@@ -17,17 +17,20 @@ import {
   type LinkedInAutomationResult,
 } from '../utils/linkedin-automation';
 import {
+  assertLinkedInIdempotentRecoveryAllowed,
   assertLinkedInOutboundAllowed,
   getLinkedInSafetySnapshot,
   LinkedInSafetyLimitError,
   recordLinkedInOutboundAttempt,
   tripLinkedInSafetyCircuit,
+  wasLinkedInOutboundActionAttempted,
 } from '../utils/linkedin-safety';
 import {
   LINKEDIN_OUTBOUND_MINIMUM_GAP_MILLISECONDS,
   LINKEDIN_READ_REQUESTS_PER_DAY,
   LINKEDIN_READ_REQUESTS_PER_HOUR,
 } from '../utils/linkedin-safety-policy';
+import { canRecoverLinkedInActionAfterInterruption } from '../utils/linkedin-runner-state';
 import { syncLinkedInConnectionsAndInvitations } from '../utils/linkedin-sync-connections';
 import { syncLinkedInMessages } from '../utils/linkedin-sync-messages';
 import {
@@ -700,7 +703,12 @@ export default defineContentScript({
         return;
       }
 
-      if (runnerState.activeActionStartedAt) {
+      const isRecoveringAction =
+        canRecoverLinkedInActionAfterInterruption(action.type) &&
+        (runnerState.activeActionStartedAt !== null ||
+          (await wasLinkedInOutboundActionAttempted(action.id)));
+
+      if (runnerState.activeActionStartedAt !== null && !isRecoveringAction) {
         const reportResponse = await sendMessage('REPORT_LINKEDIN_ACTION', {
           id: action.id,
           claimedAt: action.claimedAt,
@@ -747,7 +755,9 @@ export default defineContentScript({
       }
 
       try {
-        await assertLinkedInOutboundAllowed(action.id);
+        await (isRecoveringAction
+          ? assertLinkedInIdempotentRecoveryAllowed(action.id)
+          : assertLinkedInOutboundAllowed(action.id));
       } catch (error) {
         if (!(error instanceof LinkedInSafetyLimitError)) {
           throw error;
@@ -760,24 +770,31 @@ export default defineContentScript({
         return;
       }
 
-      const markResponse = await sendMessage<LinkedInRunnerSessionState>(
-        'MARK_LINKEDIN_ACTION_EXECUTING',
-        { id: action.id },
-      );
-
-      if (!markResponse.success) {
-        throw new Error(
-          markResponse.error || 'Could not mark the action as executing',
+      if (isRecoveringAction) {
+        statusMessage =
+          'The previous run was interrupted. Verifying LinkedIn’s current state before continuing…';
+        statusIsError = false;
+        render();
+      } else {
+        const markResponse = await sendMessage<LinkedInRunnerSessionState>(
+          'MARK_LINKEDIN_ACTION_EXECUTING',
+          { id: action.id },
         );
-      }
 
-      runnerState = markResponse.data ?? runnerState;
-      await recordLinkedInOutboundAttempt(action.id);
-      await refreshSafetySnapshot();
-      statusMessage = `Running ${action.type.replaceAll('_', ' ').toLowerCase()}…`;
-      statusIsError = false;
-      render();
-      await wait(1_200);
+        if (!markResponse.success) {
+          throw new Error(
+            markResponse.error || 'Could not mark the action as executing',
+          );
+        }
+
+        runnerState = markResponse.data ?? runnerState;
+        await recordLinkedInOutboundAttempt(action.id);
+        await refreshSafetySnapshot();
+        statusMessage = `Running ${action.type.replaceAll('_', ' ').toLowerCase()}…`;
+        statusIsError = false;
+        render();
+        await wait(1_200);
+      }
 
       let result: LinkedInAutomationResult;
 
@@ -907,7 +924,13 @@ export default defineContentScript({
         }
 
         try {
-          await assertLinkedInOutboundAllowed(dueAction.id);
+          const isRecoveringAction =
+            canRecoverLinkedInActionAfterInterruption(dueAction.type) &&
+            (await wasLinkedInOutboundActionAttempted(dueAction.id));
+
+          await (isRecoveringAction
+            ? assertLinkedInIdempotentRecoveryAllowed(dueAction.id)
+            : assertLinkedInOutboundAllowed(dueAction.id));
         } catch (error) {
           if (!(error instanceof LinkedInSafetyLimitError)) {
             throw error;

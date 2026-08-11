@@ -4,7 +4,10 @@ import type {
   LinkedInRunnerSessionState,
   TwentyLinkedInAction,
 } from '../../types';
-import { getRunnerStateAfterTabRemoval } from '../linkedin-runner-state';
+import {
+  canRecoverLinkedInActionAfterInterruption,
+  getRunnerStateAfterTabRemoval,
+} from '../linkedin-runner-state';
 
 const action = { id: 'action-id' } as TwentyLinkedInAction;
 
@@ -22,6 +25,18 @@ const buildState = (
 });
 
 describe('LinkedIn runner tab cleanup', () => {
+  it('recovers idempotent invitation mutations but not direct messages', () => {
+    expect(
+      canRecoverLinkedInActionAfterInterruption('SEND_CONNECTION_REQUEST'),
+    ).toBe(true);
+    expect(
+      canRecoverLinkedInActionAfterInterruption('WITHDRAW_CONNECTION_REQUEST'),
+    ).toBe(true);
+    expect(canRecoverLinkedInActionAfterInterruption('SEND_MESSAGE')).toBe(
+      false,
+    );
+  });
+
   it('clears an interrupted action after its unknown outcome is reported', () => {
     expect(
       getRunnerStateAfterTabRemoval({

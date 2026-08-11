@@ -119,4 +119,23 @@ describe('SequenceSenderService', () => {
       select: ['id'],
     });
   });
+
+  it('resolves manual-action provenance without requiring current inbox sync', async () => {
+    messageChannelRepository.findOne.mockResolvedValue(null);
+
+    await expect(
+      service.getSenderOwnerWorkspaceMemberIdOrThrow({
+        connectedAccountId: CONNECTED_ACCOUNT_ID,
+        workspaceId: WORKSPACE_ID,
+      }),
+    ).resolves.toBe(WORKSPACE_MEMBER_ID);
+
+    expect(connectedAccountRepository.findOne).toHaveBeenCalledWith({
+      where: {
+        id: CONNECTED_ACCOUNT_ID,
+        workspaceId: WORKSPACE_ID,
+      },
+    });
+    expect(messageChannelRepository.findOne).not.toHaveBeenCalled();
+  });
 });

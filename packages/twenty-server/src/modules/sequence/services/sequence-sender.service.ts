@@ -87,6 +87,37 @@ export class SequenceSenderService {
     return { connectedAccount, messageChannel };
   }
 
+  async getSenderOwnerWorkspaceMemberIdOrThrow({
+    connectedAccountId,
+    expectedUserWorkspaceId,
+    workspaceId,
+  }: {
+    connectedAccountId: string;
+    expectedUserWorkspaceId?: string;
+    workspaceId: string;
+  }): Promise<string> {
+    const connectedAccount = await this.connectedAccountRepository.findOne({
+      where: {
+        id: connectedAccountId,
+        workspaceId,
+        ...(isDefined(expectedUserWorkspaceId)
+          ? { userWorkspaceId: expectedUserWorkspaceId }
+          : {}),
+      },
+    });
+
+    if (!isDefined(connectedAccount)) {
+      throw new Error(
+        'The sequence sender account is no longer available in this workspace',
+      );
+    }
+
+    return this.getOwnerWorkspaceMemberIdOrThrow({
+      connectedAccount,
+      workspaceId,
+    });
+  }
+
   async getOwnerWorkspaceMemberIdOrThrow({
     connectedAccount,
     workspaceId,

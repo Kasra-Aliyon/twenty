@@ -13,6 +13,7 @@ import { LinkedinActionWorkspaceEntity } from 'src/modules/linkedin/standard-obj
 import { type SequenceMailboxThrottleService } from 'src/modules/sequence/services/sequence-mailbox-throttle.service';
 import { type SequenceQueueService } from 'src/modules/sequence/services/sequence-queue.service';
 import { SequenceSchedulerService } from 'src/modules/sequence/services/sequence-scheduler.service';
+import { type SequenceTaskCompletionService } from 'src/modules/sequence/services/sequence-task-completion.service';
 import {
   DEFAULT_SEQUENCE_SETTINGS,
   SEQUENCE_SCHEDULER_BATCH_SIZE,
@@ -20,6 +21,7 @@ import {
 import { SequenceEnrollmentWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence-enrollment.workspace-entity';
 import { SequenceStepWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence-step.workspace-entity';
 import { SequenceWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence.workspace-entity';
+import { TaskWorkspaceEntity } from 'src/modules/task/standard-objects/task.workspace-entity';
 
 describe('SequenceSchedulerService', () => {
   const workspaceId = 'workspace-id';
@@ -80,6 +82,8 @@ describe('SequenceSchedulerService', () => {
     linkedinWaitingEnrollments = [],
     linkedinActions = [],
     expiredClaimedActions = [],
+    taskWaitingEnrollments = [],
+    sequenceTasks = [],
     dailyStartLimitEnabled = true,
   }: {
     startedToday: number;
@@ -89,6 +93,12 @@ describe('SequenceSchedulerService', () => {
     linkedinWaitingEnrollments?: SequenceEnrollmentWorkspaceEntity[];
     linkedinActions?: LinkedinActionWorkspaceEntity[];
     expiredClaimedActions?: LinkedinActionWorkspaceEntity[];
+    taskWaitingEnrollments?: SequenceEnrollmentWorkspaceEntity[];
+    sequenceTasks?: Array<{
+      sequenceEnrollmentId: string | null;
+      sequenceStepId: string | null;
+      status: string;
+    }>;
     dailyStartLimitEnabled?: boolean;
   }) => {
     const activeSequence = {
@@ -117,6 +127,10 @@ describe('SequenceSchedulerService', () => {
           return linkedinWaitingEnrollments;
         }
 
+        if (options.where.updatedAt) {
+          return taskWaitingEnrollments;
+        }
+
         return dueEnrollments;
       }),
       update: jest.fn().mockResolvedValue({ affected: 1 }),
@@ -138,11 +152,15 @@ describe('SequenceSchedulerService', () => {
       }),
       update: jest.fn().mockResolvedValue({ affected: 1 }),
     };
+    const taskRepository = {
+      find: jest.fn().mockResolvedValue(sequenceTasks),
+    };
     const repositories = new Map<object, object>([
       [SequenceWorkspaceEntity, sequenceRepository],
       [SequenceEnrollmentWorkspaceEntity, enrollmentRepository],
       [SequenceStepWorkspaceEntity, stepRepository],
       [LinkedinActionWorkspaceEntity, linkedinActionRepository],
+      [TaskWorkspaceEntity, taskRepository],
     ]);
     const globalWorkspaceOrmManager = {
       executeInWorkspaceContext: jest.fn(
@@ -169,10 +187,15 @@ describe('SequenceSchedulerService', () => {
         .fn()
         .mockResolvedValue(new Date('2024-01-01T09:55:00.000Z')),
     } as unknown as SequenceMailboxThrottleService;
+    const completeTaskStep = jest.fn();
+    const sequenceTaskCompletionService = {
+      completeTaskStep,
+    } as unknown as SequenceTaskCompletionService;
     const service = new SequenceSchedulerService(
       globalWorkspaceOrmManager,
       sequenceQueueService,
       sequenceMailboxThrottleService,
+      sequenceTaskCompletionService,
     );
 
     return {
@@ -183,6 +206,7 @@ describe('SequenceSchedulerService', () => {
       enqueueProcess,
       acquireSendLock,
       releaseSendLock,
+      completeTaskStep,
     };
   };
 
@@ -424,6 +448,61 @@ describe('SequenceSchedulerService', () => {
     expect(enrollmentRepository.update).not.toHaveBeenCalledWith(
       expect.objectContaining({ id: 'waiting-id' }),
       expect.anything(),
+    );
+  });
+
+  it('repairs a missed task completion event', async () => {
+    const waitingEnrollment = {
+      ...buildEnrollment('task-waiting-id'),
+      waitingOn: SEQUENCE_WAITING_ON.TASK_DONE,
+      currentStepId: 'task-step-id',
+      nextActionAt: null,
+    } as SequenceEnrollmentWorkspaceEntity;
+    const { service, completeTaskStep } = setup({
+      startedToday: 2,
+      taskWaitingEnrollments: [waitingEnrollment],
+      sequenceTasks: [
+        {
+          sequenceEnrollmentId: waitingEnrollment.id,
+          sequenceStepId: waitingEnrollment.currentStepId,
+          status: 'DONE',
+        },
+      ],
+    });
+
+    await service.tick(workspaceId, now);
+
+    expect(completeTaskStep).toHaveBeenCalledWith({
+      workspaceId,
+      enrollmentId: waitingEnrollment.id,
+      stepId: waitingEnrollment.currentStepId,
+    });
+  });
+
+  it('fails a task-waiting enrollment when its current task disappeared', async () => {
+    const waitingEnrollment = {
+      ...buildEnrollment('task-waiting-id'),
+      waitingOn: SEQUENCE_WAITING_ON.TASK_DONE,
+      currentStepId: 'task-step-id',
+      nextActionAt: null,
+    } as SequenceEnrollmentWorkspaceEntity;
+    const { service, enrollmentRepository } = setup({
+      startedToday: 2,
+      taskWaitingEnrollments: [waitingEnrollment],
+      sequenceTasks: [],
+    });
+
+    await service.tick(workspaceId, now);
+
+    expect(enrollmentRepository.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: waitingEnrollment.id,
+        currentStepId: waitingEnrollment.currentStepId,
+      }),
+      expect.objectContaining({
+        status: SEQUENCE_ENROLLMENT_STATUSES.FAILED,
+        errorMessage: 'SEQUENCE_TASK_MISSING',
+      }),
     );
   });
 

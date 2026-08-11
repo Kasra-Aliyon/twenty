@@ -78,7 +78,7 @@ describe('LinkedIn action reporting', () => {
     );
   });
 
-  it('rejects a stale result after the server releases the claim', async () => {
+  it('returns null for a stale result after the server releases the claim', async () => {
     const client = {
       graphqlRequest: vi.fn().mockResolvedValue({
         data: { updateLinkedinActions: [] },
@@ -96,6 +96,6 @@ describe('LinkedIn action reporting', () => {
           connectionState: 'PENDING',
         },
       ),
-    ).rejects.toThrow('no longer claimed by this runner');
+    ).resolves.toBeNull();
   });
 });

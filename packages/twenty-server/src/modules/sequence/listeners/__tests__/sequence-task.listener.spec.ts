@@ -1,33 +1,18 @@
 import { type ObjectRecordUpdateEvent } from 'twenty-shared/database-events';
-import {
-  SEQUENCE_ENROLLMENT_STATUSES,
-  SEQUENCE_WAITING_ON,
-} from 'twenty-shared/types';
 
-import { type GlobalWorkspaceOrmManager } from 'src/engine/twenty-orm/global-workspace-datasource/global-workspace-orm.manager';
 import { type FlatObjectMetadata } from 'src/engine/metadata-modules/flat-object-metadata/types/flat-object-metadata.type';
 import { type WorkspaceEventBatch } from 'src/engine/workspace-event-emitter/types/workspace-event-batch.type';
 import { SequenceTaskListener } from 'src/modules/sequence/listeners/sequence-task.listener';
-import { type SequenceQueueService } from 'src/modules/sequence/services/sequence-queue.service';
+import { type SequenceTaskCompletionService } from 'src/modules/sequence/services/sequence-task-completion.service';
 import { type TaskWorkspaceEntity } from 'src/modules/task/standard-objects/task.workspace-entity';
 
 describe('SequenceTaskListener', () => {
-  it('advances and enqueues an enrollment when its current task becomes done', async () => {
-    const update = jest.fn().mockResolvedValue({ affected: 1 });
-    const globalWorkspaceOrmManager = {
-      executeInWorkspaceContext: jest.fn(
-        async (callback: () => Promise<void>) => callback(),
-      ),
-      getRepository: jest.fn().mockResolvedValue({ update }),
-    } as unknown as GlobalWorkspaceOrmManager;
-    const enqueueProcess = jest.fn();
-    const sequenceQueueService = {
-      enqueueProcess,
-    } as unknown as SequenceQueueService;
-    const listener = new SequenceTaskListener(
-      globalWorkspaceOrmManager,
-      sequenceQueueService,
-    );
+  it('completes the matching sequence step when its task becomes done', async () => {
+    const completeTaskStep = jest.fn();
+    const sequenceTaskCompletionService = {
+      completeTaskStep,
+    } as unknown as SequenceTaskCompletionService;
+    const listener = new SequenceTaskListener(sequenceTaskCompletionService);
     const before = {
       id: 'task-id',
       status: 'TODO',
@@ -51,33 +36,19 @@ describe('SequenceTaskListener', () => {
 
     await listener.handleUpdatedEvent(payload);
 
-    expect(update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        id: 'enrollment-id',
-        status: SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
-        currentStepId: 'step-id',
-      }),
-      expect.objectContaining({
-        waitingOn: SEQUENCE_WAITING_ON.DELAY,
-      }),
-    );
-    expect(enqueueProcess).toHaveBeenCalledWith({
+    expect(completeTaskStep).toHaveBeenCalledWith({
       workspaceId: 'workspace-id',
       enrollmentId: 'enrollment-id',
+      stepId: 'step-id',
     });
   });
 
   it('ignores task updates that do not become done', async () => {
-    const globalWorkspaceOrmManager = {
-      executeInWorkspaceContext: jest.fn(),
-    } as unknown as GlobalWorkspaceOrmManager;
-    const sequenceQueueService = {
-      enqueueProcess: jest.fn(),
-    } as unknown as SequenceQueueService;
-    const listener = new SequenceTaskListener(
-      globalWorkspaceOrmManager,
-      sequenceQueueService,
-    );
+    const completeTaskStep = jest.fn();
+    const sequenceTaskCompletionService = {
+      completeTaskStep,
+    } as unknown as SequenceTaskCompletionService;
+    const listener = new SequenceTaskListener(sequenceTaskCompletionService);
 
     await listener.handleUpdatedEvent({
       name: 'task',
@@ -94,8 +65,6 @@ describe('SequenceTaskListener', () => {
       ],
     });
 
-    expect(
-      globalWorkspaceOrmManager.executeInWorkspaceContext,
-    ).not.toHaveBeenCalled();
+    expect(completeTaskStep).not.toHaveBeenCalled();
   });
 });

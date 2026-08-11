@@ -218,7 +218,7 @@ export const reportAction = async (
     connectionState: LinkedInConnectionState;
     errorMessage?: string | null;
   },
-): Promise<TwentyLinkedInAction> => {
+): Promise<TwentyLinkedInAction | null> => {
   const result = await client.graphqlRequest<{
     updateLinkedinActions: TwentyLinkedInAction[];
   }>(REPORT_ACTION, {
@@ -237,9 +237,5 @@ export const reportAction = async (
   });
   const action = result.data?.updateLinkedinActions[0];
 
-  if (!action) {
-    throw new Error('The LinkedIn action is no longer claimed by this runner');
-  }
-
-  return action;
+  return action ?? null;
 };

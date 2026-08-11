@@ -1,5 +1,6 @@
 import {
   LINKEDIN_ACTION_STATUSES,
+  LINKEDIN_ACTION_TYPES,
   LINKEDIN_CONNECTION_STATES,
   SEQUENCE_ACTION_EXECUTION_MODES,
   SEQUENCE_CONDITION_BRANCHES,
@@ -110,6 +111,7 @@ describe('SequenceExecutorService', () => {
     sentInvitationCount = 0,
     sentInvitationAfterLatestActionCount = 0,
     linkedinActionCount = 0,
+    observedConnectedActionCount = 0,
     latestLinkedinAction = null,
   }: {
     currentEnrollment?: SequenceEnrollmentWorkspaceEntity;
@@ -120,6 +122,7 @@ describe('SequenceExecutorService', () => {
     sentInvitationCount?: number;
     sentInvitationAfterLatestActionCount?: number;
     linkedinActionCount?: number;
+    observedConnectedActionCount?: number;
     latestLinkedinAction?: LinkedinActionWorkspaceEntity | null;
   } = {}) => {
     const enrollmentRepository = {
@@ -137,7 +140,13 @@ describe('SequenceExecutorService', () => {
     };
     const linkedinActionRepository = {
       insert: jest.fn(),
-      count: jest.fn().mockResolvedValue(linkedinActionCount),
+      count: jest
+        .fn()
+        .mockImplementation(async ({ where }) =>
+          where?.connectionState === LINKEDIN_CONNECTION_STATES.CONNECTED
+            ? observedConnectedActionCount
+            : linkedinActionCount,
+        ),
       findOne: jest.fn().mockResolvedValue(latestLinkedinAction),
     };
     const linkedinConnectionRepository = {
@@ -1172,7 +1181,7 @@ describe('SequenceExecutorService', () => {
     );
   });
 
-  it('creates a complete manual LinkedIn message task only for a connection', async () => {
+  it('uses a runner-observed connection before connector sync for a manual message', async () => {
     const messageStep = {
       id: 'manual-message-step-id',
       sequenceId: sequence.id,
@@ -1198,7 +1207,7 @@ describe('SequenceExecutorService', () => {
       },
       person,
       steps: [messageStep],
-      connectionCount: 1,
+      observedConnectedActionCount: 1,
     });
 
     await service.process({ workspaceId, enrollmentId });
@@ -1568,9 +1577,17 @@ describe('SequenceExecutorService', () => {
       steps: [connectionStep],
     });
 
-    linkedinActionRepository.count
-      .mockResolvedValueOnce(0)
-      .mockResolvedValueOnce(1);
+    let invitationMutationCount = 0;
+
+    linkedinActionRepository.count.mockImplementation(async ({ where }) => {
+      if (where?.connectionState === LINKEDIN_CONNECTION_STATES.CONNECTED) {
+        return 0;
+      }
+
+      invitationMutationCount += 1;
+
+      return invitationMutationCount === 1 ? 0 : 1;
+    });
 
     await service.process({ workspaceId, enrollmentId });
 
@@ -1714,6 +1731,45 @@ describe('SequenceExecutorService', () => {
         waitingOn: SEQUENCE_WAITING_ON.DELAY,
       }),
     );
+  });
+
+  it('does not treat an already-connected skipped request as pending', async () => {
+    const withdrawStep = {
+      id: 'withdraw-step-id',
+      sequenceId: sequence.id,
+      position: 0,
+      settings: {
+        type: SEQUENCE_STEP_TYPES.WITHDRAW_CONNECTION_REQUEST,
+        withdrawAfterDays: 0,
+        withdrawAfterHours: 0,
+      },
+    } as SequenceStepWorkspaceEntity;
+    const person = {
+      ...buildPerson(),
+      linkedinLink: {
+        primaryLinkUrl: 'https://www.linkedin.com/in/ada-lovelace/',
+        primaryLinkLabel: 'LinkedIn',
+        secondaryLinks: null,
+      },
+    } as PersonWorkspaceEntity;
+    const { service, linkedinActionRepository } = setup({
+      currentEnrollment: {
+        ...enrollment,
+        waitingOn: SEQUENCE_WAITING_ON.DELAY,
+      },
+      person,
+      steps: [withdrawStep],
+      latestLinkedinAction: {
+        type: LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST,
+        status: LINKEDIN_ACTION_STATUSES.SKIPPED,
+        connectionState: LINKEDIN_CONNECTION_STATES.CONNECTED,
+        executedAt: new Date('2026-07-20T09:00:00.000Z'),
+      } as LinkedinActionWorkspaceEntity,
+    });
+
+    await service.process({ workspaceId, enrollmentId });
+
+    expect(linkedinActionRepository.insert).not.toHaveBeenCalled();
   });
 
   it('floors a withdrawal slot at the configured custom delay', async () => {
