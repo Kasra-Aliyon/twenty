@@ -8,7 +8,9 @@ import {
   SEQUENCE_ENROLLMENT_STATUSES,
   SEQUENCE_STATUSES,
   SEQUENCE_STEP_TYPES,
+  SEQUENCE_TASK_TYPES,
   SEQUENCE_WAITING_ON,
+  TASK_PRIORITIES,
   type SequenceConditionType,
   type SequenceEnrollmentStatus,
 } from 'twenty-shared/types';
@@ -21,6 +23,10 @@ import {
 import { isUserAuthContext } from 'src/engine/core-modules/auth/guards/is-user-auth-context.guard';
 import { type WorkspaceAuthContext } from 'src/engine/core-modules/auth/types/workspace-auth-context.type';
 import { GlobalWorkspaceOrmManager } from 'src/engine/twenty-orm/global-workspace-datasource/global-workspace-orm.manager';
+import {
+  LINKEDIN_CONNECTION_NOTE_MAX_LENGTH,
+  LINKEDIN_DIRECT_MESSAGE_MAX_LENGTH,
+} from 'src/modules/sequence/sequence.constants';
 import { SequenceSenderService } from 'src/modules/sequence/services/sequence-sender.service';
 import { type SequenceEnrollmentWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence-enrollment.workspace-entity';
 import { SequenceStepWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence-step.workspace-entity';
@@ -60,6 +66,20 @@ const KNOWN_CONDITION_BRANCHES: ReadonlySet<string> = new Set(
 const KNOWN_EXECUTION_MODES: ReadonlySet<string> = new Set(
   Object.values(SEQUENCE_ACTION_EXECUTION_MODES),
 );
+const KNOWN_TASK_TYPES: ReadonlySet<string> = new Set(
+  Object.values(SEQUENCE_TASK_TYPES),
+);
+const KNOWN_TASK_PRIORITIES: ReadonlySet<string> = new Set(
+  Object.values(TASK_PRIORITIES),
+);
+const KNOWN_TASK_CONTINUE_MODES: ReadonlySet<string> = new Set([
+  'IMMEDIATE',
+  'ON_DONE',
+  'ON_DEADLINE',
+]);
+
+const isNonNegativeFiniteNumber = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value) && value >= 0;
 
 @Injectable()
 export class SequenceInvariantService {
@@ -240,6 +260,39 @@ export class SequenceInvariantService {
     await this.assertStepUpdateAllowed({ authContext, stepId });
   }
 
+  async assertStepDeletionAllowed({
+    authContext,
+    stepId,
+  }: {
+    authContext: WorkspaceAuthContext;
+    stepId: string;
+  }): Promise<void> {
+    const [step] = await this.getSteps({ authContext, stepIds: [stepId] });
+
+    if (!step) {
+      this.throwBadRequest('The sequence step was not found');
+    }
+
+    await this.assertSequencesEditable({
+      authContext,
+      sequenceIds: [step.sequenceId],
+    });
+
+    const sequenceSteps = await this.getSequenceSteps({
+      authContext,
+      sequenceId: step.sequenceId,
+    });
+    const hasBranchChildren = sequenceSteps.some(
+      ({ settings }) => settings.branch?.conditionStepId === stepId,
+    );
+
+    if (hasBranchChildren) {
+      this.throwBadRequest(
+        'Delete the condition branch steps before deleting their condition',
+      );
+    }
+  }
+
   async assertSequenceUpdateAllowed({
     authContext,
     sequenceId,
@@ -365,6 +418,93 @@ export class SequenceInvariantService {
         this.throwBadRequest(
           `Sequence condition ${step.id} has an unknown condition`,
         );
+      }
+
+      switch (settings.type) {
+        case SEQUENCE_STEP_TYPES.DELAY:
+          if (
+            !isNonNegativeFiniteNumber(settings.days) ||
+            !isNonNegativeFiniteNumber(settings.hours) ||
+            !isNonNegativeFiniteNumber(settings.minutes)
+          ) {
+            this.throwBadRequest(
+              `Sequence delay ${step.id} has an invalid duration`,
+            );
+          }
+          break;
+        case SEQUENCE_STEP_TYPES.CREATE_TASK:
+          if (
+            typeof settings.titleTemplate !== 'string' ||
+            settings.titleTemplate.trim().length === 0 ||
+            !KNOWN_TASK_TYPES.has(settings.taskType) ||
+            !KNOWN_TASK_PRIORITIES.has(settings.priority) ||
+            !KNOWN_TASK_CONTINUE_MODES.has(settings.continueMode) ||
+            (settings.deadlineDays !== null &&
+              !isNonNegativeFiniteNumber(settings.deadlineDays)) ||
+            (settings.continueMode === 'ON_DEADLINE' &&
+              settings.deadlineDays === null)
+          ) {
+            this.throwBadRequest(
+              `Sequence task ${step.id} is not fully configured`,
+            );
+          }
+          break;
+        case SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST:
+          if (
+            typeof settings.noteTemplate !== 'string' ||
+            settings.noteTemplate.length >
+              LINKEDIN_CONNECTION_NOTE_MAX_LENGTH ||
+            (settings.skipIfAlreadyConnected !== undefined &&
+              typeof settings.skipIfAlreadyConnected !== 'boolean')
+          ) {
+            this.throwBadRequest(
+              `LinkedIn connection step ${step.id} is not fully configured`,
+            );
+          }
+          break;
+        case SEQUENCE_STEP_TYPES.SEND_EMAIL:
+          if (
+            typeof settings.subject !== 'string' ||
+            settings.subject.trim().length === 0 ||
+            typeof settings.bodyHtml !== 'string' ||
+            settings.bodyHtml.trim().length === 0
+          ) {
+            this.throwBadRequest(
+              `Sequence email step ${step.id} is not fully configured`,
+            );
+          }
+          break;
+        case SEQUENCE_STEP_TYPES.SEND_LINKEDIN_MESSAGE:
+          if (
+            typeof settings.messageTemplate !== 'string' ||
+            settings.messageTemplate.trim().length === 0 ||
+            settings.messageTemplate.length > LINKEDIN_DIRECT_MESSAGE_MAX_LENGTH
+          ) {
+            this.throwBadRequest(
+              `LinkedIn message step ${step.id} must contain between 1 and ${LINKEDIN_DIRECT_MESSAGE_MAX_LENGTH} characters`,
+            );
+          }
+          break;
+        case SEQUENCE_STEP_TYPES.WITHDRAW_CONNECTION_REQUEST:
+          if (
+            !isNonNegativeFiniteNumber(settings.withdrawAfterDays) ||
+            !isNonNegativeFiniteNumber(settings.withdrawAfterHours)
+          ) {
+            this.throwBadRequest(
+              `LinkedIn withdrawal step ${step.id} has an invalid delay`,
+            );
+          }
+          break;
+        case SEQUENCE_STEP_TYPES.CONDITION:
+          if (
+            settings.expected !== undefined &&
+            typeof settings.expected !== 'boolean'
+          ) {
+            this.throwBadRequest(
+              `Sequence condition ${step.id} has an invalid expectation`,
+            );
+          }
+          break;
       }
 
       const branch = settings.branch;

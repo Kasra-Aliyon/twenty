@@ -208,7 +208,7 @@ export class SequenceDeleteOnePreQueryHook implements WorkspacePreQueryHookInsta
     }
 
     if (objectName === 'sequenceStep') {
-      await this.invariantService.assertStepMutationAllowed({
+      await this.invariantService.assertStepDeletionAllowed({
         authContext,
         stepId: payload.id,
       });
@@ -247,7 +247,7 @@ export class SequenceDestroyOnePreQueryHook implements WorkspacePreQueryHookInst
     }
 
     if (objectName === 'sequenceStep') {
-      await this.invariantService.assertStepMutationAllowed({
+      await this.invariantService.assertStepDeletionAllowed({
         authContext,
         stepId: payload.id,
       });

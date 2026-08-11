@@ -26,7 +26,15 @@ import {
   type SequenceWithdrawConnectionRequestStepSettings,
 } from 'twenty-shared/types';
 import { isDefined } from 'twenty-shared/utils';
-import { ILike, In, IsNull, LessThanOrEqual } from 'typeorm';
+import {
+  ILike,
+  In,
+  IsNull,
+  LessThanOrEqual,
+  MoreThan,
+  MoreThanOrEqual,
+  Not,
+} from 'typeorm';
 
 import { type WorkspaceEntityManager } from 'src/engine/twenty-orm/entity-manager/workspace-entity-manager';
 import { GlobalWorkspaceOrmManager } from 'src/engine/twenty-orm/global-workspace-datasource/global-workspace-orm.manager';
@@ -199,6 +207,7 @@ export class SequenceExecutorService {
         try {
           conditionOutcome = (await this.evaluateCondition({
             workspaceId,
+            enrollment,
             person,
             senderConnectedAccountId:
               enrollment.senderConnectedAccountId ??
@@ -374,15 +383,13 @@ export class SequenceExecutorService {
           return;
         case SEQUENCE_STEP_TYPES.SEND_EMAIL:
           if (this.isManualExecution(nextStep.settings)) {
-            await this.processManualActionStep({
+            await this.processManualEmailStep({
               workspaceId,
               enrollmentRepository,
               enrollment,
               person,
               step: nextStep,
               settings: nextStep.settings,
-              taskType: SEQUENCE_TASK_TYPES.EMAIL,
-              defaultTitle: 'Send email to {{ fullName }}',
             });
 
             return;
@@ -611,6 +618,58 @@ export class SequenceExecutorService {
     });
   }
 
+  private async processManualEmailStep({
+    workspaceId,
+    enrollmentRepository,
+    enrollment,
+    person,
+    step,
+    settings,
+  }: {
+    workspaceId: string;
+    enrollmentRepository: WorkspaceRepository<SequenceEnrollmentWorkspaceEntity>;
+    enrollment: SequenceEnrollmentWorkspaceEntity;
+    person: PersonWorkspaceEntity;
+    step: SequenceStepWorkspaceEntity;
+    settings: SequenceEmailStepSettings;
+  }): Promise<void> {
+    if (person.emailOptOut) {
+      await this.failEnrollment({
+        enrollmentRepository,
+        enrollment,
+        errorMessage: SEQUENCE_EXECUTION_ERROR.EMAIL_OPT_OUT,
+        stepId: step.id,
+        stepPosition: step.position,
+      });
+
+      return;
+    }
+
+    if (!isNonEmptyString(person.emails?.primaryEmail)) {
+      await this.failEnrollment({
+        enrollmentRepository,
+        enrollment,
+        errorMessage: SEQUENCE_EXECUTION_ERROR.MISSING_EMAIL,
+        stepId: step.id,
+        stepPosition: step.position,
+      });
+
+      return;
+    }
+
+    await this.processManualActionStep({
+      workspaceId,
+      enrollmentRepository,
+      enrollment,
+      person,
+      step,
+      settings,
+      taskType: SEQUENCE_TASK_TYPES.EMAIL,
+      defaultTitle: 'Send email to {{ fullName }}',
+      defaultNotes: `Recipient: {{ email }}\n\nSubject: ${settings.subject}\n\nDraft:\n${settings.bodyHtml}`,
+    });
+  }
+
   private async processManualConnectionRequestStep({
     workspaceId,
     enrollmentRepository,
@@ -808,15 +867,28 @@ export class SequenceExecutorService {
     }
 
     try {
-      const isConnected = await this.isPersonConnectedToSender({
-        workspaceId,
-        person,
-        senderConnectedAccountId:
-          enrollment.senderConnectedAccountId ??
-          sequenceSenderConnectedAccountId,
-      });
+      const senderConnectedAccountId =
+        enrollment.senderConnectedAccountId ?? sequenceSenderConnectedAccountId;
+      const ownerWorkspaceMemberId = await this.getSenderOwnerWorkspaceMemberId(
+        {
+          workspaceId,
+          senderConnectedAccountId,
+        },
+      );
+      const [isConnected, hasOutstandingRequest] = await Promise.all([
+        this.isPersonConnectedToSender({
+          workspaceId,
+          person,
+          senderConnectedAccountId,
+        }),
+        this.hasOutstandingConnectionRequest({
+          workspaceId,
+          person,
+          ownerWorkspaceMemberId,
+        }),
+      ]);
 
-      if (isConnected) {
+      if (isConnected || !hasOutstandingRequest) {
         await this.advanceEnrollmentStep({
           enrollmentRepository,
           enrollment,
@@ -872,17 +944,20 @@ export class SequenceExecutorService {
 
   private async evaluateCondition({
     workspaceId,
+    enrollment,
     person,
     senderConnectedAccountId,
     settings,
   }: {
     workspaceId: string;
+    enrollment: SequenceEnrollmentWorkspaceEntity;
     person: PersonWorkspaceEntity;
     senderConnectedAccountId: string | null;
     settings: SequenceConditionStepSettings;
   }): Promise<boolean> {
     const outcome = await this.evaluateRawCondition({
       workspaceId,
+      enrollment,
       person,
       senderConnectedAccountId,
       settings,
@@ -895,11 +970,13 @@ export class SequenceExecutorService {
 
   private async evaluateRawCondition({
     workspaceId,
+    enrollment,
     person,
     senderConnectedAccountId,
     settings,
   }: {
     workspaceId: string;
+    enrollment: SequenceEnrollmentWorkspaceEntity;
     person: PersonWorkspaceEntity;
     senderConnectedAccountId: string | null;
     settings: SequenceConditionStepSettings;
@@ -948,6 +1025,35 @@ export class SequenceExecutorService {
             workspaceId,
             senderConnectedAccountId,
           });
+        const linkedinActionRepository =
+          await this.globalWorkspaceOrmManager.getRepository(
+            workspaceId,
+            LinkedinActionWorkspaceEntity,
+            { shouldBypassPermissionChecks: true },
+          );
+        const latestCompletedOutboundAction =
+          await linkedinActionRepository.findOne({
+            where: {
+              personId: person.id,
+              ownerWorkspaceMemberId,
+              sequenceEnrollmentId: enrollment.id,
+              type: In([
+                LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST,
+                LINKEDIN_ACTION_TYPES.SEND_MESSAGE,
+              ]),
+              status: LINKEDIN_ACTION_STATUSES.COMPLETED,
+              executedAt: Not(IsNull()),
+            },
+            order: { executedAt: 'DESC' },
+          });
+        const outboundExecutedAt = latestCompletedOutboundAction?.executedAt;
+
+        // A reply from an older conversation must not select the Yes branch
+        // for a new enrollment that has not sent anything yet.
+        if (!isDefined(outboundExecutedAt)) {
+          return false;
+        }
+
         const participantRepository =
           await this.globalWorkspaceOrmManager.getRepository(
             workspaceId,
@@ -970,6 +1076,7 @@ export class SequenceExecutorService {
                   ownerWorkspaceMemberId,
                   senderLinkedinUrn: linkedinUrn,
                   threadId,
+                  deliveredAt: MoreThanOrEqual(outboundExecutedAt),
                 },
               ]
             : [],
@@ -1011,11 +1118,25 @@ export class SequenceExecutorService {
     step: SequenceStepWorkspaceEntity;
   }): Promise<void> {
     if (!isNonEmptyString(person.phones?.primaryPhoneNumber)) {
-      const result = await this.apolloEnrichmentService.enrichPerson({
-        workspaceId,
-        personId: person.id,
-        mode: 'phone',
-      });
+      let result: Awaited<ReturnType<ApolloEnrichmentService['enrichPerson']>>;
+
+      try {
+        result = await this.apolloEnrichmentService.enrichPerson({
+          workspaceId,
+          personId: person.id,
+          mode: 'phone',
+        });
+      } catch (error) {
+        await this.failEnrollment({
+          enrollmentRepository,
+          enrollment,
+          errorMessage: this.toErrorMessage(error),
+          stepId: step.id,
+          stepPosition: step.position,
+        });
+
+        return;
+      }
 
       if (result === 'disabled') {
         await this.failEnrollment({
@@ -1149,25 +1270,23 @@ export class SequenceExecutorService {
         return;
       }
 
-      const shouldSkipIfAlreadyConnected =
-        settings.skipIfAlreadyConnected !== false;
+      const isConnected = await this.isPersonConnectedToSender({
+        workspaceId,
+        person,
+        senderConnectedAccountId,
+      });
 
-      if (shouldSkipIfAlreadyConnected) {
-        const isConnected = await this.isPersonConnectedToSender({
-          workspaceId,
-          person,
-          senderConnectedAccountId,
+      // LinkedIn cannot send another invitation to an existing connection.
+      // Always skip here rather than consuming a queue slot that the browser
+      // runner can only mark as skipped later.
+      if (isConnected) {
+        await this.advanceEnrollmentStep({
+          enrollmentRepository,
+          enrollment,
+          step,
         });
 
-        if (isConnected) {
-          await this.advanceEnrollmentStep({
-            enrollmentRepository,
-            enrollment,
-            step,
-          });
-
-          return;
-        }
+        return;
       }
     } catch (error) {
       await this.failEnrollment({
@@ -1246,15 +1365,28 @@ export class SequenceExecutorService {
     }
 
     try {
-      const isConnected = await this.isPersonConnectedToSender({
-        workspaceId,
-        person,
-        senderConnectedAccountId:
-          enrollment.senderConnectedAccountId ??
-          sequenceSenderConnectedAccountId,
-      });
+      const senderConnectedAccountId =
+        enrollment.senderConnectedAccountId ?? sequenceSenderConnectedAccountId;
+      const ownerWorkspaceMemberId = await this.getSenderOwnerWorkspaceMemberId(
+        {
+          workspaceId,
+          senderConnectedAccountId,
+        },
+      );
+      const [isConnected, hasOutstandingRequest] = await Promise.all([
+        this.isPersonConnectedToSender({
+          workspaceId,
+          person,
+          senderConnectedAccountId,
+        }),
+        this.hasOutstandingConnectionRequest({
+          workspaceId,
+          person,
+          ownerWorkspaceMemberId,
+        }),
+      ]);
 
-      if (isConnected) {
+      if (isConnected || !hasOutstandingRequest) {
         await this.advanceEnrollmentStep({
           enrollmentRepository,
           enrollment,
@@ -1468,10 +1600,71 @@ export class SequenceExecutorService {
           LinkedinActionWorkspaceEntity,
           { shouldBypassPermissionChecks: true },
         );
+      const personRepository =
+        await this.globalWorkspaceOrmManager.getRepository(
+          workspaceId,
+          PersonWorkspaceEntity,
+          { shouldBypassPermissionChecks: true },
+        );
 
       await workspaceDataSource.transaction(async (transactionManager) => {
         const workspaceTransactionManager =
           transactionManager as WorkspaceEntityManager;
+        const shouldDeduplicate =
+          type === LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST ||
+          type === LINKEDIN_ACTION_TYPES.WITHDRAW_CONNECTION_REQUEST;
+
+        if (shouldDeduplicate) {
+          // Serialize person-level invitation mutations. The earlier read-side
+          // check is useful for fast skips, but only this lock closes the race
+          // between different enrollments reaching the same person together.
+          await personRepository.findOne(
+            {
+              where: { id: person.id },
+              select: ['id'],
+              lock: { mode: 'pessimistic_write' },
+            },
+            workspaceTransactionManager,
+          );
+
+          const duplicateActionCount = await linkedinActionRepository.count(
+            {
+              where: {
+                personId: person.id,
+                ownerWorkspaceMemberId,
+                type,
+                status: In([
+                  LINKEDIN_ACTION_STATUSES.SCHEDULED,
+                  LINKEDIN_ACTION_STATUSES.CLAIMED,
+                ]),
+              },
+            },
+            workspaceTransactionManager,
+          );
+
+          if (duplicateActionCount > 0) {
+            await enrollmentRepository.update(
+              {
+                id: enrollment.id,
+                status: SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
+                currentStepPosition: enrollment.currentStepPosition,
+                currentStepId: isDefined(enrollment.currentStepId)
+                  ? enrollment.currentStepId
+                  : IsNull(),
+              },
+              {
+                currentStepId: step.id,
+                currentStepPosition: step.position,
+                waitingOn: SEQUENCE_WAITING_ON.DELAY,
+                nextActionAt: new Date(),
+              },
+              workspaceTransactionManager,
+            );
+
+            return;
+          }
+        }
+
         const claimResult = await enrollmentRepository.update(
           {
             id: enrollment.id,
@@ -1614,17 +1807,62 @@ export class SequenceExecutorService {
         LinkedinActionWorkspaceEntity,
         { shouldBypassPermissionChecks: true },
       );
-    const completedRequestCount = await linkedinActionRepository.count({
-      where: {
-        personId: person.id,
-        ownerWorkspaceMemberId,
-        type: LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST,
-        status: LINKEDIN_ACTION_STATUSES.COMPLETED,
-      },
-    });
+    const latestCompletedInvitationAction =
+      await linkedinActionRepository.findOne({
+        where: {
+          personId: person.id,
+          ownerWorkspaceMemberId,
+          type: In([
+            LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST,
+            LINKEDIN_ACTION_TYPES.WITHDRAW_CONNECTION_REQUEST,
+          ]),
+          status: LINKEDIN_ACTION_STATUSES.COMPLETED,
+          executedAt: Not(IsNull()),
+        },
+        order: { executedAt: 'DESC' },
+      });
 
-    if (completedRequestCount > 0) {
-      return true;
+    if (isDefined(latestCompletedInvitationAction)) {
+      if (
+        latestCompletedInvitationAction.type ===
+        LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST
+      ) {
+        return true;
+      }
+
+      const withdrawalExecutedAt = latestCompletedInvitationAction.executedAt;
+
+      if (!isDefined(withdrawalExecutedAt)) {
+        return false;
+      }
+
+      const handle = normalizeLinkedinHandle(
+        person.linkedinLink?.primaryLinkUrl,
+      );
+
+      if (!isNonEmptyString(handle)) {
+        return false;
+      }
+
+      const invitationRepository =
+        await this.globalWorkspaceOrmManager.getRepository(
+          workspaceId,
+          LinkedinInvitationWorkspaceEntity,
+          { shouldBypassPermissionChecks: true },
+        );
+
+      // Connector rows are retained as history. Only a newly observed sent
+      // invitation after the withdrawal proves that an invitation exists now.
+      return (
+        (await invitationRepository.count({
+          where: {
+            ownerWorkspaceMemberId,
+            handle,
+            direction: 'SENT',
+            sentAt: MoreThan(withdrawalExecutedAt),
+          },
+        })) > 0
+      );
     }
 
     const handle = normalizeLinkedinHandle(person.linkedinLink?.primaryLinkUrl);
@@ -1692,17 +1930,51 @@ export class SequenceExecutorService {
           LINKEDIN_ACTION_STATUSES.COMPLETED,
           LINKEDIN_ACTION_STATUSES.SKIPPED,
         ]),
+        executedAt: Not(IsNull()),
       },
-      order: { createdAt: 'DESC' },
+      order: { executedAt: 'DESC' },
     });
 
     if (isDefined(latestTerminalAction)) {
-      // A completed withdrawal supersedes the historical sent-invitation row.
-      // Without this ordering, a person could never be invited again after a
-      // withdrawal because connector sync intentionally retains history.
-      return (
+      if (
         latestTerminalAction.type ===
         LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST
+      ) {
+        return true;
+      }
+
+      const withdrawalExecutedAt = latestTerminalAction.executedAt;
+
+      if (!isDefined(withdrawalExecutedAt)) {
+        return false;
+      }
+
+      const handle = normalizeLinkedinHandle(
+        person.linkedinLink?.primaryLinkUrl,
+      );
+
+      if (!isNonEmptyString(handle)) {
+        return false;
+      }
+
+      const invitationRepository =
+        await this.globalWorkspaceOrmManager.getRepository(
+          workspaceId,
+          LinkedinInvitationWorkspaceEntity,
+          { shouldBypassPermissionChecks: true },
+        );
+
+      // A later manual invitation can legitimately follow a withdrawal. Keep
+      // it outstanding while ignoring the connector's older retained row.
+      return (
+        (await invitationRepository.count({
+          where: {
+            ownerWorkspaceMemberId,
+            handle,
+            direction: 'SENT',
+            sentAt: MoreThan(withdrawalExecutedAt),
+          },
+        })) > 0
       );
     }
 

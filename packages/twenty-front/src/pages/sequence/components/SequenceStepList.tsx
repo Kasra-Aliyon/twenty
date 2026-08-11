@@ -281,13 +281,11 @@ export const SequenceStepList = ({
     setOpenPaletteBranch(null);
   };
 
-  const handleStepDeleted = async (stepId: string) => {
-    if (selectedStepId === stepId) {
-      setSelectedStepId(null);
-    }
-
-    const descendantStepIds = new Set<string>();
+  const deleteStepTree = async (stepId: string) => {
+    const descendantDepthByStepId = new Map<string, number>();
+    const visitedStepIds = new Set([stepId]);
     let parentStepIds = new Set([stepId]);
+    let depth = 1;
 
     while (parentStepIds.size > 0) {
       const childStepIds = sortedSteps
@@ -295,22 +293,35 @@ export const SequenceStepList = ({
           parentStepIds.has(settings.branch?.conditionStepId ?? ''),
         )
         .map(({ id }) => id)
-        .filter((id) => !descendantStepIds.has(id));
+        .filter((id) => !visitedStepIds.has(id));
 
-      childStepIds.forEach((id) => descendantStepIds.add(id));
+      childStepIds.forEach((id) => {
+        visitedStepIds.add(id);
+        descendantDepthByStepId.set(id, depth);
+      });
       parentStepIds = new Set(childStepIds);
+      depth += 1;
     }
 
     try {
-      await Promise.all(
-        [...descendantStepIds].map((descendantStepId) =>
-          deleteOneRecord(descendantStepId),
-        ),
-      );
-    } catch {
-      enqueueErrorSnackBar({
-        message: t`Some condition branch steps could not be deleted.`,
-      });
+      const descendantStepIds = [...descendantDepthByStepId.entries()]
+        .sort((first, second) => second[1] - first[1])
+        .map(([descendantStepId]) => descendantStepId);
+
+      // Delete leaves before their condition. A partial failure therefore
+      // keeps the remaining graph valid and the parent available for retry.
+      for (const descendantStepId of descendantStepIds) {
+        await deleteOneRecord(descendantStepId);
+      }
+
+      await deleteOneRecord(stepId);
+
+      if (
+        selectedStepId === stepId ||
+        descendantDepthByStepId.has(selectedStepId ?? '')
+      ) {
+        setSelectedStepId(null);
+      }
     } finally {
       await refetch();
     }
@@ -393,7 +404,7 @@ export const SequenceStepList = ({
                 onSelect={() => selectStep(step.id)}
                 onMoveUp={() => swapSteps(step, rootSteps[index - 1])}
                 onMoveDown={() => swapSteps(step, rootSteps[index + 1])}
-                onDeleted={() => handleStepDeleted(step.id)}
+                onDelete={() => deleteStepTree(step.id)}
               />
               {step.settings.type === SEQUENCE_STEP_TYPES.CONDITION && (
                 <SequenceConditionBranches
@@ -413,7 +424,7 @@ export const SequenceStepList = ({
                   onClosePalette={() => setOpenPaletteBranch(null)}
                   onAddStep={addBranchStep}
                   onSwapSteps={swapSteps}
-                  onDeleted={handleStepDeleted}
+                  onDeleted={deleteStepTree}
                 />
               )}
             </StyledStepGroup>

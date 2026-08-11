@@ -77,8 +77,18 @@ export const SequenceEmailStepEditor = ({
   const [isSaving, setIsSaving] = useState(false);
   const { updateOneRecord } = useUpdateOneRecord();
   const { enqueueSuccessSnackBar, enqueueErrorSnackBar } = useSnackBar();
+  const isEmailDraftEmpty =
+    subject.trim().length === 0 || bodyHtml.trim().length === 0;
 
   const save = async () => {
+    if (isEmailDraftEmpty) {
+      enqueueErrorSnackBar({
+        message: t`Add both an email subject and body before saving.`,
+      });
+
+      return;
+    }
+
     setIsSaving(true);
 
     try {
@@ -196,6 +206,7 @@ export const SequenceEmailStepEditor = ({
           isLoading={isSaving}
           disabled={
             disabled ||
+            isEmailDraftEmpty ||
             (executionMode === SEQUENCE_ACTION_EXECUTION_MODES.MANUAL &&
               manualTaskTitle.trim().length === 0)
           }

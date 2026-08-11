@@ -45,6 +45,7 @@ export const SequenceConditionStepEditor = ({
   disabled,
 }: SequenceConditionStepEditorProps) => {
   const [condition, setCondition] = useState(settings.condition);
+  const [expected, setExpected] = useState(settings.expected ?? true);
   const [isSaving, setIsSaving] = useState(false);
   const { updateOneRecord } = useUpdateOneRecord();
   const { enqueueSuccessSnackBar, enqueueErrorSnackBar } = useSnackBar();
@@ -60,6 +61,7 @@ export const SequenceConditionStepEditor = ({
           settings: {
             type: 'CONDITION',
             condition,
+            expected,
             branch: settings.branch,
           },
         },
@@ -85,8 +87,21 @@ export const SequenceConditionStepEditor = ({
           options={CONDITION_OPTIONS}
           onChange={setCondition}
         />
+        <Select<boolean>
+          dropdownId={`sequence-condition-expectation-${step.id}`}
+          label={t`Yes path when`}
+          fullWidth
+          value={expected}
+          options={[
+            { value: true, label: t`Condition matches` },
+            { value: false, label: t`Condition does not match` },
+          ]}
+          onChange={setExpected}
+        />
         <StyledBranchHint>
-          {t`Contacts matching this condition continue through Yes. Everyone else continues through No. Both paths merge back into the main sequence.`}
+          {expected
+            ? t`Contacts matching this condition continue through Yes. Everyone else continues through No. Both paths merge back into the main sequence.`
+            : t`Contacts not matching this condition continue through Yes. Everyone else continues through No. Both paths merge back into the main sequence.`}
         </StyledBranchHint>
       </StyledFieldsGrid>
       <StyledActions>

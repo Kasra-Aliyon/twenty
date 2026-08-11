@@ -1,4 +1,3 @@
-import { useDeleteOneRecord } from '@/object-record/hooks/useDeleteOneRecord';
 import { useSnackBar } from '@/ui/feedback/snack-bar-manager/hooks/useSnackBar';
 import { styled } from '@linaria/react';
 import { t } from '@lingui/core/macro';
@@ -163,7 +162,7 @@ type SequenceStepCardProps = {
   onSelect: () => void;
   onMoveUp: () => Promise<void>;
   onMoveDown: () => Promise<void>;
-  onDeleted: () => Promise<void>;
+  onDelete: () => Promise<void>;
 };
 
 export const SequenceStepCard = ({
@@ -176,12 +175,9 @@ export const SequenceStepCard = ({
   onSelect,
   onMoveUp,
   onMoveDown,
-  onDeleted,
+  onDelete,
 }: SequenceStepCardProps) => {
   const [isDeleting, setIsDeleting] = useState(false);
-  const { deleteOneRecord } = useDeleteOneRecord({
-    objectNameSingular: 'sequenceStep',
-  });
   const { enqueueErrorSnackBar } = useSnackBar();
   const presentation = getSequenceStepPresentation(step);
   const StepIcon = presentation.Icon;
@@ -190,8 +186,7 @@ export const SequenceStepCard = ({
     setIsDeleting(true);
 
     try {
-      await deleteOneRecord(step.id);
-      await onDeleted();
+      await onDelete();
     } catch {
       enqueueErrorSnackBar({
         message: t`The sequence step could not be deleted.`,

@@ -207,7 +207,7 @@ export const SequenceConditionBranches = ({
               onSelect={() => onSelectStep(step.id)}
               onMoveUp={() => onSwapSteps(step, branchSteps[index - 1])}
               onMoveDown={() => onSwapSteps(step, branchSteps[index + 1])}
-              onDeleted={() => onDeleted(step.id)}
+              onDelete={() => onDeleted(step.id)}
             />
           </StyledBranchStep>
         ))}

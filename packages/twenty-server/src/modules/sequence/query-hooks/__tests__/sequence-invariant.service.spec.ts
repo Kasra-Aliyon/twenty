@@ -198,6 +198,42 @@ describe('SequenceInvariantService', () => {
     ).rejects.toThrow('Pause the sequence');
   });
 
+  it('requires branch children to be deleted before their condition', async () => {
+    const conditionStep = {
+      id: 'condition-step-id',
+      sequenceId: sequence.id,
+      settings: {
+        type: SEQUENCE_STEP_TYPES.CONDITION,
+        condition: SEQUENCE_CONDITION_TYPES.HAS_EMAIL_ADDRESS,
+      },
+    } as SequenceStepWorkspaceEntity;
+    const branchStep = {
+      id: 'branch-step-id',
+      sequenceId: sequence.id,
+      settings: {
+        type: SEQUENCE_STEP_TYPES.DELAY,
+        branch: {
+          conditionStepId: conditionStep.id,
+          outcome: SEQUENCE_CONDITION_BRANCHES.YES,
+        },
+        days: 1,
+        hours: 0,
+        minutes: 0,
+      },
+    } as SequenceStepWorkspaceEntity;
+
+    stepRepository.find
+      .mockResolvedValueOnce([conditionStep])
+      .mockResolvedValueOnce([conditionStep, branchStep]);
+
+    await expect(
+      service.assertStepDeletionAllowed({
+        authContext,
+        stepId: conditionStep.id,
+      }),
+    ).rejects.toThrow('Delete the condition branch steps');
+  });
+
   it('requires a ready, syncing sender before activation', async () => {
     await service.assertSequenceUpdateAllowed({
       authContext,
@@ -276,6 +312,53 @@ describe('SequenceInvariantService', () => {
         data: { status: SEQUENCE_STATUSES.ACTIVE },
       }),
     ).rejects.toThrow('missing condition branch');
+  });
+
+  it('blocks activation when a LinkedIn message is not configured', async () => {
+    stepRepository.find.mockResolvedValue([
+      {
+        id: 'message-step-id',
+        sequenceId: sequence.id,
+        settings: {
+          type: SEQUENCE_STEP_TYPES.SEND_LINKEDIN_MESSAGE,
+          messageTemplate: '   ',
+        },
+      },
+    ]);
+
+    await expect(
+      service.assertSequenceUpdateAllowed({
+        authContext,
+        sequenceId: sequence.id,
+        data: { status: SEQUENCE_STATUSES.ACTIVE },
+      }),
+    ).rejects.toThrow('must contain between 1 and 2000 characters');
+    expect(sequenceSenderService.getReadySenderOrThrow).not.toHaveBeenCalled();
+  });
+
+  it('blocks activation when an email draft is empty', async () => {
+    stepRepository.find.mockResolvedValue([
+      {
+        id: 'email-step-id',
+        sequenceId: sequence.id,
+        settings: {
+          type: SEQUENCE_STEP_TYPES.SEND_EMAIL,
+          subject: '',
+          bodyHtml: '',
+          threadAsReplyToPreviousEmail: false,
+          stopOnReply: null,
+        },
+      },
+    ]);
+
+    await expect(
+      service.assertSequenceUpdateAllowed({
+        authContext,
+        sequenceId: sequence.id,
+        data: { status: SEQUENCE_STATUSES.ACTIVE },
+      }),
+    ).rejects.toThrow('email step email-step-id is not fully configured');
+    expect(sequenceSenderService.getReadySenderOrThrow).not.toHaveBeenCalled();
   });
 
   it('allows an active sequence to be archived so its open work can be stopped', async () => {
