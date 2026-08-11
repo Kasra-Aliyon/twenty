@@ -821,7 +821,6 @@ const confirmInvitationSent = async (
 
 export const sendConnectionRequest = async (
   noteText: string,
-  _skipIfAlreadyConnected = true,
 ): Promise<LinkedInAutomationResult> => {
   const blockReason = getLinkedInAutomationBlockReason();
 
@@ -856,9 +855,8 @@ export const sendConnectionRequest = async (
       return { status: 'SKIPPED', connectionState: 'PENDING' };
     }
 
-    // The CRM setting controls whether synced data can skip scheduling. Once
-    // the runner is looking at LinkedIn itself, a first-degree badge is
-    // authoritative and attempting another invitation is impossible.
+    // A first-degree badge on LinkedIn is authoritative, and attempting
+    // another invitation is impossible.
     if (degree === 'FIRST') {
       return { status: 'SKIPPED', connectionState: 'CONNECTED' };
     }

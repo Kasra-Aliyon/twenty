@@ -60,16 +60,12 @@ const TaskQueuePageContent = () => {
     orderBy: [{ dueAt: 'AscNullsLast' }],
     recordGqlFields: {
       id: true,
-      createdAt: true,
       title: true,
-      bodyV2: true,
       status: true,
       dueAt: true,
-      assigneeId: true,
       type: true,
       priority: true,
       sequenceEnrollmentId: true,
-      sequenceStepId: true,
       taskTargets: {
         id: true,
         targetPerson: {

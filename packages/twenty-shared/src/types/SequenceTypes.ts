@@ -159,7 +159,6 @@ export type SequenceConnectionRequestStepSettings =
   SequenceActionExecutionSettings & {
     type: typeof SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST;
     noteTemplate: string;
-    skipIfAlreadyConnected: boolean;
   };
 
 export type SequenceWithdrawConnectionRequestStepSettings =

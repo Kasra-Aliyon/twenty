@@ -452,10 +452,7 @@ export class SequenceInvariantService {
         case SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST:
           if (
             typeof settings.noteTemplate !== 'string' ||
-            settings.noteTemplate.length >
-              LINKEDIN_CONNECTION_NOTE_MAX_LENGTH ||
-            (settings.skipIfAlreadyConnected !== undefined &&
-              typeof settings.skipIfAlreadyConnected !== 'boolean')
+            settings.noteTemplate.length > LINKEDIN_CONNECTION_NOTE_MAX_LENGTH
           ) {
             this.throwBadRequest(
               `LinkedIn connection step ${step.id} is not fully configured`,

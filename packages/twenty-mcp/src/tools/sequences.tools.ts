@@ -193,7 +193,6 @@ const taskSettingsSchema = z.object({
 const connectionRequestSettingsSchema = z.object({
   ...actionExecutionSettingsShape,
   noteTemplate: z.string().default(''),
-  skipIfAlreadyConnected: z.boolean().default(true),
 });
 
 const linkedinMessageSettingsSchema = z.object({
@@ -575,7 +574,7 @@ const SEQUENCE_CAPABILITIES = {
       },
     },
     SEND_CONNECTION_REQUEST: {
-      fields: ['noteTemplate', 'skipIfAlreadyConnected'],
+      fields: ['noteTemplate'],
       limits: 'The rendered note is truncated to 200 characters.',
       automated: 'Queues a LinkedIn connection action for the browser runner.',
       manual:

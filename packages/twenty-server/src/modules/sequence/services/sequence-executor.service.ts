@@ -1691,7 +1691,6 @@ export class SequenceExecutorService {
         const scheduledAt =
           await this.sequenceLinkedinThrottleService.reserveSlot({
             workspaceId,
-            sequenceId: enrollment.sequenceId,
             settings: sequenceSettings,
             now: reserveFrom,
           });

@@ -101,7 +101,7 @@ describe('sendConnectionRequest', () => {
       </main>
     `);
 
-    const result = await sendConnectionRequest('', true);
+    const result = await sendConnectionRequest('');
 
     // No dialog is rendered in this fixture, so the run stops there. Reaching
     // that point proves the Connect control was recognised and clicked.
@@ -127,7 +127,7 @@ describe('sendConnectionRequest', () => {
       </main>
     `);
 
-    expect(await sendConnectionRequest('', true)).toEqual({
+    expect(await sendConnectionRequest('')).toEqual({
       status: 'SKIPPED',
       connectionState: 'PENDING',
     });
@@ -144,7 +144,7 @@ describe('sendConnectionRequest', () => {
       </main>
     `);
 
-    expect(await sendConnectionRequest('', true)).toEqual({
+    expect(await sendConnectionRequest('')).toEqual({
       status: 'SKIPPED',
       connectionState: 'CONNECTED',
     });
@@ -155,7 +155,7 @@ describe('sendConnectionRequest', () => {
   it('fails rather than skipping when the profile cannot be read', async () => {
     renderProfile('<main><section><h1>Ada Lovelace</h1></section></main>');
 
-    const result = await sendConnectionRequest('', true);
+    const result = await sendConnectionRequest('');
 
     expect(result.status).toBe('FAILED');
     expect(result.connectionState).toBe('UNKNOWN');
@@ -164,7 +164,7 @@ describe('sendConnectionRequest', () => {
   it('rejects an over-long note before touching the page', async () => {
     renderProfile('<main><section class="pv-top-card"></section></main>');
 
-    const result = await sendConnectionRequest('x'.repeat(201), true);
+    const result = await sendConnectionRequest('x'.repeat(201));
 
     expect(result).toMatchObject({
       status: 'FAILED',
@@ -209,7 +209,7 @@ describe('sendConnectionRequest', () => {
         });
     });
 
-    expect(await sendConnectionRequest('', true)).toEqual({
+    expect(await sendConnectionRequest('')).toEqual({
       status: 'COMPLETED',
       connectionState: 'PENDING',
     });
@@ -271,7 +271,7 @@ describe('sendConnectionRequest', () => {
 
     moreButton.addEventListener('click', renderMenu);
 
-    expect(await sendConnectionRequest('', true)).toEqual({
+    expect(await sendConnectionRequest('')).toEqual({
       status: 'COMPLETED',
       connectionState: 'PENDING',
     });
@@ -348,7 +348,7 @@ describe('sendConnectionRequest', () => {
         });
     });
 
-    expect(await sendConnectionRequest('', true)).toEqual({
+    expect(await sendConnectionRequest('')).toEqual({
       status: 'COMPLETED',
       connectionState: 'PENDING',
     });
@@ -396,7 +396,7 @@ describe('sendConnectionRequest', () => {
         : '<div role="menu"><button>Connect</button></div>';
     });
 
-    expect(await sendConnectionRequest('', true)).toEqual({
+    expect(await sendConnectionRequest('')).toEqual({
       status: 'COMPLETED',
       connectionState: 'PENDING',
     });
@@ -442,7 +442,7 @@ describe('sendConnectionRequest', () => {
         });
     });
 
-    expect(await sendConnectionRequest('', true)).toEqual({
+    expect(await sendConnectionRequest('')).toEqual({
       status: 'COMPLETED',
       connectionState: 'PENDING',
     });
@@ -499,7 +499,7 @@ describe('sendConnectionRequest', () => {
       });
     });
 
-    expect(await sendConnectionRequest('', true)).toEqual({
+    expect(await sendConnectionRequest('')).toEqual({
       status: 'COMPLETED',
       connectionState: 'PENDING',
     });
@@ -530,7 +530,7 @@ describe('sendConnectionRequest', () => {
         `;
       });
 
-    expect(await sendConnectionRequest('', true)).toMatchObject({
+    expect(await sendConnectionRequest('')).toMatchObject({
       status: 'FAILED',
       connectionState: 'UNKNOWN',
       errorMessage: expect.stringContaining('did not offer a truthful'),
@@ -587,7 +587,7 @@ describe('sendConnectionRequest', () => {
         });
     });
 
-    expect(await sendConnectionRequest('  Hello Ada  ', true)).toEqual({
+    expect(await sendConnectionRequest('  Hello Ada  ')).toEqual({
       status: 'COMPLETED',
       connectionState: 'PENDING',
     });
@@ -636,7 +636,7 @@ describe('sendConnectionRequest', () => {
         });
     });
 
-    expect(await sendConnectionRequest('', true)).toEqual({
+    expect(await sendConnectionRequest('')).toEqual({
       status: 'COMPLETED',
       connectionState: 'PENDING',
     });
@@ -678,7 +678,7 @@ describe('sendConnectionRequest', () => {
 
     moreButton.addEventListener('click', renderMenu);
 
-    const result = await sendConnectionRequest('', true);
+    const result = await sendConnectionRequest('');
 
     expect(result.status).toBe('FAILED');
     expect(result).toMatchObject({
@@ -694,7 +694,7 @@ describe('LinkedIn message and withdrawal automation', () => {
     document.body.innerHTML = '';
   });
 
-  it('skips a live first-degree profile even when CRM-side skipping is disabled', async () => {
+  it('skips a live first-degree profile', async () => {
     renderProfile(`
       <main>
         <section class="pv-top-card">
@@ -705,7 +705,7 @@ describe('LinkedIn message and withdrawal automation', () => {
       </main>
     `);
 
-    expect(await sendConnectionRequest('', false)).toEqual({
+    expect(await sendConnectionRequest('')).toEqual({
       status: 'SKIPPED',
       connectionState: 'CONNECTED',
     });

@@ -87,7 +87,6 @@ export const SequenceConnectionRequestStepEditor = ({
             type: 'SEND_CONNECTION_REQUEST',
             branch: settings.branch,
             noteTemplate,
-            skipIfAlreadyConnected: true,
             executionMode,
             manualTaskTitle,
             manualTaskDescription,

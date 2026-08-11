@@ -33,12 +33,10 @@ export class SequenceLinkedinThrottleService {
 
   async reserveSlot({
     workspaceId,
-    sequenceId: _sequenceId,
     settings,
     now,
   }: {
     workspaceId: string;
-    sequenceId: string;
     settings: SequenceSettings;
     now: Date;
   }): Promise<Date> {

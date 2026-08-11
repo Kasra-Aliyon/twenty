@@ -113,10 +113,6 @@ const SequencePageContent = () => {
       senderConnectedAccountId: true,
       settings: true,
       enrolledCount: true,
-      activeCount: true,
-      completedCount: true,
-      repliedCount: true,
-      failedCount: true,
     },
   });
   const {

@@ -196,7 +196,6 @@ describe('SequenceTaskCompletionService', () => {
         type: SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST,
         executionMode: SEQUENCE_ACTION_EXECUTION_MODES.MANUAL,
         noteTemplate: '',
-        skipIfAlreadyConnected: true,
       },
     } as SequenceStepWorkspaceEntity;
     const { service, linkedinActionRepository, enqueueProcess } = setup({

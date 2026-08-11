@@ -201,8 +201,6 @@ export const SequenceStepList = ({
     recordGqlFields: {
       id: true,
       name: true,
-      sequenceId: true,
-      type: true,
       position: true,
       settings: true,
     },

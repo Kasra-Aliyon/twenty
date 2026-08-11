@@ -1068,7 +1068,6 @@ describe('SequenceExecutorService', () => {
       settings: {
         type: SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST,
         noteTemplate: 'Hi {{ firstName }}',
-        skipIfAlreadyConnected: true,
       },
     } as SequenceStepWorkspaceEntity;
     const { service, enrollmentRepository, linkedinActionRepository } = setup({
@@ -1099,7 +1098,6 @@ describe('SequenceExecutorService', () => {
       settings: {
         type: SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST,
         noteTemplate: '',
-        skipIfAlreadyConnected: true,
       },
     } as SequenceStepWorkspaceEntity;
     const person = {
@@ -1376,7 +1374,7 @@ describe('SequenceExecutorService', () => {
         noteTemplate: 'Hi {{ firstName }}',
         skipIfAlreadyConnected: false,
       },
-    } as SequenceStepWorkspaceEntity;
+    } as unknown as SequenceStepWorkspaceEntity;
     const person = {
       ...buildPerson(),
       linkedinLink: {
@@ -1416,7 +1414,6 @@ describe('SequenceExecutorService', () => {
       settings: {
         type: SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST,
         noteTemplate: 'Hi {{ firstName }}',
-        skipIfAlreadyConnected: true,
       },
     } as SequenceStepWorkspaceEntity;
     const person = {
@@ -1461,7 +1458,6 @@ describe('SequenceExecutorService', () => {
       settings: {
         type: SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST,
         noteTemplate: '',
-        skipIfAlreadyConnected: true,
       },
     } as SequenceStepWorkspaceEntity;
     const person = {
@@ -1503,7 +1499,6 @@ describe('SequenceExecutorService', () => {
       settings: {
         type: SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST,
         noteTemplate: '',
-        skipIfAlreadyConnected: true,
       },
     } as SequenceStepWorkspaceEntity;
     const person = {
@@ -1550,7 +1545,6 @@ describe('SequenceExecutorService', () => {
       settings: {
         type: SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST,
         noteTemplate: '',
-        skipIfAlreadyConnected: true,
       },
     } as SequenceStepWorkspaceEntity;
     const person = {
@@ -1610,7 +1604,7 @@ describe('SequenceExecutorService', () => {
     );
   });
 
-  it('uses enabled defaults for legacy connection steps without skipIfAlreadyConnected set', async () => {
+  it('skips a person whose synced connection state is connected', async () => {
     const connectionStep = {
       id: 'connection-step-id',
       sequenceId: sequence.id,
@@ -1662,7 +1656,7 @@ describe('SequenceExecutorService', () => {
         noteTemplate: '',
         skipIfAlreadyConnected: false,
       },
-    } as SequenceStepWorkspaceEntity;
+    } as unknown as SequenceStepWorkspaceEntity;
     const person = {
       ...buildPerson(),
       linkedinLink: {

@@ -300,7 +300,6 @@ describe('SequenceInvariantService', () => {
           type: SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST,
           executionMode: SEQUENCE_ACTION_EXECUTION_MODES.MANUAL,
           noteTemplate: '',
-          skipIfAlreadyConnected: true,
         },
       },
     ]);

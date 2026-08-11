@@ -30,16 +30,10 @@ export type SequenceStepRecord = ObjectRecord & {
 };
 
 export type SequenceEnrollmentRecord = ObjectRecord & {
-  sequenceId: string;
-  personId: string;
   status: SequenceEnrollmentStatus;
   currentStepId: string | null;
-  currentStepPosition: number;
   waitingOn: SequenceWaitingOn | null;
   nextActionAt: string | null;
-  senderConnectedAccountId: string | null;
-  stopOnReply: boolean;
-  startedAt: string | null;
   endedAt: string | null;
   errorMessage: string | null;
   person: {

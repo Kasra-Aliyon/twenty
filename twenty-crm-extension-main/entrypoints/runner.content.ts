@@ -800,10 +800,7 @@ export default defineContentScript({
 
       try {
         if (action.type === 'SEND_CONNECTION_REQUEST') {
-          result = await sendConnectionRequest(
-            action.noteText ?? '',
-            action.skipIfAlreadyConnected,
-          );
+          result = await sendConnectionRequest(action.noteText ?? '');
         } else if (action.type === 'SEND_MESSAGE') {
           result = await sendDirectMessage(action.noteText ?? '');
         } else {

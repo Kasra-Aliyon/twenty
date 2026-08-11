@@ -90,16 +90,10 @@ export type LinkedInConnectionState =
 export type TwentyLinkedInAction = {
   id: string;
   type: LinkedInActionType;
-  status: LinkedInActionStatus;
   scheduledAt: string;
   claimedAt: string | null;
   linkedinUrl: string;
   noteText: string;
-  connectionState: LinkedInConnectionState;
-  attemptCount: number;
-  errorMessage: string | null;
-  sequenceStepId: string | null;
-  skipIfAlreadyConnected: boolean;
 };
 
 export type LinkedInRunnerSessionState = {

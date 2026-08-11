@@ -206,18 +206,10 @@ export const SequenceContactsTable = ({
     orderBy: [{ createdAt: 'DescNullsLast' }],
     recordGqlFields: {
       id: true,
-      createdAt: true,
-      sequenceId: true,
-      personId: true,
       status: true,
       currentStepId: true,
-      currentStepPosition: true,
       waitingOn: true,
       nextActionAt: true,
-      senderConnectedAccountId: true,
-      stopOnReply: true,
-      startedAt: true,
-      endedAt: true,
       errorMessage: true,
       person: {
         id: true,

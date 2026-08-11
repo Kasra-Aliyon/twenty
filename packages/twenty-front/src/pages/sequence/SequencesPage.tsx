@@ -144,8 +144,6 @@ const SequencesPageContent = () => {
       deletedAt: true,
       name: true,
       status: true,
-      senderConnectedAccountId: true,
-      settings: true,
       enrolledCount: true,
       activeCount: true,
       completedCount: true,

@@ -219,7 +219,7 @@ CONDITION | ENRICH_PHONE_NUMBER`. Every step may include
   - `DELAY`: `{ days, hours, minutes, branch? }`
   - `CREATE_TASK`: `{ taskType, titleTemplate, notesTemplate, priority,
 assigneeWorkspaceMemberId, continueMode, deadlineDays, branch? }`
-  - `SEND_CONNECTION_REQUEST`: `{ noteTemplate, skipIfAlreadyConnected, ...execution }`
+  - `SEND_CONNECTION_REQUEST`: `{ noteTemplate, ...execution }`
   - `SEND_LINKEDIN_MESSAGE`: `{ messageTemplate, ...execution }`
   - `WITHDRAW_CONNECTION_REQUEST`: `{ withdrawAfterDays, withdrawAfterHours, ...execution }`
   - `CONDITION`: `{ condition, branch? }`; supported conditions cover LinkedIn network/

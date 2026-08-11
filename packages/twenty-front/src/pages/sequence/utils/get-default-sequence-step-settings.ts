@@ -56,7 +56,6 @@ export const getDefaultSequenceStepSettings = (
         type,
         ...AUTOMATED_EXECUTION_DEFAULTS,
         noteTemplate: '',
-        skipIfAlreadyConnected: true,
       };
     case SEQUENCE_STEP_TYPES.SEND_LINKEDIN_MESSAGE:
       return {

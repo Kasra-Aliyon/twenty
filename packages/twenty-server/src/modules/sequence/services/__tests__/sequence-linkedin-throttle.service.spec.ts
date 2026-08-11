@@ -7,7 +7,6 @@ import { isWithinSendingWindow } from 'src/modules/sequence/utils/sequence-windo
 
 describe('SequenceLinkedinThrottleService', () => {
   const workspaceId = 'workspace-id';
-  const sequenceId = 'sequence-id';
 
   const buildService = () => {
     const values = new Map<string, unknown>();
@@ -63,13 +62,11 @@ describe('SequenceLinkedinThrottleService', () => {
 
     const firstSlot = await service.reserveSlot({
       workspaceId,
-      sequenceId,
       settings,
       now,
     });
     const secondSlot = await service.reserveSlot({
       workspaceId,
-      sequenceId,
       settings,
       now,
     });
@@ -94,9 +91,7 @@ describe('SequenceLinkedinThrottleService', () => {
     const slots: Date[] = [];
 
     for (let index = 0; index < 8; index += 1) {
-      slots.push(
-        await service.reserveSlot({ workspaceId, sequenceId, settings, now }),
-      );
+      slots.push(await service.reserveSlot({ workspaceId, settings, now }));
     }
 
     expect(gapsInMinutes(slots, now)).toEqual([1, 3, 5, 2, 8, 4, 6, 1]);
@@ -113,9 +108,7 @@ describe('SequenceLinkedinThrottleService', () => {
     const slots: Date[] = [];
 
     for (let index = 0; index < 14; index += 1) {
-      slots.push(
-        await service.reserveSlot({ workspaceId, sequenceId, settings, now }),
-      );
+      slots.push(await service.reserveSlot({ workspaceId, settings, now }));
     }
 
     const gaps = gapsInMinutes(slots, now);
@@ -135,9 +128,7 @@ describe('SequenceLinkedinThrottleService', () => {
     const slots: Date[] = [];
 
     for (let index = 0; index < 5; index += 1) {
-      slots.push(
-        await service.reserveSlot({ workspaceId, sequenceId, settings, now }),
-      );
+      slots.push(await service.reserveSlot({ workspaceId, settings, now }));
     }
 
     expect(slots.slice(0, 3).map((slot) => slot.getUTCDate())).toEqual([
@@ -147,7 +138,7 @@ describe('SequenceLinkedinThrottleService', () => {
     expect(slots[3].toISOString()).toBe('2026-07-21T09:00:00.000Z');
   });
 
-  it('shares the daily cap and safety gap across sequences', async () => {
+  it('shares the daily cap and safety gap across the workspace', async () => {
     const { service } = buildService();
     const now = new Date('2026-07-20T09:00:00.000Z');
     const settings = buildSettings({
@@ -157,19 +148,16 @@ describe('SequenceLinkedinThrottleService', () => {
 
     const firstSlot = await service.reserveSlot({
       workspaceId,
-      sequenceId: 'first-sequence',
       settings,
       now,
     });
     const secondSlot = await service.reserveSlot({
       workspaceId,
-      sequenceId: 'second-sequence',
       settings,
       now,
     });
     const thirdSlot = await service.reserveSlot({
       workspaceId,
-      sequenceId: 'third-sequence',
       settings,
       now,
     });
@@ -190,7 +178,6 @@ describe('SequenceLinkedinThrottleService', () => {
 
     const slot = await service.reserveSlot({
       workspaceId,
-      sequenceId,
       settings,
       now: new Date('2026-07-20T17:00:00.000Z'),
     });
