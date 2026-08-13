@@ -824,6 +824,9 @@ export const STANDARD_OBJECTS = {
           address: {
             universalIdentifier: '20202020-af01-4a01-8a01-c0aba11cf008',
           },
+          addressCountry: {
+            universalIdentifier: '20202020-af01-4a01-8a01-c0aba11cf009',
+          },
         },
       },
       companyRecordPageFields: {

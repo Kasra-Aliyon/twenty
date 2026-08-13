@@ -94,6 +94,64 @@ const isNotFilter = (
   filter: RecordGqlOperationFilter,
 ): filter is NotObjectRecordFilter => 'not' in filter && !!filter.not;
 
+const UUID_FILTER_KEYS: (keyof UUIDFilter)[] = [
+  'eq',
+  'neq',
+  'gt',
+  'gte',
+  'lt',
+  'lte',
+  'in',
+  'is',
+];
+
+const isUUIDFilter = (value: unknown): value is UUIDFilter =>
+  isObject(value) && UUID_FILTER_KEYS.some((key) => key in value);
+
+const isMatchingNestedRelationFilter = ({
+  relationValue,
+  relationFilter,
+}: {
+  relationValue: unknown;
+  relationFilter: RecordGqlOperationFilter;
+}): boolean => {
+  // Relation fields are not necessarily selected in the cached record. In that
+  // case the server query remains authoritative and the record must stay in the
+  // connection until a refetch can evaluate the relation.
+  if (relationValue === undefined) {
+    return true;
+  }
+
+  if (relationValue === null) {
+    return false;
+  }
+
+  const relatedRecords = Array.isArray(relationValue)
+    ? relationValue
+    : [relationValue];
+
+  return relatedRecords.some((relatedRecord) => {
+    if (!isObject(relatedRecord)) {
+      return false;
+    }
+
+    return Object.entries(relationFilter).every(
+      ([relatedFieldName, relatedFieldFilter]) => {
+        if (!isUUIDFilter(relatedFieldFilter)) {
+          // The target object's metadata is not available to this cache helper,
+          // so unsupported nested filters must be left to the server.
+          return true;
+        }
+
+        return isMatchingUUIDFilter({
+          uuidFilter: relatedFieldFilter,
+          value: relatedRecord[relatedFieldName] as string,
+        });
+      },
+    );
+  });
+};
+
 export const isRecordMatchingFilter = ({
   record,
   filter,
@@ -434,8 +492,15 @@ export const isRecordMatchingFilter = ({
           });
         }
 
+        if (!isUUIDFilter(filterValue)) {
+          return isMatchingNestedRelationFilter({
+            relationValue: record[filterKey],
+            relationFilter: filterValue as RecordGqlOperationFilter,
+          });
+        }
+
         return isMatchingUUIDFilter({
-          uuidFilter: filterValue as UUIDFilter,
+          uuidFilter: filterValue,
           value: record[filterKey]?.id ?? null,
         });
       }

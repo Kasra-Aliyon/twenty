@@ -14,6 +14,7 @@ import { dropdownYPositionComponentState } from '@/ui/layout/dropdown/states/int
 import { useAtomComponentSelectorValue } from '@/ui/utilities/state/jotai/hooks/useAtomComponentSelectorValue';
 import { useAtomComponentStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomComponentStateValue';
 import { ViewType } from '@/views/types/ViewType';
+import { getViewFieldDisplay } from '@/views/utils/getViewFieldDisplay';
 import { useContext } from 'react';
 import { isDefined } from 'twenty-shared/utils';
 import { IconEyeOff, useIcons } from 'twenty-ui/icon';
@@ -107,17 +108,21 @@ export const ViewFieldsVisibleDropdownSection = () => {
                   const { fieldMetadataItem } = getFieldMetadataItemByIdOrThrow(
                     recordField.fieldMetadataItemId,
                   );
+                  const { label, subFieldName } = getViewFieldDisplay({
+                    fieldMetadataItem,
+                    subFieldName: recordField.subFieldName,
+                  });
 
                   return (
                     <DraggableItem
-                      key={recordField.fieldMetadataItemId}
-                      draggableId={recordField.fieldMetadataItemId}
+                      key={recordField.id}
+                      draggableId={recordField.id}
                       index={fieldIndex + 1}
                       isInsideScrollableContainer
                       containerOffsetY={dropdownYPosition}
                       itemComponent={
                         <MenuItemDraggable
-                          key={recordField.fieldMetadataItemId}
+                          key={recordField.id}
                           LeftIcon={getIcon(fieldMetadataItem.icon)}
                           iconButtons={[
                             {
@@ -127,11 +132,12 @@ export const ViewFieldsVisibleDropdownSection = () => {
                                   fieldMetadataId:
                                     recordField.fieldMetadataItemId,
                                   isVisible: false,
+                                  subFieldName,
                                 });
                               },
                             },
                           ]}
-                          text={fieldMetadataItem.label}
+                          text={label}
                           gripMode="always"
                         />
                       }

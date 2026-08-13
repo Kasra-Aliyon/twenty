@@ -38,11 +38,19 @@ export type ViewFieldOverrides = {
 @Index('IDX_VIEW_FIELD_FIELD_METADATA_ID', ['fieldMetadataId'])
 @Index('IDX_VIEW_FIELD_VIEW_FIELD_GROUP_ID', ['viewFieldGroupId'])
 @Index(
-  'IDX_VIEW_FIELD_FIELD_METADATA_ID_VIEW_ID_UNIQUE',
+  'IDX_VIEW_FIELD_FIELD_METADATA_ID_VIEW_ID_BASE_UNIQUE',
   ['fieldMetadataId', 'viewId'],
   {
     unique: true,
-    where: '"deletedAt" IS NULL',
+    where: '"deletedAt" IS NULL AND "subFieldName" IS NULL',
+  },
+)
+@Index(
+  'IDX_VIEW_FIELD_FIELD_METADATA_ID_VIEW_ID_SUB_FIELD_NAME_UNIQUE',
+  ['fieldMetadataId', 'viewId', 'subFieldName'],
+  {
+    unique: true,
+    where: '"deletedAt" IS NULL AND "subFieldName" IS NOT NULL',
   },
 )
 export class ViewFieldEntity

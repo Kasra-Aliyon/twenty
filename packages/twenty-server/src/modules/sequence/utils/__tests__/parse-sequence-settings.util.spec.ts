@@ -86,9 +86,9 @@ describe('parseSequenceSettings', () => {
     ).toBe(1);
   });
 
-  it('caps the configurable LinkedIn daily limit at 20', () => {
+  it('caps the configurable LinkedIn daily limit at 40', () => {
     expect(
       parseSequenceSettings({ linkedinDailyActions: 50 }).linkedinDailyActions,
-    ).toBe(20);
+    ).toBe(40);
   });
 });

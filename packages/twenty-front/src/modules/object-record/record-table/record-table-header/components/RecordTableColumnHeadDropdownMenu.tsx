@@ -53,15 +53,12 @@ export const RecordTableColumnHeadDropdownMenu = ({
   const secondVisibleRecordField = visibleRecordFields[1];
   const canMove = isLabelIdentifier !== true;
   const canMoveLeft =
-    recordField.fieldMetadataItemId !==
-      secondVisibleRecordField?.fieldMetadataItemId && canMove;
+    recordField.id !== secondVisibleRecordField?.id && canMove;
 
   const lastVisibleRecordField =
     visibleRecordFields[visibleRecordFields.length - 1];
 
-  const canMoveRight =
-    recordField.fieldMetadataItemId !==
-      lastVisibleRecordField?.fieldMetadataItemId && canMove;
+  const canMoveRight = recordField.id !== lastVisibleRecordField?.id && canMove;
 
   const { recordTableId } = useRecordTableContextOrThrow();
 
@@ -72,7 +69,7 @@ export const RecordTableColumnHeadDropdownMenu = ({
   const { changeRecordFieldVisibility } =
     useChangeRecordFieldVisibility(recordTableId);
 
-  const dropdownId = recordField.fieldMetadataItemId + '-header';
+  const dropdownId = recordField.id + '-header';
 
   const { closeDropdown } = useCloseDropdown();
 
@@ -85,13 +82,13 @@ export const RecordTableColumnHeadDropdownMenu = ({
   const handleColumnMoveLeft = () => {
     if (!canMoveLeft) return;
 
-    moveTableColumn('left', recordField.fieldMetadataItemId);
+    moveTableColumn('left', recordField.id);
   };
 
   const handleColumnMoveRight = () => {
     if (!canMoveRight) return;
 
-    moveTableColumn('right', recordField.fieldMetadataItemId);
+    moveTableColumn('right', recordField.id);
   };
 
   const handleColumnVisibility = async () => {
@@ -99,6 +96,7 @@ export const RecordTableColumnHeadDropdownMenu = ({
     await changeRecordFieldVisibility({
       fieldMetadataId: recordField.fieldMetadataItemId,
       isVisible: false,
+      subFieldName: recordField.subFieldName,
     });
   };
 
@@ -109,7 +107,10 @@ export const RecordTableColumnHeadDropdownMenu = ({
   const handleSortClick = () => {
     closeDropdownAndToggleScroll();
 
-    handleToggleColumnSort(recordField.fieldMetadataItemId);
+    handleToggleColumnSort(
+      recordField.fieldMetadataItemId,
+      recordField.subFieldName,
+    );
   };
 
   const { openRecordFilterChipFromTableHeader } =
@@ -118,7 +119,10 @@ export const RecordTableColumnHeadDropdownMenu = ({
   const handleFilterClick = () => {
     closeDropdownAndToggleScroll();
 
-    openRecordFilterChipFromTableHeader(recordField.fieldMetadataItemId);
+    openRecordFilterChipFromTableHeader(
+      recordField.fieldMetadataItemId,
+      recordField.subFieldName,
+    );
   };
 
   const { isFilterable, isSortable } = useAtomFamilySelectorValue(

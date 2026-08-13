@@ -7,11 +7,9 @@ import { TwentyConfigService } from 'src/engine/core-modules/twenty-config/twent
 import {
   type ApolloOrganizationEnrichResponse,
   type ApolloOrganizationMatchInput,
-  type ApolloPerson,
   type ApolloPersonEnrichmentOptions,
   type ApolloPersonMatchInput,
   type ApolloPersonMatchResponse,
-  type ApolloWebhookResultResponse,
 } from 'src/modules/apollo-enrichment/types/apollo-api.type';
 import { ApolloEnrichmentError } from 'src/modules/apollo-enrichment/types/apollo-enrichment-error';
 
@@ -32,9 +30,6 @@ type ApolloOrganizationEnrichRequest = {
   name?: string;
   website?: string;
 };
-
-const APOLLO_PHONE_POLL_ATTEMPTS = 30;
-const APOLLO_PHONE_POLL_INTERVAL_MS = 10_000;
 
 @Injectable()
 export class ApolloClientService {
@@ -78,29 +73,10 @@ export class ApolloClientService {
       },
     );
 
-    if (
-      !options.revealPhoneNumber ||
-      this.hasPhoneNumber(response.data.person) ||
-      !response.data.request_id
-    ) {
-      return response.data;
-    }
-
-    const phonePerson = await this.pollPhoneEnrichment(
-      String(response.data.request_id),
-    );
-
-    if (!phonePerson) {
-      return response.data;
-    }
-
-    return {
-      ...response.data,
-      person: {
-        ...response.data.person,
-        ...phonePerson,
-      },
-    };
+    // Apollo returns demographic data synchronously and sends revealed phone
+    // numbers to webhook_url later. The request must not stay open while that
+    // asynchronous delivery is pending.
+    return response.data;
   }
 
   async enrichOrganization(
@@ -120,64 +96,6 @@ export class ApolloClientService {
       );
 
     return response.data;
-  }
-
-  private async pollPhoneEnrichment(
-    requestId: string,
-  ): Promise<ApolloPerson | undefined> {
-    for (let attempt = 0; attempt < APOLLO_PHONE_POLL_ATTEMPTS; attempt++) {
-      await this.wait(APOLLO_PHONE_POLL_INTERVAL_MS);
-
-      const result = await this.getWebhookResult(requestId);
-
-      if (!result || result.webhook_status === 'in_progress') {
-        continue;
-      }
-
-      if (result.webhook_status === 'failed') {
-        throw new ApolloEnrichmentError(
-          result.failure_reason ?? 'Apollo phone enrichment failed',
-          false,
-        );
-      }
-
-      return result.webhook_result?.people?.[0] ?? undefined;
-    }
-
-    return undefined;
-  }
-
-  private async getWebhookResult(
-    requestId: string,
-  ): Promise<ApolloWebhookResultResponse | undefined> {
-    try {
-      const response =
-        await this.getHttpClient().get<ApolloWebhookResultResponse>(
-          `/webhook_result/${encodeURIComponent(requestId)}`,
-        );
-
-      return response.data;
-    } catch (error) {
-      if (error instanceof ApolloEnrichmentError && error.statusCode === 404) {
-        return undefined;
-      }
-
-      throw error;
-    }
-  }
-
-  private hasPhoneNumber(person: ApolloPerson | null | undefined): boolean {
-    return Boolean(
-      person?.sanitized_phone ||
-      person?.phone ||
-      person?.phone_numbers?.some(
-        (phoneNumber) => phoneNumber.sanitized_number || phoneNumber.raw_number,
-      ),
-    );
-  }
-
-  private async wait(durationMs: number): Promise<void> {
-    await new Promise((resolve) => setTimeout(resolve, durationMs));
   }
 
   private getHttpClient(): AxiosInstance {

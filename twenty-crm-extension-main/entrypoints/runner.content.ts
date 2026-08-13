@@ -255,6 +255,7 @@ const emptySafetySnapshot = (): LinkedInSafetySnapshot => ({
   readRequestsToday: 0,
   outboundAttemptsToday: 0,
   dailyReadLimitEnabled: false,
+  dailyReadLimit: LINKEDIN_READ_REQUESTS_PER_DAY,
   nextOutboundAt: null,
   cooldownUntil: null,
   cooldownReason: null,
@@ -1039,7 +1040,7 @@ export default defineContentScript({
           : 'Now';
         const outboundSafetyLabel = `${safetySnapshot.outboundAttemptsToday} today · Eligible: ${nextOutboundLabel} · Consecutive gap always on`;
         const dailyReadLimitLabel = safetySnapshot.dailyReadLimitEnabled
-          ? `${safetySnapshot.readRequestsToday}/${LINKEDIN_READ_REQUESTS_PER_DAY} today`
+          ? `${safetySnapshot.readRequestsToday}/${safetySnapshot.dailyReadLimit} today`
           : `${safetySnapshot.readRequestsToday} today · Daily cap off for testing`;
 
         panel.innerHTML = `

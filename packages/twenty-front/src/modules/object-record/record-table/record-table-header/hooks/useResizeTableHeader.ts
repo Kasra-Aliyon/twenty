@@ -9,7 +9,7 @@ import { recordTableWidthComponentState } from '@/object-record/record-table/sta
 
 import { isRecordTableCheckboxColumnHiddenComponentState } from '@/object-record/record-table/states/isRecordTableCheckboxColumnHiddenComponentState';
 import { isRecordTableDragColumnHiddenComponentState } from '@/object-record/record-table/states/isRecordTableDragColumnHiddenComponentState';
-import { resizedFieldMetadataIdComponentState } from '@/object-record/record-table/states/resizedFieldMetadataIdComponentState';
+import { resizedRecordFieldIdComponentState } from '@/object-record/record-table/states/resizedRecordFieldIdComponentState';
 import { resizeFieldOffsetComponentState } from '@/object-record/record-table/states/resizeFieldOffsetComponentState';
 import { shouldCompactRecordTableFirstColumnComponentState } from '@/object-record/record-table/states/shouldCompactRecordTableFirstColumnComponentState';
 import { computeLastRecordTableColumnWidth } from '@/object-record/record-table/utils/computeLastRecordTableColumnWidth';
@@ -25,11 +25,7 @@ import { useSetAtomComponentState } from '@/ui/utilities/state/jotai/hooks/useSe
 import { useSaveRecordFields } from '@/views/hooks/useSaveRecordFields';
 import { useStore } from 'jotai';
 import { useCallback, useState } from 'react';
-import {
-  findById,
-  findByProperty,
-  throwIfNotDefined,
-} from 'twenty-shared/utils';
+import { findById, isDefined, throwIfNotDefined } from 'twenty-shared/utils';
 
 export const useResizeTableHeader = () => {
   const { recordTableId, visibleRecordFields } = useRecordTableContextOrThrow();
@@ -48,18 +44,19 @@ export const useResizeTableHeader = () => {
     number | null
   >(null);
 
-  const [resizedFieldMetadataId, setResizedFieldMetadataId] =
-    useAtomComponentState(resizedFieldMetadataIdComponentState);
-
-  const recordField = visibleRecordFields.find(
-    findByProperty('fieldMetadataItemId', resizedFieldMetadataId),
+  const [resizedRecordFieldId, setResizedRecordFieldId] = useAtomComponentState(
+    resizedRecordFieldIdComponentState,
   );
+
+  const recordField = isDefined(resizedRecordFieldId)
+    ? visibleRecordFields.find(findById(resizedRecordFieldId))
+    : undefined;
 
   const { resetTableRowSelection } = useResetTableRowSelection();
 
   const { saveRecordFields } = useSaveRecordFields();
 
-  const { updateRecordField } = useUpdateRecordField();
+  const { updateRecordField } = useUpdateRecordField(recordTableId);
 
   const recordTableWidth = useAtomComponentStateValue(
     recordTableWidthComponentState,
@@ -164,7 +161,7 @@ export const useResizeTableHeader = () => {
   const handleResizeHandlerEnd = useCallback(async () => {
     throwIfNotDefined(recordField, 'recordField');
 
-    if (!resizedFieldMetadataId) return;
+    if (!resizedRecordFieldId) return;
 
     const currentResizeFieldOffset = store.get(resizeFieldOffset);
 
@@ -177,10 +174,10 @@ export const useResizeTableHeader = () => {
 
     store.set(resizeFieldOffset, 0);
     setInitialPointerPositionX(null);
-    setResizedFieldMetadataId(null);
+    setResizedRecordFieldId(null);
 
     if (nextWidth !== recordField.size) {
-      const updatedRecordField = updateRecordField(resizedFieldMetadataId, {
+      const updatedRecordField = updateRecordField(resizedRecordFieldId, {
         size: nextWidth,
       });
 
@@ -190,17 +187,17 @@ export const useResizeTableHeader = () => {
     setDragSelectionStartEnabled(true);
   }, [
     saveRecordFields,
-    resizedFieldMetadataId,
+    resizedRecordFieldId,
     resizeFieldOffset,
     store,
-    setResizedFieldMetadataId,
+    setResizedRecordFieldId,
     updateRecordField,
     setDragSelectionStartEnabled,
     recordField,
   ]);
 
   useTrackPointer({
-    shouldTrackPointer: resizedFieldMetadataId !== null,
+    shouldTrackPointer: resizedRecordFieldId !== null,
     onMouseDown: handleResizeHandlerStart,
     onMouseMove: handleResizeHandlerMove,
     onMouseUp: handleResizeHandlerEnd,

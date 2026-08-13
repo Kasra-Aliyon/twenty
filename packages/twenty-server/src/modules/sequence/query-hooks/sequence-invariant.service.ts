@@ -319,17 +319,27 @@ export class SequenceInvariantService {
       );
     }
 
+    const changesSettingsOrSender = fieldNames.some((fieldName) =>
+      ['senderConnectedAccountId', 'settings'].includes(fieldName),
+    );
+
     if (
-      (sequence.status === SEQUENCE_STATUSES.ACTIVE ||
-        (await this.hasActiveEnrollments({
-          authContext,
-          sequenceIds: [sequenceId],
-        }))) &&
-      fieldNames.some((fieldName) =>
-        ['senderConnectedAccountId', 'settings'].includes(fieldName),
-      )
+      sequence.status === SEQUENCE_STATUSES.ACTIVE &&
+      changesSettingsOrSender
     ) {
       this.throwBadRequest('Pause the sequence before changing its settings');
+    }
+
+    if (
+      fieldNames.includes('senderConnectedAccountId') &&
+      (await this.hasActiveEnrollments({
+        authContext,
+        sequenceIds: [sequenceId],
+      }))
+    ) {
+      this.throwBadRequest(
+        'Wait for active enrollments to finish before changing the sender',
+      );
     }
 
     if (data.status === SEQUENCE_STATUSES.ACTIVE) {

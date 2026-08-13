@@ -31,6 +31,7 @@ import { PersonWorkspaceEntity } from 'src/modules/person/standard-objects/perso
 
 export type ApolloEnrichmentResult =
   | 'disabled'
+  | 'pending'
   | 'skipped'
   | 'not-found'
   | 'not-matched'
@@ -41,6 +42,7 @@ export type ApolloPersonEnrichmentMode = 'automatic' | 'general' | 'phone';
 export type ApolloEnrichmentBatchResult = {
   requestedCount: number;
   updatedCount: number;
+  pendingCount: number;
   skippedCount: number;
   notMatchedCount: number;
   notFoundCount: number;
@@ -138,7 +140,7 @@ export class ApolloEnrichmentService {
             );
 
           if (Object.keys(phoneUpdate).length === 0) {
-            return 'not-matched';
+            return 'pending';
           }
 
           await personRepository.update(person.id, phoneUpdate);
@@ -860,6 +862,7 @@ export class ApolloEnrichmentService {
     const summary: ApolloEnrichmentBatchResult = {
       requestedCount: results.length,
       updatedCount: 0,
+      pendingCount: 0,
       skippedCount: 0,
       notMatchedCount: 0,
       notFoundCount: 0,
@@ -877,6 +880,9 @@ export class ApolloEnrichmentService {
       switch (result.value) {
         case 'updated':
           summary.updatedCount += 1;
+          break;
+        case 'pending':
+          summary.pendingCount += 1;
           break;
         case 'skipped':
           summary.skippedCount += 1;
@@ -943,6 +949,7 @@ export class ApolloEnrichmentService {
     return {
       requestedCount,
       updatedCount: 0,
+      pendingCount: 0,
       skippedCount: 0,
       notMatchedCount: 0,
       notFoundCount: 0,

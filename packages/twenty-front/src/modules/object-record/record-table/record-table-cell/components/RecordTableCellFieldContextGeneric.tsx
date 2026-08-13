@@ -15,6 +15,7 @@ import { useRecordTableRowContextOrThrow } from '@/object-record/record-table/co
 import { RecordTableUpdateContext } from '@/object-record/record-table/contexts/RecordTableUpdateContext';
 import { isRecordTableCellsNonEditableComponentState } from '@/object-record/record-table/states/isRecordTableCellsNonEditableComponentState';
 import { useAtomComponentStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomComponentStateValue';
+import { applyViewFieldSubFieldToColumnDefinition } from '@/views/utils/applyViewFieldSubFieldToColumnDefinition';
 import { useContext, type ReactNode } from 'react';
 import { isDefined } from 'twenty-shared/utils';
 type RecordTableCellFieldContextGenericProps = {
@@ -40,8 +41,13 @@ export const RecordTableCellFieldContextGeneric = ({
     fieldDefinitionByFieldMetadataItemId,
   } = useRecordIndexContextOrThrow();
 
-  const fieldDefinition =
+  const baseFieldDefinition =
     fieldDefinitionByFieldMetadataItemId[recordField.fieldMetadataItemId];
+
+  const fieldDefinition = applyViewFieldSubFieldToColumnDefinition({
+    columnDefinition: baseFieldDefinition,
+    subFieldName: recordField.subFieldName,
+  });
 
   const updateRecord = useContext(RecordTableUpdateContext);
 

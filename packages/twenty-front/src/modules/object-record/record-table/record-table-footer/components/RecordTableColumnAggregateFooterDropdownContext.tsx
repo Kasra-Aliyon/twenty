@@ -7,6 +7,7 @@ export type RecordTableColumnAggregateFooterDropdownContextValue = {
   onContentChange: (key: RecordTableFooterAggregateContentId) => void;
   resetContent: () => void;
   dropdownId: string;
+  viewFieldId: string;
   fieldMetadataId: string;
   fieldMetadataType?: FieldMetadataType;
 };

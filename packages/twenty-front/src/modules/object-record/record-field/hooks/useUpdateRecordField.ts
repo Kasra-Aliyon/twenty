@@ -16,21 +16,20 @@ export const useUpdateRecordField = (
 
   const updateRecordField = useCallback(
     (
-      fieldMetadataItemId: string,
+      recordFieldId: string,
       partialRecordField: Partial<
-        Pick<RecordField, 'isVisible' | 'size' | 'position'>
+        Pick<RecordField, 'isVisible' | 'size' | 'position' | 'subFieldName'>
       >,
     ) => {
       const existingRecordFields = store.get(currentRecordFields);
 
       const foundRecordFieldInCurrentRecordFields = existingRecordFields.find(
-        (existingRecordField) =>
-          existingRecordField.fieldMetadataItemId === fieldMetadataItemId,
+        (existingRecordField) => existingRecordField.id === recordFieldId,
       );
 
       if (!isDefined(foundRecordFieldInCurrentRecordFields)) {
         throw new Error(
-          `Cannot find record field to update with field metadata item id : ${fieldMetadataItemId}`,
+          `Cannot find record field to update with id : ${recordFieldId}`,
         );
       }
 
@@ -38,8 +37,7 @@ export const useUpdateRecordField = (
         const newCurrentRecordFields = [...previousRecordFields];
 
         const indexOfRecordFieldToUpdate = newCurrentRecordFields.findIndex(
-          (existingRecordField) =>
-            existingRecordField.fieldMetadataItemId === fieldMetadataItemId,
+          (existingRecordField) => existingRecordField.id === recordFieldId,
         );
 
         newCurrentRecordFields[indexOfRecordFieldToUpdate] = {

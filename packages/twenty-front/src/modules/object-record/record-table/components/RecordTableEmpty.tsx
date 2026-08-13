@@ -14,7 +14,7 @@ import { useRecordTableContextOrThrow } from '@/object-record/record-table/conte
 import { RecordTableEmptyState } from '@/object-record/record-table/empty-state/components/RecordTableEmptyState';
 import { RecordTableHeader } from '@/object-record/record-table/record-table-header/components/RecordTableHeader';
 import { recordTableWidthComponentState } from '@/object-record/record-table/states/recordTableWidthComponentState';
-import { resizedFieldMetadataIdComponentState } from '@/object-record/record-table/states/resizedFieldMetadataIdComponentState';
+import { resizedRecordFieldIdComponentState } from '@/object-record/record-table/states/resizedRecordFieldIdComponentState';
 import { resizeFieldOffsetComponentState } from '@/object-record/record-table/states/resizeFieldOffsetComponentState';
 import { shouldCompactRecordTableFirstColumnComponentState } from '@/object-record/record-table/states/shouldCompactRecordTableFirstColumnComponentState';
 import { computeVisibleRecordFieldsWidthOnTable } from '@/object-record/record-table/utils/computeVisibleRecordFieldsWidthOnTable';
@@ -49,15 +49,15 @@ export const RecordTableEmpty = ({ tableBodyRef }: RecordTableEmptyProps) => {
     recordTableWidthComponentState,
   );
 
-  const resizedFieldMetadataId = useAtomComponentStateValue(
-    resizedFieldMetadataIdComponentState,
+  const resizedRecordFieldId = useAtomComponentStateValue(
+    resizedRecordFieldIdComponentState,
   );
 
   const resizeFieldOffset = useAtomComponentStateValue(
     resizeFieldOffsetComponentState,
   );
 
-  const isResizing = isDefined(resizedFieldMetadataId);
+  const isResizing = isDefined(resizedRecordFieldId);
 
   const shouldCompactRecordTableFirstColumn = useAtomComponentStateValue(
     shouldCompactRecordTableFirstColumnComponentState,

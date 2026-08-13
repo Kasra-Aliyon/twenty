@@ -54,6 +54,23 @@ describe('LinkedIn safety policy', () => {
     });
   });
 
+  it('enforces a configured daily read cap', () => {
+    const configuredDailyReadLimit = 40;
+    const state = buildState({
+      readRequestTimestamps: Array.from(
+        { length: configuredDailyReadLimit },
+        (_, index) => NOW - 2 * 60 * 60_000 - index,
+      ),
+    });
+
+    expect(
+      getLinkedInReadSafetyDecision(state, NOW, true, configuredDailyReadLimit),
+    ).toMatchObject({
+      allowed: false,
+      reason: 'Daily read limit reached. Sync will resume automatically.',
+    });
+  });
+
   it('always enforces the cross-sequence outbound gap', () => {
     const recentAttemptState = buildState({
       outboundAttempts: [

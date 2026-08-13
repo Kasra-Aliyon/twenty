@@ -80,11 +80,14 @@ Same process - visit any LinkedIn company page (`linkedin.com/company/name`)
 Outbound sequence actions remain explicitly opt-in through **Start runner**.
 Three daily-count switches default off during runner development: **Enforce
 daily enrollment start cap** and **Enforce daily LinkedIn action cap** in
-sequence settings, plus **Enforce daily read cap** in the extension popup. The
-sending window, server delay pattern, local consecutive action gap, hourly read
-limit, request pacing, duplicate-action protection, and restriction cooldown
-remain active in either mode. An action is recorded before the final LinkedIn
-UI operation and is never silently replayed after an uncertain outcome.
+sequence settings, plus **Enforce daily read cap** in the extension popup or
+**Settings → General → Outreach** in Twenty. The read cap can be set from 1
+to 200 requests per local day, and the LinkedIn action cap can be set from 1
+to 40 actions per local day. The sending window, server delay pattern, local
+consecutive action gap, hourly read limit, request pacing, duplicate-action
+protection, and restriction cooldown remain active in either mode. An action
+is recorded before the final LinkedIn UI operation and is never silently
+replayed after an uncertain outcome.
 
 Sequences can also send direct LinkedIn messages through the visible LinkedIn
 composer. The runner sends only when it recognizes the profile as a
@@ -98,7 +101,8 @@ so no implementation can guarantee that LinkedIn will never restrict an
 account. The extension minimizes activity instead of trying to conceal it:
 
 - one sync owner across tabs, persisted across service-worker restarts;
-- no more than 8 read requests per minute, 60 per hour, or 200 per local day;
+- no more than 8 read requests per minute and 60 per hour, plus an optional
+  configurable limit of 1–200 per local day;
 - 6–12 seconds between read requests;
 - a 24-hour fail-closed cooldown after rate-limit, challenge, or restriction
   signals;

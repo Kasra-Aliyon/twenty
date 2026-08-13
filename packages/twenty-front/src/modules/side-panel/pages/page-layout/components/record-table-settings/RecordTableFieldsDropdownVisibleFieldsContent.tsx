@@ -10,6 +10,7 @@ import { DropdownContent } from '@/ui/layout/dropdown/components/DropdownContent
 import { DropdownMenuItemsContainer } from '@/ui/layout/dropdown/components/DropdownMenuItemsContainer';
 import { DropdownMenuSeparator } from '@/ui/layout/dropdown/components/DropdownMenuSeparator';
 import { useAtomComponentSelectorValue } from '@/ui/utilities/state/jotai/hooks/useAtomComponentSelectorValue';
+import { getViewFieldDisplay } from '@/views/utils/getViewFieldDisplay';
 import { type DropResult } from '@hello-pangea/dnd';
 import { t } from '@lingui/core/macro';
 import { isDefined } from 'twenty-shared/utils';
@@ -86,8 +87,8 @@ export const RecordTableFieldsDropdownVisibleFieldsContent = ({
     }
   };
 
-  const handleHideField = (fieldMetadataId: string) => {
-    const updatedField = updateRecordField(fieldMetadataId, {
+  const handleHideField = (recordFieldId: string) => {
+    const updatedField = updateRecordField(recordFieldId, {
       isVisible: false,
     });
 
@@ -121,11 +122,15 @@ export const RecordTableFieldsDropdownVisibleFieldsContent = ({
                   const { fieldMetadataItem } = getFieldMetadataItemByIdOrThrow(
                     recordField.fieldMetadataItemId,
                   );
+                  const { label } = getViewFieldDisplay({
+                    fieldMetadataItem,
+                    subFieldName: recordField.subFieldName,
+                  });
 
                   return (
                     <DraggableItem
-                      key={recordField.fieldMetadataItemId}
-                      draggableId={recordField.fieldMetadataItemId}
+                      key={recordField.id}
+                      draggableId={recordField.id}
                       index={fieldIndex + 1}
                       itemComponent={
                         <MenuItemDraggable
@@ -133,13 +138,10 @@ export const RecordTableFieldsDropdownVisibleFieldsContent = ({
                           iconButtons={[
                             {
                               Icon: IconEyeOff,
-                              onClick: () =>
-                                handleHideField(
-                                  recordField.fieldMetadataItemId,
-                                ),
+                              onClick: () => handleHideField(recordField.id),
                             },
                           ]}
-                          text={fieldMetadataItem.label}
+                          text={label}
                           gripMode="always"
                         />
                       }

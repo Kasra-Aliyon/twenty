@@ -52,7 +52,7 @@ export const RecordTableHeader = () => {
       <RecordTableHeaderFirstScrollableCell />
       {recordFieldsWithoutFirstTwo.map((recordField, index) => (
         <RecordTableHeaderCell
-          key={recordField.fieldMetadataItemId}
+          key={recordField.id}
           recordField={recordField}
           recordFieldIndex={index + 2}
         />

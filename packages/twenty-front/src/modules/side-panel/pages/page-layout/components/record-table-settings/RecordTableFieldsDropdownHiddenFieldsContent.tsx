@@ -9,6 +9,7 @@ import { DropdownMenuHeader } from '@/ui/layout/dropdown/components/DropdownMenu
 import { DropdownMenuHeaderLeftComponent } from '@/ui/layout/dropdown/components/DropdownMenuHeader/internal/DropdownMenuHeaderLeftComponent';
 import { DropdownMenuItemsContainer } from '@/ui/layout/dropdown/components/DropdownMenuItemsContainer';
 import { useAtomComponentStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomComponentStateValue';
+import { getViewFieldOptions } from '@/views/utils/getViewFieldOptions';
 import { t } from '@lingui/core/macro';
 import { isDefined } from 'twenty-shared/utils';
 import { IconChevronLeft, IconEye, useIcons } from 'twenty-ui/icon';
@@ -46,28 +47,30 @@ export const RecordTableFieldsDropdownHiddenFieldsContent = ({
 
   const currentRecordFields = useAtomComponentStateValue(
     currentRecordFieldsComponentState,
+    recordIndexId,
   );
 
   const { activeFieldMetadataItems } = useActiveFieldMetadataItems({
     objectMetadataItem,
   });
 
-  const visibleFieldMetadataItemIds = currentRecordFields
-    .filter((recordField) => recordField.isVisible)
-    .map((recordField) => recordField.fieldMetadataItemId);
+  const hiddenFieldOptions = getViewFieldOptions({
+    fieldMetadataItems: activeFieldMetadataItems,
+    recordFields: currentRecordFields,
+  }).filter(({ recordField }) => recordField?.isVisible !== true);
 
-  const hiddenFieldMetadataItems = activeFieldMetadataItems.filter(
-    (fieldMetadataItem) =>
-      !visibleFieldMetadataItemIds.includes(fieldMetadataItem.id),
-  );
-
-  const handleShowField = (fieldMetadataId: string) => {
+  const handleShowField = (
+    fieldMetadataId: string,
+    subFieldName?: string | null,
+  ) => {
     const existingRecordField = currentRecordFields.find(
-      (recordField) => recordField.fieldMetadataItemId === fieldMetadataId,
+      (recordField) =>
+        recordField.fieldMetadataItemId === fieldMetadataId &&
+        (recordField.subFieldName ?? null) === (subFieldName ?? null),
     );
 
     if (isDefined(existingRecordField)) {
-      updateRecordField(fieldMetadataId, { isVisible: true });
+      updateRecordField(existingRecordField.id, { isVisible: true });
       onFieldUpdated?.(existingRecordField.id, { isVisible: true });
     } else {
       const lastPosition =
@@ -80,6 +83,7 @@ export const RecordTableFieldsDropdownHiddenFieldsContent = ({
         size: 100,
         isVisible: true,
         position: lastPosition + 1,
+        subFieldName,
       };
 
       upsertRecordField(newRecordField);
@@ -100,19 +104,22 @@ export const RecordTableFieldsDropdownHiddenFieldsContent = ({
         {t`Hidden Fields`}
       </DropdownMenuHeader>
       <DropdownMenuItemsContainer>
-        {hiddenFieldMetadataItems.map((fieldMetadataItem) => (
-          <MenuItem
-            key={fieldMetadataItem.id}
-            LeftIcon={getIcon(fieldMetadataItem.icon)}
-            iconButtons={[
-              {
-                Icon: IconEye,
-                onClick: () => handleShowField(fieldMetadataItem.id),
-              },
-            ]}
-            text={fieldMetadataItem.label}
-          />
-        ))}
+        {hiddenFieldOptions.map(
+          ({ fieldMetadataItem, key, label, subFieldName }) => (
+            <MenuItem
+              key={key}
+              LeftIcon={getIcon(fieldMetadataItem.icon)}
+              iconButtons={[
+                {
+                  Icon: IconEye,
+                  onClick: () =>
+                    handleShowField(fieldMetadataItem.id, subFieldName),
+                },
+              ]}
+              text={label}
+            />
+          ),
+        )}
       </DropdownMenuItemsContainer>
     </DropdownContent>
   );

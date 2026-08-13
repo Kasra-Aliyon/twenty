@@ -68,8 +68,7 @@ export const useSaveCurrentViewFields = () => {
             };
             const existingField = currentViewFields.find(
               (currentViewField) =>
-                currentViewField.fieldMetadataId ===
-                createViewFieldInput.fieldMetadataId,
+                currentViewField.id === createViewFieldInput.id,
             );
 
             if (isUndefinedOrNull(existingField)) {

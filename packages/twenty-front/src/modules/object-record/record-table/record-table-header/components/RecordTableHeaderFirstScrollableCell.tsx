@@ -14,7 +14,7 @@ import { isRecordTableRowActiveComponentFamilyState } from '@/object-record/reco
 import { isRecordTableRowFocusActiveComponentState } from '@/object-record/record-table/states/isRecordTableRowFocusActiveComponentState';
 import { isRecordTableRowFocusedComponentFamilyState } from '@/object-record/record-table/states/isRecordTableRowFocusedComponentFamilyState';
 import { isRecordTableScrolledVerticallyComponentState } from '@/object-record/record-table/states/isRecordTableScrolledVerticallyComponentState';
-import { resizedFieldMetadataIdComponentState } from '@/object-record/record-table/states/resizedFieldMetadataIdComponentState';
+import { resizedRecordFieldIdComponentState } from '@/object-record/record-table/states/resizedRecordFieldIdComponentState';
 import { getRecordTableColumnFieldWidthClassName } from '@/object-record/record-table/utils/getRecordTableColumnFieldWidthClassName';
 import { useAtomComponentFamilyStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomComponentFamilyStateValue';
 import { useAtomComponentSelectorValue } from '@/ui/utilities/state/jotai/hooks/useAtomComponentSelectorValue';
@@ -67,11 +67,11 @@ export const RecordTableHeaderFirstScrollableCell = () => {
     !isFirstRowActiveOrFocused ||
     isRecordTableScrolledVertically;
 
-  const resizedFieldMetadataId = useAtomComponentStateValue(
-    resizedFieldMetadataIdComponentState,
+  const resizedRecordFieldId = useAtomComponentStateValue(
+    resizedRecordFieldIdComponentState,
   );
 
-  const isResizingAnyColumn = isDefined(resizedFieldMetadataId);
+  const isResizingAnyColumn = isDefined(resizedRecordFieldId);
 
   if (!recordField) {
     return <></>;
@@ -80,7 +80,7 @@ export const RecordTableHeaderFirstScrollableCell = () => {
   return (
     <RecordTableHeaderCellContainer
       className={cx('header-cell', getRecordTableColumnFieldWidthClassName(1))}
-      key={recordField.fieldMetadataItemId}
+      key={recordField.id}
       shouldDisplayBorderBottom={shouldDisplayBorderBottom}
       zIndex={TABLE_Z_INDEX.headerColumns.headerColumnsNormal}
       isResizing={isResizingAnyColumn}

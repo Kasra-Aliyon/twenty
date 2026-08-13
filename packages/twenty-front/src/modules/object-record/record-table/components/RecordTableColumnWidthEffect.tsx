@@ -9,7 +9,7 @@ import { useRecordTableContextOrThrow } from '@/object-record/record-table/conte
 import { isRecordTableCheckboxColumnHiddenComponentState } from '@/object-record/record-table/states/isRecordTableCheckboxColumnHiddenComponentState';
 import { isRecordTableDragColumnHiddenComponentState } from '@/object-record/record-table/states/isRecordTableDragColumnHiddenComponentState';
 import { recordTableWidthComponentState } from '@/object-record/record-table/states/recordTableWidthComponentState';
-import { resizedFieldMetadataIdComponentState } from '@/object-record/record-table/states/resizedFieldMetadataIdComponentState';
+import { resizedRecordFieldIdComponentState } from '@/object-record/record-table/states/resizedRecordFieldIdComponentState';
 import { shouldCompactRecordTableFirstColumnComponentState } from '@/object-record/record-table/states/shouldCompactRecordTableFirstColumnComponentState';
 import { computeLastRecordTableColumnWidth } from '@/object-record/record-table/utils/computeLastRecordTableColumnWidth';
 import { computeVisibleRecordFieldsWidthOnTable } from '@/object-record/record-table/utils/computeVisibleRecordFieldsWidthOnTable';
@@ -23,8 +23,8 @@ import { useEffect } from 'react';
 import { isDefined } from 'twenty-shared/utils';
 
 export const RecordTableColumnWidthEffect = () => {
-  const [resizedFieldMetadataId] = useAtomComponentState(
-    resizedFieldMetadataIdComponentState,
+  const [resizedRecordFieldId] = useAtomComponentState(
+    resizedRecordFieldIdComponentState,
   );
 
   const { visibleRecordFields, recordTableId } = useRecordTableContextOrThrow();
@@ -46,7 +46,7 @@ export const RecordTableColumnWidthEffect = () => {
   );
 
   useEffect(() => {
-    if (isDefined(resizedFieldMetadataId)) {
+    if (isDefined(resizedRecordFieldId)) {
       return;
     }
 
@@ -125,7 +125,7 @@ export const RecordTableColumnWidthEffect = () => {
       );
     }
   }, [
-    resizedFieldMetadataId,
+    resizedRecordFieldId,
     visibleRecordFields,
     recordTableWidth,
     shouldCompactRecordTableFirstColumn,

@@ -2,6 +2,8 @@ import type { LinkedInSafetyState } from '../types';
 
 export const LINKEDIN_READ_REQUESTS_PER_HOUR = 60;
 export const LINKEDIN_READ_REQUESTS_PER_DAY = 200;
+export const LINKEDIN_READ_REQUESTS_PER_DAY_MINIMUM = 1;
+export const LINKEDIN_READ_REQUESTS_PER_DAY_MAXIMUM = 200;
 // Local floor only. The server-side delay pattern drives the actual spacing;
 // this guards against a runner replaying actions back to back.
 export const LINKEDIN_OUTBOUND_MINIMUM_GAP_MILLISECONDS = 60_000;
@@ -55,6 +57,7 @@ export const getLinkedInReadSafetyDecision = (
   rawState: LinkedInSafetyState,
   now: number,
   dailyReadLimitEnabled = true,
+  dailyReadLimit = LINKEDIN_READ_REQUESTS_PER_DAY,
 ): LinkedInSafetyDecision => {
   const state = pruneLinkedInSafetyState(rawState, now);
 
@@ -84,10 +87,7 @@ export const getLinkedInReadSafetyDecision = (
     (timestamp) => timestamp >= startOfLocalDay(now),
   );
 
-  if (
-    dailyReadLimitEnabled &&
-    requestsToday.length >= LINKEDIN_READ_REQUESTS_PER_DAY
-  ) {
+  if (dailyReadLimitEnabled && requestsToday.length >= dailyReadLimit) {
     return {
       allowed: false,
       retryAt: startOfLocalDay(now) + DAY_MILLISECONDS,

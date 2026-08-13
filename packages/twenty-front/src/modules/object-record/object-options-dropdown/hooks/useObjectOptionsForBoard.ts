@@ -202,7 +202,7 @@ export const useObjectOptionsForBoard = ({
         // TODO: remove after refactor
         setRecordIndexFieldDefinitions(modifiedRecordIndexFieldDefinitions);
       } else {
-        updateRecordField(updatedFieldDefinition.fieldMetadataId, {
+        updateRecordField(corresponingRecordField.id, {
           isVisible: shouldShowFieldMetadataItem,
         });
 

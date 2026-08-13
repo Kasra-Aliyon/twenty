@@ -55,7 +55,7 @@ export const RecordTableBodyLoading = () => {
               )}
               {visibleRecordFields.map((recordField, index) => (
                 <RecordTableCellLoading
-                  key={recordField.fieldMetadataItemId}
+                  key={recordField.id}
                   recordFieldIndex={index}
                 />
               ))}

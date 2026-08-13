@@ -283,7 +283,7 @@ const startCloudflared = async (proxyPort: number): Promise<ManagedTunnel> => {
 };
 
 const startApplication = (serverPort: number, detached = true): ChildProcess =>
-  spawn('yarn', ['start:application'], {
+  spawn('yarn', ['start:application:core'], {
     cwd: WORKSPACE_ROOT,
     detached: detached && process.platform !== 'win32',
     env: {

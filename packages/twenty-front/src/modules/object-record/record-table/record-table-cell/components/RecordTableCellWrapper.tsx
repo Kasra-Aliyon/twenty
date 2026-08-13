@@ -30,7 +30,7 @@ export const RecordTableCellWrapper = ({
         recordField,
         cellPosition: currentTableCellPosition,
       }}
-      key={recordField.fieldMetadataItemId}
+      key={recordField.id}
     >
       <RecordTableCellFieldContextWrapper recordField={recordField}>
         {children}

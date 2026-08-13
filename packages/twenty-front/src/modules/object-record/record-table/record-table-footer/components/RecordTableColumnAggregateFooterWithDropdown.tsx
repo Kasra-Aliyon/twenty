@@ -21,7 +21,7 @@ export const RecordTableColumnFooterWithDropdown = ({
   const { currentContentId, handleContentChange, handleResetContent } =
     useDropdownContextCurrentContentId<RecordTableFooterAggregateContentId>();
 
-  const { fieldMetadataId } = useContext(
+  const { fieldMetadataId, viewFieldId } = useContext(
     RecordTableColumnAggregateFooterCellContext,
   );
 
@@ -46,8 +46,8 @@ export const RecordTableColumnFooterWithDropdown = ({
   }, [handleResetContent, toggleScrollXWrapper, toggleScrollYWrapper]);
 
   const dropdownId = currentRecordGroupId
-    ? `${fieldMetadataId}-footer-${currentRecordGroupId}`
-    : `${fieldMetadataId}-footer`;
+    ? `${viewFieldId}-footer-${currentRecordGroupId}`
+    : `${viewFieldId}-footer`;
 
   return (
     <Dropdown
@@ -67,6 +67,7 @@ export const RecordTableColumnFooterWithDropdown = ({
             onContentChange: handleContentChange,
             resetContent: handleResetContent,
             dropdownId: dropdownId,
+            viewFieldId,
             fieldMetadataId: fieldMetadataId,
             fieldMetadataType: fieldMetadata?.type,
           }}

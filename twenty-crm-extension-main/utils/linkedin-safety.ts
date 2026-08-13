@@ -8,6 +8,9 @@ import {
   getLinkedInOutboundSafetyDecision,
   getLinkedInReadSafetyDecision,
   LINKEDIN_OUTBOUND_MINIMUM_GAP_MILLISECONDS,
+  LINKEDIN_READ_REQUESTS_PER_DAY,
+  LINKEDIN_READ_REQUESTS_PER_DAY_MAXIMUM,
+  LINKEDIN_READ_REQUESTS_PER_DAY_MINIMUM,
   LINKEDIN_RESTRICTION_COOLDOWN_MILLISECONDS,
   pruneLinkedInSafetyState,
   type LinkedInSafetyDecision,
@@ -17,6 +20,14 @@ const LINKEDIN_SAFETY_STATE_KEY = 'twentyLinkedinSafetyState';
 const LINKEDIN_SAFETY_SETTINGS_KEY = 'twentyLinkedinSafetySettings';
 const HOUR_MILLISECONDS = 60 * 60_000;
 let linkedinSafetyOperation: Promise<void> = Promise.resolve();
+
+const normalizeDailyReadLimit = (value: unknown): number =>
+  typeof value === 'number' && Number.isInteger(value)
+    ? Math.min(
+        LINKEDIN_READ_REQUESTS_PER_DAY_MAXIMUM,
+        Math.max(LINKEDIN_READ_REQUESTS_PER_DAY_MINIMUM, value),
+      )
+    : LINKEDIN_READ_REQUESTS_PER_DAY;
 
 const withLinkedInSafetyStore = <TResult>(
   operation: () => Promise<TResult>,
@@ -97,6 +108,7 @@ const getStoredSettings = async (): Promise<LinkedInSafetySettings> => {
       typeof storedSettings?.dailyReadLimitEnabled === 'boolean'
         ? storedSettings.dailyReadLimitEnabled
         : false,
+    dailyReadLimit: normalizeDailyReadLimit(storedSettings?.dailyReadLimit),
   };
 };
 
@@ -114,7 +126,12 @@ export const reserveLinkedInReadRequest = async (
     const settings = await getStoredSettings();
 
     throwIfBlocked(
-      getLinkedInReadSafetyDecision(state, now, settings.dailyReadLimitEnabled),
+      getLinkedInReadSafetyDecision(
+        state,
+        now,
+        settings.dailyReadLimitEnabled,
+        settings.dailyReadLimit,
+      ),
     );
     state.readRequestTimestamps.push(now);
     await saveState(state);
@@ -168,6 +185,10 @@ export const setLinkedInSafetySettings = async (
         typeof settings.dailyReadLimitEnabled === 'boolean'
           ? settings.dailyReadLimitEnabled
           : currentSettings.dailyReadLimitEnabled,
+      dailyReadLimit:
+        settings.dailyReadLimit === undefined
+          ? currentSettings.dailyReadLimit
+          : normalizeDailyReadLimit(settings.dailyReadLimit),
     };
 
     await browser.storage.local.set({
@@ -233,6 +254,7 @@ export const getLinkedInSafetySnapshot = async (
         ({ attemptedAt }) => attemptedAt >= dayStart.getTime(),
       ).length,
       dailyReadLimitEnabled: settings.dailyReadLimitEnabled,
+      dailyReadLimit: settings.dailyReadLimit,
       nextOutboundAt:
         lastOutboundAttemptAt > 0
           ? lastOutboundAttemptAt + LINKEDIN_OUTBOUND_MINIMUM_GAP_MILLISECONDS

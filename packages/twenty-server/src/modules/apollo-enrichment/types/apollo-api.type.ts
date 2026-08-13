@@ -65,13 +65,6 @@ export type ApolloOrganizationEnrichResponse = {
   organization?: ApolloOrganization | null;
 };
 
-export type ApolloWebhookResultResponse = {
-  request_id?: string | null;
-  webhook_status?: 'failed' | 'in_progress' | 'success' | string | null;
-  failure_reason?: string | null;
-  webhook_result?: ApolloPhoneEnrichmentWebhookPayload | null;
-};
-
 export type ApolloPhoneEnrichmentWebhookPayload = {
   status?: 'failed' | 'success' | string | null;
   people?: ApolloPerson[] | null;

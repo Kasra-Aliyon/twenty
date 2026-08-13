@@ -7,6 +7,7 @@ import { type RecordField } from '@/object-record/record-field/types/RecordField
 import { shouldCompactRecordTableFirstColumnComponentState } from '@/object-record/record-table/states/shouldCompactRecordTableFirstColumnComponentState';
 import { useAtomComponentStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomComponentStateValue';
 import { useAtomFamilySelectorValue } from '@/ui/utilities/state/jotai/hooks/useAtomFamilySelectorValue';
+import { getViewFieldDisplay } from '@/views/utils/getViewFieldDisplay';
 import { useIcons } from 'twenty-ui/icon';
 import {
   MOBILE_VIEWPORT,
@@ -76,14 +77,20 @@ export const RecordTableColumnHead = ({
   const shouldHideTitle =
     shouldCompactRecordTableFirstColumn && isLabelIdentifier;
 
+  const label = correspondingFieldMetadataItem.foundFieldMetadataItem
+    ? getViewFieldDisplay({
+        fieldMetadataItem:
+          correspondingFieldMetadataItem.foundFieldMetadataItem,
+        subFieldName: recordField.subFieldName,
+      }).label
+    : undefined;
+
   return (
     <StyledTitle hideTitle={shouldHideTitle}>
       <StyledIcon>
         <Icon size={theme.icon.size.md} />
       </StyledIcon>
-      <StyledText>
-        {correspondingFieldMetadataItem.foundFieldMetadataItem?.label}
-      </StyledText>
+      <StyledText>{label}</StyledText>
     </StyledTitle>
   );
 };

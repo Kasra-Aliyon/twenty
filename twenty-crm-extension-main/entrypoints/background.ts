@@ -38,6 +38,7 @@ import type {
   LinkedInActionStatus,
   LinkedInConnectionState,
   LinkedInRunnerSessionState,
+  LinkedInSafetySettings,
   LinkedInSyncLock,
   LinkedInSyncProgress,
 } from '../types';
@@ -820,6 +821,14 @@ async function handleMessage(
         return { success: true };
       }
 
+      case 'SYNC_LINKEDIN_SAFETY_SETTINGS':
+        return {
+          success: true,
+          data: await setLinkedInSafetySettings(
+            message.payload as Partial<LinkedInSafetySettings>,
+          ),
+        };
+
       case 'SYNC_TWENTY_TOKEN_PAIR_FROM_ACTIVE_TAB': {
         const hasToken = await syncTokenPairFromActiveTab();
 
@@ -1122,6 +1131,7 @@ async function handleMessage(
           data: await setLinkedInSafetySettings(
             message.payload as {
               dailyReadLimitEnabled?: boolean;
+              dailyReadLimit?: number;
             },
           ),
         };

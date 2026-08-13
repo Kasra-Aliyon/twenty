@@ -613,6 +613,37 @@ describe('isRecordMatchingFilter', () => {
       ).toBe(false);
     });
 
+    it('matches a nested relation filter without treating it as a UUID filter', () => {
+      expect(
+        isRecordMatchingFilter({
+          record: companyWithAccountOwner,
+          filter: { accountOwner: { id: { eq: accountOwnerId } } },
+          objectMetadataItem: companyMockObjectMetadataItem,
+        }),
+      ).toBe(true);
+
+      expect(
+        isRecordMatchingFilter({
+          record: companyWithAccountOwner,
+          filter: { accountOwner: { id: { eq: 'unknown-id' } } },
+          objectMetadataItem: companyMockObjectMetadataItem,
+        }),
+      ).toBe(false);
+    });
+
+    it('keeps a server-filtered record when its nested relation was not selected', () => {
+      expect(
+        isRecordMatchingFilter({
+          record: {
+            ...companyWithAccountOwner,
+            accountOwner: undefined,
+          },
+          filter: { accountOwner: { id: { eq: accountOwnerId } } },
+          objectMetadataItem: companyMockObjectMetadataItem,
+        }),
+      ).toBe(true);
+    });
+
     it('still matches the relation join column field', () => {
       const filter: RecordGqlOperationFilter = {
         accountOwnerId: { is: 'NOT_NULL' },

@@ -60,7 +60,7 @@ export const RecordTableFieldsCells = () => {
       </RecordTableCellWrapper>
       {recordFieldsAfterFirst.map((recordField, recordFieldIndex) => (
         <RecordTableCellWrapper
-          key={recordField.fieldMetadataItemId}
+          key={recordField.id}
           recordField={recordField}
           recordFieldIndex={recordFieldIndex + 1}
         >

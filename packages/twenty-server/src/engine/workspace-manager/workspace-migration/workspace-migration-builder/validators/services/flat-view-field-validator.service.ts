@@ -6,7 +6,7 @@ import { ViewType } from 'twenty-shared/types';
 import { isDefined } from 'twenty-shared/utils';
 
 import { findFlatEntityByUniversalIdentifier } from 'src/engine/metadata-modules/flat-entity/utils/find-flat-entity-by-universal-identifier.util';
-import { findManyFlatEntityByUniversalIdentifierInUniversalFlatEntityMapsOrThrow } from 'src/engine/metadata-modules/flat-entity/utils/find-many-flat-entity-by-universal-identifier-in-universal-flat-entity-maps-or-throw.util';
+import { findManyFlatEntityByUniversalIdentifierInUniversalFlatEntityMaps } from 'src/engine/metadata-modules/flat-entity/utils/find-many-flat-entity-by-universal-identifier-in-universal-flat-entity-maps.util';
 import { isViewFieldInLowestPosition } from 'src/engine/metadata-modules/flat-view-field/utils/is-view-field-in-lowest-position.util';
 import { ViewExceptionCode } from 'src/engine/metadata-modules/view/exceptions/view.exception';
 import { FailedFlatEntityValidation } from 'src/engine/workspace-manager/workspace-migration/workspace-migration-builder/builders/types/failed-flat-entity-validation.type';
@@ -101,16 +101,14 @@ export class FlatViewFieldValidatorService {
         updatedFlatViewField.fieldMetadataUniversalIdentifier
     ) {
       const otherFlatViewFields =
-        findManyFlatEntityByUniversalIdentifierInUniversalFlatEntityMapsOrThrow(
-          {
-            universalIdentifiers: flatView.viewFieldUniversalIdentifiers.filter(
-              (viewFieldUniversalIdentifier) =>
-                viewFieldUniversalIdentifier !==
-                updatedFlatViewField.universalIdentifier,
-            ),
-            flatEntityMaps: optimisticFlatViewFieldMaps,
-          },
-        );
+        findManyFlatEntityByUniversalIdentifierInUniversalFlatEntityMaps({
+          universalIdentifiers: flatView.viewFieldUniversalIdentifiers.filter(
+            (viewFieldUniversalIdentifier) =>
+              viewFieldUniversalIdentifier !==
+              updatedFlatViewField.universalIdentifier,
+          ),
+          flatEntityMaps: optimisticFlatViewFieldMaps,
+        });
 
       validationResult.errors.push(
         ...validateLabelIdentifierFieldMetadataIdFlatViewField({
@@ -222,8 +220,10 @@ export class FlatViewFieldValidatorService {
       return validationResult;
     }
 
+    // Dependency maps are scoped to the applications involved in the build,
+    // while a view can also aggregate fields owned by other applications.
     const otherFlatViewFields =
-      findManyFlatEntityByUniversalIdentifierInUniversalFlatEntityMapsOrThrow({
+      findManyFlatEntityByUniversalIdentifierInUniversalFlatEntityMaps({
         universalIdentifiers: flatView.viewFieldUniversalIdentifiers,
         flatEntityMaps: optimisticFlatViewFieldMaps,
       });
@@ -232,13 +232,15 @@ export class FlatViewFieldValidatorService {
         flatViewField.viewUniversalIdentifier ===
           flatViewFieldToValidate.viewUniversalIdentifier &&
         flatViewField.fieldMetadataUniversalIdentifier ===
-          flatViewFieldToValidate.fieldMetadataUniversalIdentifier,
+          flatViewFieldToValidate.fieldMetadataUniversalIdentifier &&
+        (flatViewField.subFieldName ?? null) ===
+          (flatViewFieldToValidate.subFieldName ?? null),
     );
 
     if (equivalentExistingFlatViewFieldExists) {
       validationResult.errors.push({
         code: ViewExceptionCode.INVALID_VIEW_DATA,
-        message: t`View field with same fieldMetadataUniversalIdentifier and viewUniversalIdentifier already exists`,
+        message: t`View field with the same field, view, and subfield already exists`,
         userFriendlyMessage: msg`View field already exists`,
       });
     }

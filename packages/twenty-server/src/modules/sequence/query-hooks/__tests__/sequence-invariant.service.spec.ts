@@ -13,6 +13,7 @@ import { type GlobalWorkspaceOrmManager } from 'src/engine/twenty-orm/global-wor
 import { SequenceInvariantService } from 'src/modules/sequence/query-hooks/sequence-invariant.service';
 import { type SequenceEnrollmentWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence-enrollment.workspace-entity';
 import { type SequenceSenderService } from 'src/modules/sequence/services/sequence-sender.service';
+import { DEFAULT_SEQUENCE_SETTINGS } from 'src/modules/sequence/sequence.constants';
 import { SequenceStepWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence-step.workspace-entity';
 import { SequenceWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence.workspace-entity';
 
@@ -147,6 +148,48 @@ describe('SequenceInvariantService', () => {
         failedCount: 0,
       }),
     );
+  });
+
+  it('allows settings changes on a paused sequence with active enrollments', async () => {
+    activeEnrollmentCount = 1;
+
+    await expect(
+      service.assertSequenceUpdateAllowed({
+        authContext,
+        sequenceId: sequence.id,
+        data: {
+          settings: { ...DEFAULT_SEQUENCE_SETTINGS, stopOnReply: false },
+        },
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it('rejects sender changes while an enrollment is active', async () => {
+    activeEnrollmentCount = 1;
+
+    await expect(
+      service.assertSequenceUpdateAllowed({
+        authContext,
+        sequenceId: sequence.id,
+        data: { senderConnectedAccountId: 'new-sender-id' },
+      }),
+    ).rejects.toThrow('Wait for active enrollments');
+  });
+
+  it('rejects settings changes while the sequence is active', async () => {
+    sequenceRepository.find.mockResolvedValueOnce([
+      { ...sequence, status: SEQUENCE_STATUSES.ACTIVE },
+    ]);
+
+    await expect(
+      service.assertSequenceUpdateAllowed({
+        authContext,
+        sequenceId: sequence.id,
+        data: {
+          settings: { ...DEFAULT_SEQUENCE_SETTINGS, stopOnReply: false },
+        },
+      }),
+    ).rejects.toThrow('Pause the sequence');
   });
 
   it('allows supported terminal and skip actions while normalizing timestamps', async () => {

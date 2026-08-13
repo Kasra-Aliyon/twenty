@@ -37,12 +37,7 @@ describe('ApolloClientService', () => {
     jest.clearAllMocks();
   });
 
-  afterEach(() => {
-    jest.useRealTimers();
-  });
-
-  it('polls asynchronous Apollo phone enrichment results', async () => {
-    jest.useFakeTimers();
+  it('returns immediately while Apollo delivers phone results asynchronously', async () => {
     httpClient.post.mockResolvedValue({
       data: {
         request_id: 'request-id',
@@ -52,50 +47,25 @@ describe('ApolloClientService', () => {
         },
       },
     });
-    httpClient.get.mockResolvedValue({
-      data: {
-        webhook_status: 'success',
-        webhook_result: {
-          people: [
-            {
-              id: 'apollo-person-id',
-              phone_numbers: [
-                {
-                  sanitized_number: '+14155550100',
-                },
-              ],
-            },
-          ],
+    await expect(
+      service.enrichPerson(
+        {
+          email: 'jane@example.com',
+          firstName: 'Jane',
+          lastName: 'Doe',
         },
-      },
-    });
-
-    const enrichmentPromise = service.enrichPerson(
-      {
-        email: 'jane@example.com',
-        firstName: 'Jane',
-        lastName: 'Doe',
-      },
-      {
-        revealPersonalEmails: false,
-        revealPhoneNumber: true,
-        webhookUrl:
-          'https://twenty.example.com/webhooks/apollo/enrichment/token',
-      },
-    );
-
-    await jest.advanceTimersByTimeAsync(10_000);
-
-    await expect(enrichmentPromise).resolves.toEqual({
+        {
+          revealPersonalEmails: false,
+          revealPhoneNumber: true,
+          webhookUrl:
+            'https://twenty.example.com/webhooks/apollo/enrichment/token',
+        },
+      ),
+    ).resolves.toEqual({
       request_id: 'request-id',
       person: {
         id: 'apollo-person-id',
         email: 'jane@example.com',
-        phone_numbers: [
-          {
-            sanitized_number: '+14155550100',
-          },
-        ],
       },
     });
     expect(httpClient.post).toHaveBeenCalledWith('/people/match', undefined, {
@@ -109,7 +79,7 @@ describe('ApolloClientService', () => {
           'https://twenty.example.com/webhooks/apollo/enrichment/token',
       },
     });
-    expect(httpClient.get).toHaveBeenCalledWith('/webhook_result/request-id');
+    expect(httpClient.get).not.toHaveBeenCalled();
   });
 
   it('does not request or poll phone data during general enrichment', async () => {

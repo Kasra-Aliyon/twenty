@@ -26,7 +26,10 @@ export const useOpenRecordFilterChipFromTableHeader = () => {
   const { setEditableFilterChipDropdownStates } =
     useSetEditableFilterChipDropdownStates();
 
-  const openRecordFilterChipFromTableHeader = (fieldMetadataItemId: string) => {
+  const openRecordFilterChipFromTableHeader = (
+    fieldMetadataItemId: string,
+    subFieldName?: string | null,
+  ) => {
     const correspondingFieldMetadataItem = filterableFieldMetadataItems.find(
       (fieldMetadataItemToFind) =>
         fieldMetadataItemToFind.id === fieldMetadataItemId,
@@ -41,6 +44,7 @@ export const useOpenRecordFilterChipFromTableHeader = () => {
     const existingNonAdvancedRecordFilter = currentRecordFilters.find(
       (recordFilter) =>
         recordFilter.fieldMetadataId === fieldMetadataItemId &&
+        (recordFilter.subFieldName ?? null) === (subFieldName ?? null) &&
         !isDefined(recordFilter.recordFilterGroupId),
     );
 
@@ -54,9 +58,15 @@ export const useOpenRecordFilterChipFromTableHeader = () => {
       return;
     }
 
-    const { newRecordFilter } = createEmptyRecordFilterFromFieldMetadataItem(
-      correspondingFieldMetadataItem,
-    );
+    const { newRecordFilter: emptyRecordFilter } =
+      createEmptyRecordFilterFromFieldMetadataItem(
+        correspondingFieldMetadataItem,
+      );
+
+    const newRecordFilter = {
+      ...emptyRecordFilter,
+      subFieldName: subFieldName as typeof emptyRecordFilter.subFieldName,
+    };
 
     upsertRecordFilter(newRecordFilter);
 

@@ -20,8 +20,8 @@ All notable changes to Twenty CRM LinkedIn Capture Extension.
   cross-sequence outbound cap, and a 15-minute minimum outbound gap.
 - Changed new sequence defaults to 20 LinkedIn actions per day with conservative
   15–45 minute spacing; server throttling is now workspace-wide.
-- Made the local daily automation cap configurable from 1–20 in the connector
-  popup and clamped the CRM sequence setting to the same maximum.
+- Made the sequence daily automation cap configurable from 1–40 in Twenty and
+  clamped the server and MCP settings to the same maximum.
 - Added direct LinkedIn message sequence steps for recognized first-degree
   connections using LinkedIn's visible composer UI and existing safety limits.
 - Compacted the runner so outbound controls, sync totals, and status remain

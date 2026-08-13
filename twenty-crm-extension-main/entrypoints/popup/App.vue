@@ -6,7 +6,11 @@ import type {
   LinkedInSafetySnapshot,
   LinkedInSyncTotals,
 } from '../../types';
-import { LINKEDIN_READ_REQUESTS_PER_DAY } from '../../utils/linkedin-safety-policy';
+import {
+  LINKEDIN_READ_REQUESTS_PER_DAY,
+  LINKEDIN_READ_REQUESTS_PER_DAY_MAXIMUM,
+  LINKEDIN_READ_REQUESTS_PER_DAY_MINIMUM,
+} from '../../utils/linkedin-safety-policy';
 import {
   DEFAULT_TWENTY_API_URL,
   DEFAULT_TWENTY_APP_URL,
@@ -32,6 +36,7 @@ const linkedInSyncTotals = ref<LinkedInSyncTotals>({
 });
 const linkedInSafetySnapshot = ref<LinkedInSafetySnapshot | null>(null);
 const linkedInDailyReadLimitEnabled = ref(false);
+const linkedInDailyReadLimit = ref(LINKEDIN_READ_REQUESTS_PER_DAY);
 const recentCaptures = ref<
   Array<{
     linkedinUrl: string;
@@ -156,6 +161,7 @@ async function loadLinkedInSafetySnapshot() {
     if (response.success && response.data) {
       linkedInSafetySnapshot.value = response.data;
       linkedInDailyReadLimitEnabled.value = response.data.dailyReadLimitEnabled;
+      linkedInDailyReadLimit.value = response.data.dailyReadLimit;
     }
   } catch (err) {
     console.error('Error loading LinkedIn safety status:', err);
@@ -171,6 +177,7 @@ async function saveLinkedInDailyReadLimitEnabled() {
       type: 'SET_LINKEDIN_SAFETY_SETTINGS',
       payload: {
         dailyReadLimitEnabled: linkedInDailyReadLimitEnabled.value,
+        dailyReadLimit: linkedInDailyReadLimit.value,
       },
     })) as ExtensionResponse<LinkedInSafetySettings>;
 
@@ -180,6 +187,7 @@ async function saveLinkedInDailyReadLimitEnabled() {
     }
 
     linkedInDailyReadLimitEnabled.value = response.data.dailyReadLimitEnabled;
+    linkedInDailyReadLimit.value = response.data.dailyReadLimit;
     await loadLinkedInSafetySnapshot();
   } catch (err) {
     console.error('Error saving LinkedIn safety settings:', err);
@@ -467,7 +475,7 @@ function formatDate(timestamp: number): string {
         <p v-if="linkedInSafetySnapshot" class="hint">
           Safety: {{ linkedInSafetySnapshot.readRequestsLastHour }}/60 reads
           this hour · {{ linkedInSafetySnapshot.readRequestsToday }}/{{
-            LINKEDIN_READ_REQUESTS_PER_DAY
+            linkedInSafetySnapshot.dailyReadLimit
           }}
           reads today · {{ linkedInSafetySnapshot.outboundAttemptsToday }}
           outbound attempts today.
@@ -487,9 +495,26 @@ function formatDate(timestamp: number): string {
             @change="saveLinkedInDailyReadLimitEnabled"
           />
         </div>
+        <div class="safety-limit">
+          <label class="safety-limit__label" for="linkedinDailyReadLimit">
+            Daily read limit
+          </label>
+          <input
+            id="linkedinDailyReadLimit"
+            v-model.number="linkedInDailyReadLimit"
+            class="safety-limit__input"
+            type="number"
+            :min="LINKEDIN_READ_REQUESTS_PER_DAY_MINIMUM"
+            :max="LINKEDIN_READ_REQUESTS_PER_DAY_MAXIMUM"
+            :disabled="
+              isSavingLinkedInSafetySetting || !linkedInDailyReadLimitEnabled
+            "
+            @change="saveLinkedInDailyReadLimitEnabled"
+          />
+        </div>
         <p class="hint">
           <template v-if="linkedInDailyReadLimitEnabled">
-            The 200-request daily read cap is on.
+            The {{ linkedInDailyReadLimit }}-request daily read cap is on.
           </template>
           <template v-else>
             Testing mode: only the daily read cap is off. Hourly limits, request
@@ -826,6 +851,15 @@ function formatDate(timestamp: number): string {
   color: #4b5563;
   font-size: 12px;
   font-weight: 500;
+}
+
+.safety-limit__input {
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  color: #111827;
+  padding: 6px 8px;
+  text-align: right;
+  width: 72px;
 }
 
 .harvest-stat strong {

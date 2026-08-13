@@ -27,11 +27,15 @@ export const RecordTableCellFieldContextWrapper = ({
   const fieldMetadataItem =
     fieldMetadataItemByFieldMetadataItemId[recordField.fieldMetadataItemId];
 
-  const instanceId = getRecordFieldInputInstanceId({
+  const baseInstanceId = getRecordFieldInputInstanceId({
     recordId,
     fieldName: fieldMetadataItem.name,
     prefix: RECORD_TABLE_CELL_INPUT_ID_PREFIX,
   });
+
+  const instanceId = recordField.subFieldName
+    ? `${baseInstanceId}-${recordField.subFieldName}`
+    : baseInstanceId;
 
   const isLabelIdentifier =
     labelIdentifierFieldMetadataItem?.id === recordField.fieldMetadataItemId;

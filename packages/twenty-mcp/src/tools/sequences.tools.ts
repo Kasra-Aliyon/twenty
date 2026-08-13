@@ -48,7 +48,7 @@ const sequenceSettingsSchema = z.object({
   dailyStarts: z.number().int().nonnegative(),
   staggerMinutes: z.number().nonnegative(),
   linkedinDailyActionLimitEnabled: z.boolean(),
-  linkedinDailyActions: z.number().int().min(1).max(20),
+  linkedinDailyActions: z.number().int().min(1).max(40),
   linkedinDelayPatternMinutes: z.array(z.number().positive()).min(1),
   stopOnReply: z.boolean(),
 });
@@ -497,7 +497,7 @@ const SEQUENCE_CAPABILITIES = {
       'Explicit confirmation because activation can start external outreach.',
     ],
     editing:
-      'Pause the sequence and wait for active enrollments to stop before changing settings or steps.',
+      'Pause the sequence before changing settings. Sender and step changes also require active enrollments to finish.',
   },
   sequence_settings: {
     defaults: DEFAULT_SEQUENCE_SETTINGS,
@@ -512,7 +512,7 @@ const SEQUENCE_CAPABILITIES = {
     stagger_minutes:
       'Minimum spacing used when scheduling automated email starts.',
     linkedin_limits:
-      'linkedinDailyActionLimitEnabled controls only the daily action cap. The sending window and workspace-wide delay pattern are always enforced.',
+      'linkedinDailyActionLimitEnabled controls only the daily action cap, which accepts 1-40 actions per day. The sending window and workspace-wide delay pattern are always enforced.',
     stop_on_reply:
       'Sequence default. Automated email steps may inherit or override it.',
   },

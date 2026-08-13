@@ -71,14 +71,16 @@ This command intentionally does not rewrite custom domains or environment
 files. `NODE_PORT`, `SERVER_URL`, `FRONTEND_URL`, and provider allowlists still
 need to be aligned manually when they are environment- or provider-managed.
 
-When `cloudflared` is installed, `yarn start` also manages a restricted HTTPS
-tunnel for Apollo phone-enrichment callbacks. The generated URL is written to
-`packages/twenty-server/.env` before the backend starts, and only
-`POST /webhooks/apollo/enrichment/:token` is publicly forwarded. On macOS,
-install the one-time dependency with `brew install cloudflared`. Set a stable
-non-TryCloudflare `APOLLO_PHONE_ENRICHMENT_WEBHOOK_BASE_URL` to use your own
-tunnel, or run `TWENTY_DISABLE_LOCAL_APOLLO_TUNNEL=true yarn start` to disable
-automatic tunneling.
+When `cloudflared` is installed, `yarn start` and `yarn start:application` also
+manage a restricted HTTPS tunnel for Apollo phone-enrichment callbacks. The
+generated URL is written to `packages/twenty-server/.env` before the backend
+starts, and only `POST /webhooks/apollo/enrichment/:token` is publicly
+forwarded. On macOS, install the one-time dependency with `brew install
+cloudflared`. Set a stable non-TryCloudflare
+`APOLLO_PHONE_ENRICHMENT_WEBHOOK_BASE_URL` to use your own tunnel, or run
+`TWENTY_DISABLE_LOCAL_APOLLO_TUNNEL=true yarn start` to disable automatic
+tunneling. `yarn start:application:core` is an internal command that skips the
+managed callback tunnel and should not be used for normal local development.
 
 To stop the database services later:
 

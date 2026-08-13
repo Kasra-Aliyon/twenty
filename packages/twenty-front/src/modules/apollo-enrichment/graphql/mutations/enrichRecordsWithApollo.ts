@@ -5,6 +5,7 @@ export const ENRICH_PEOPLE_WITH_APOLLO = gql`
     enrichPeopleWithApollo(input: $input) {
       requestedCount
       updatedCount
+      pendingCount
       skippedCount
       notMatchedCount
       notFoundCount
@@ -19,6 +20,7 @@ export const ENRICH_PEOPLE_PHONES_WITH_APOLLO = gql`
     enrichPeoplePhonesWithApollo(input: $input) {
       requestedCount
       updatedCount
+      pendingCount
       skippedCount
       notMatchedCount
       notFoundCount
@@ -33,6 +35,7 @@ export const ENRICH_COMPANIES_WITH_APOLLO = gql`
     enrichCompaniesWithApollo(input: $input) {
       requestedCount
       updatedCount
+      pendingCount
       skippedCount
       notMatchedCount
       notFoundCount

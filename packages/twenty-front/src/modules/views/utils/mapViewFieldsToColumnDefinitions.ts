@@ -1,15 +1,12 @@
-import {
-  type FieldAddressMetadata,
-  type FieldMetadata,
-} from '@/object-record/record-field/ui/types/FieldMetadata';
+import { type FieldMetadata } from '@/object-record/record-field/ui/types/FieldMetadata';
 import { type ColumnDefinition } from '@/object-record/record-table/types/ColumnDefinition';
+import { applyViewFieldSubFieldToColumnDefinition } from '@/views/utils/applyViewFieldSubFieldToColumnDefinition';
 import { mapArrayToObject } from '~/utils/array/mapArrayToObject';
 import { moveArrayItem } from '~/utils/array/moveArrayItem';
 import { isUndefinedOrNull } from '~/utils/isUndefinedOrNull';
 
 import { isDefined } from 'twenty-shared/utils';
 import { type ViewField } from '@/views/types/ViewField';
-import { FieldMetadataType } from 'twenty-shared/types';
 
 export const mapViewFieldsToColumnDefinitions = ({
   columnDefinitions,
@@ -34,22 +31,11 @@ export const mapViewFieldsToColumnDefinitions = ({
 
       const { isLabelIdentifier } = correspondingColumnDefinition;
 
-      const isAddressCountryColumn =
-        correspondingColumnDefinition.type === FieldMetadataType.ADDRESS &&
-        viewField.subFieldName === 'addressCountry';
-
-      const addressMetadata =
-        correspondingColumnDefinition.metadata as FieldAddressMetadata;
-
-      const columnMetadata = isAddressCountryColumn
-        ? {
-            ...addressMetadata,
-            settings: {
-              ...addressMetadata.settings,
-              subFields: ['addressCountry'] as const,
-            },
-          }
-        : correspondingColumnDefinition.metadata;
+      const columnDefinitionWithSubField =
+        applyViewFieldSubFieldToColumnDefinition({
+          columnDefinition: correspondingColumnDefinition,
+          subFieldName: viewField.subFieldName,
+        });
 
       if (isLabelIdentifier === true) {
         labelIdentifierFieldMetadataId =
@@ -58,10 +44,8 @@ export const mapViewFieldsToColumnDefinitions = ({
 
       return {
         fieldMetadataId: viewField.fieldMetadataId,
-        label: isAddressCountryColumn
-          ? 'Country'
-          : correspondingColumnDefinition.label,
-        metadata: columnMetadata,
+        label: columnDefinitionWithSubField.label,
+        metadata: columnDefinitionWithSubField.metadata,
         iconName: correspondingColumnDefinition.iconName,
         type: correspondingColumnDefinition.type,
         position: isLabelIdentifier ? 0 : viewField.position,

@@ -11,6 +11,9 @@ export class ApolloEnrichmentBatchResultDTO implements ApolloEnrichmentBatchResu
   updatedCount: number;
 
   @Field(() => Int)
+  pendingCount: number;
+
+  @Field(() => Int)
   skippedCount: number;
 
   @Field(() => Int)

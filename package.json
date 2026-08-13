@@ -65,7 +65,8 @@
     "docs:generate-navigation-template": "tsx packages/twenty-docs/scripts/generate-navigation-template.ts",
     "docs:generate-paths": "tsx packages/twenty-docs/scripts/generate-documentation-paths.ts",
     "start": "tsx packages/twenty-utils/start-development.ts",
-    "start:application": "npx concurrently --kill-others \"npx nx run-many -t start -p twenty-server twenty-front\" \"tsx packages/twenty-utils/wait-for-development-server.ts && npx nx run twenty-server:worker\""
+    "start:application": "tsx packages/twenty-utils/start-development.ts",
+    "start:application:core": "npx concurrently --kill-others \"npx nx run-many -t start -p twenty-server twenty-front\" \"tsx packages/twenty-utils/wait-for-development-server.ts && npx nx run twenty-server:worker\""
   },
   "workspaces": {
     "packages": [

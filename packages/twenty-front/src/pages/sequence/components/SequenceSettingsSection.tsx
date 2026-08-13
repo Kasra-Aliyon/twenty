@@ -1,4 +1,5 @@
 import { useUpdateOneRecord } from '@/object-record/hooks/useUpdateOneRecord';
+import { LINKEDIN_DAILY_ACTION_LIMITS } from '@/sequence/constants/linkedin-daily-actions';
 import { useMyConnectedAccounts } from '@/settings/accounts/hooks/useMyConnectedAccounts';
 import { useSnackBar } from '@/ui/feedback/snack-bar-manager/hooks/useSnackBar';
 import { Select } from '@/ui/input/components/Select';
@@ -332,16 +333,20 @@ export const SequenceSettingsSection = ({
           <span>{t`Daily LinkedIn actions`}</span>
           <StyledInput
             type="number"
-            min={1}
-            max={20}
+            min={LINKEDIN_DAILY_ACTION_LIMITS.MINIMUM}
+            max={LINKEDIN_DAILY_ACTION_LIMITS.MAXIMUM}
             value={settings.linkedinDailyActions}
             disabled={!settings.linkedinDailyActionLimitEnabled}
             onChange={(event) =>
               setSettings((currentSettings) => ({
                 ...currentSettings,
                 linkedinDailyActions: Math.max(
-                  1,
-                  Math.min(20, Number(event.target.value) || 1),
+                  LINKEDIN_DAILY_ACTION_LIMITS.MINIMUM,
+                  Math.min(
+                    LINKEDIN_DAILY_ACTION_LIMITS.MAXIMUM,
+                    Number(event.target.value) ||
+                      LINKEDIN_DAILY_ACTION_LIMITS.MINIMUM,
+                  ),
                 ),
               }))
             }

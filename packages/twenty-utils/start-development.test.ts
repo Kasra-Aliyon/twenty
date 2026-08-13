@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { describe, it } from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import {
   getEnvironmentValue,
@@ -12,6 +14,24 @@ import {
 import { waitForDevelopmentServer } from './wait-for-development-server';
 
 describe('development startup helpers', () => {
+  it('keeps public application startup behind the managed tunnel supervisor', async () => {
+    const packageJson = JSON.parse(
+      await readFile(
+        fileURLToPath(new URL('../../package.json', import.meta.url)),
+        'utf8',
+      ),
+    ) as { scripts: Record<string, string> };
+
+    assert.equal(
+      packageJson.scripts['start:application'],
+      packageJson.scripts.start,
+    );
+    assert.match(
+      packageJson.scripts['start:application:core'],
+      /twenty-server twenty-front/,
+    );
+  });
+
   it('reads quoted and unquoted environment values', () => {
     const contents = [
       'ONE=value',

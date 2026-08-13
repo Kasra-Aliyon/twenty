@@ -272,16 +272,19 @@ describe('ApolloEnrichmentService', () => {
 
   it('updates a person when Apollo delivers the asynchronous phone webhook', async () => {
     apolloClientService.enrichPerson.mockResolvedValue({
+      request_id: 'request-id',
       person: {
         id: 'apollo-person-id',
       },
     });
 
-    await service.enrichPerson({
-      workspaceId,
-      personId,
-      mode: 'phone',
-    });
+    await expect(
+      service.enrichPerson({
+        workspaceId,
+        personId,
+        mode: 'phone',
+      }),
+    ).resolves.toBe('pending');
 
     const enrichmentOptions = apolloClientService.enrichPerson.mock.calls[0][1];
     const webhookUrl = new URL(enrichmentOptions.webhookUrl);

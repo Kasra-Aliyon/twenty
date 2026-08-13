@@ -2,11 +2,9 @@ import { useCallback, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 
 import { useActiveFieldMetadataItems } from '@/object-metadata/hooks/useActiveFieldMetadataItems';
-import { type FieldMetadataItem } from '@/object-metadata/types/FieldMetadataItem';
 import { useChangeRecordFieldVisibility } from '@/object-record/record-field/hooks/useChangeRecordFieldVisibility';
-import { type FieldMetadata } from '@/object-record/record-field/ui/types/FieldMetadata';
+import { currentRecordFieldsComponentState } from '@/object-record/record-field/states/currentRecordFieldsComponentState';
 import { useRecordTableContextOrThrow } from '@/object-record/record-table/contexts/RecordTableContext';
-import { type ColumnDefinition } from '@/object-record/record-table/types/ColumnDefinition';
 import { DropdownContent } from '@/ui/layout/dropdown/components/DropdownContent';
 import { DropdownMenuItemsContainer } from '@/ui/layout/dropdown/components/DropdownMenuItemsContainer';
 import { DropdownMenuSearchInput } from '@/ui/layout/dropdown/components/DropdownMenuSearchInput';
@@ -14,6 +12,11 @@ import { DropdownMenuSeparator } from '@/ui/layout/dropdown/components/DropdownM
 import { useCloseDropdown } from '@/ui/layout/dropdown/hooks/useCloseDropdown';
 import { navigationMemorizedUrlState } from '@/ui/navigation/states/navigationMemorizedUrlState';
 import { useSetAtomState } from '@/ui/utilities/state/jotai/hooks/useSetAtomState';
+import { useAtomComponentStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomComponentStateValue';
+import {
+  getViewFieldOptions,
+  type ViewFieldOption,
+} from '@/views/utils/getViewFieldOptions';
 import { useLingui } from '@lingui/react/macro';
 import { SettingsPath } from 'twenty-shared/types';
 import { getSettingsPath } from 'twenty-shared/utils';
@@ -24,8 +27,7 @@ export const RecordTableHeaderPlusButtonContent = () => {
   const { t } = useLingui();
   const [searchInput, setSearchInput] = useState('');
 
-  const { objectMetadataItem, recordTableId, visibleRecordFields } =
-    useRecordTableContextOrThrow();
+  const { objectMetadataItem, recordTableId } = useRecordTableContextOrThrow();
 
   const { closeDropdown } = useCloseDropdown();
 
@@ -35,11 +37,13 @@ export const RecordTableHeaderPlusButtonContent = () => {
     useChangeRecordFieldVisibility(recordTableId);
 
   const handleAddColumn = useCallback(
-    async (
-      column: Pick<ColumnDefinition<FieldMetadata>, 'fieldMetadataId'>,
-    ) => {
+    async ({ fieldMetadataItem, subFieldName }: ViewFieldOption) => {
       closeDropdown();
-      await changeRecordFieldVisibility({ ...column, isVisible: true });
+      await changeRecordFieldVisibility({
+        fieldMetadataId: fieldMetadataItem.id,
+        isVisible: true,
+        subFieldName,
+      });
     },
     [changeRecordFieldVisibility, closeDropdown],
   );
@@ -53,30 +57,21 @@ export const RecordTableHeaderPlusButtonContent = () => {
     objectMetadataItem,
   });
 
-  const availableFieldMetadataItemsToShow = activeFieldMetadataItems.filter(
-    (fieldMetadataItemToFilter) =>
-      !visibleRecordFields
-        .map((recordField) => recordField.fieldMetadataItemId)
-        .includes(fieldMetadataItemToFilter.id),
+  const currentRecordFields = useAtomComponentStateValue(
+    currentRecordFieldsComponentState,
+    recordTableId,
   );
 
-  const filteredFieldMetadataItems = availableFieldMetadataItemsToShow.filter(
-    (fieldMetadataItem) => {
-      return fieldMetadataItem.label
-        .toLowerCase()
-        .includes(searchInput.toLowerCase());
-    },
+  const availableFieldOptionsToShow = getViewFieldOptions({
+    fieldMetadataItems: activeFieldMetadataItems,
+    recordFields: currentRecordFields,
+  }).filter(({ recordField }) => recordField?.isVisible !== true);
+
+  const filteredFieldOptions = availableFieldOptionsToShow.filter(({ label }) =>
+    label.toLowerCase().includes(searchInput.toLowerCase()),
   );
 
-  const handleFieldMetadataItemMenuItemClick = async (
-    fieldMetadataItem: FieldMetadataItem,
-  ) => {
-    await handleAddColumn({
-      fieldMetadataId: fieldMetadataItem.id,
-    });
-  };
-
-  const hasAvailableFields = availableFieldMetadataItemsToShow.length > 0;
+  const hasAvailableFields = availableFieldOptionsToShow.length > 0;
 
   return (
     <DropdownContent>
@@ -92,15 +87,13 @@ export const RecordTableHeaderPlusButtonContent = () => {
         </>
       )}
       <DropdownMenuItemsContainer>
-        {filteredFieldMetadataItems.length > 0 ? (
-          filteredFieldMetadataItems.map((fieldMetadataItem) => (
+        {filteredFieldOptions.length > 0 ? (
+          filteredFieldOptions.map((fieldOption) => (
             <MenuItem
-              key={fieldMetadataItem.id}
-              onClick={() =>
-                handleFieldMetadataItemMenuItemClick(fieldMetadataItem)
-              }
-              LeftIcon={getIcon(fieldMetadataItem.icon)}
-              text={fieldMetadataItem.label}
+              key={fieldOption.key}
+              onClick={() => handleAddColumn(fieldOption)}
+              LeftIcon={getIcon(fieldOption.fieldMetadataItem.icon)}
+              text={fieldOption.label}
             />
           ))
         ) : (

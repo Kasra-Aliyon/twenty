@@ -44,6 +44,7 @@ const APOLLO_PHONE_ENRICHMENT_MODAL_ID = 'apollo-phone-enrichment-confirmation';
 type ApolloEnrichmentBatchResult = {
   requestedCount: number;
   updatedCount: number;
+  pendingCount: number;
   skippedCount: number;
   notMatchedCount: number;
   notFoundCount: number;
@@ -208,7 +209,7 @@ export const ApolloEnrichmentAction = ({
     enqueueSuccessSnackBar({
       message:
         kind === 'phone'
-          ? t`Phone enrichment requested: ${result.updatedCount} updated now. Apollo can deliver the remaining results asynchronously over the next several minutes.`
+          ? t`Phone enrichment requested: ${result.updatedCount} updated now, ${result.pendingCount} pending asynchronous delivery.`
           : t`Apollo enrichment finished: ${result.updatedCount} updated, ${unchangedCount} unchanged.`,
     });
   };

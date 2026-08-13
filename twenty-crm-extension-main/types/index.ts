@@ -210,6 +210,7 @@ export type LinkedInSafetySnapshot = {
   readRequestsToday: number;
   outboundAttemptsToday: number;
   dailyReadLimitEnabled: boolean;
+  dailyReadLimit: number;
   nextOutboundAt: number | null;
   cooldownUntil: number | null;
   cooldownReason: string | null;
@@ -217,6 +218,7 @@ export type LinkedInSafetySnapshot = {
 
 export type LinkedInSafetySettings = {
   dailyReadLimitEnabled: boolean;
+  dailyReadLimit: number;
 };
 
 export type LinkedInSyncLock = {
@@ -261,6 +263,7 @@ export type CaptureState = {
 // Message Types for Extension Communication
 export type MessageType =
   | 'SYNC_TWENTY_TOKEN_PAIR'
+  | 'SYNC_LINKEDIN_SAFETY_SETTINGS'
   | 'SYNC_TWENTY_TOKEN_PAIR_FROM_ACTIVE_TAB'
   | 'GET_AUTH_TOKEN'
   | 'CHECK_DUPLICATE'
