@@ -32,15 +32,22 @@ export const EventRowMessage = ({
   const [, eventAction] = event.name.split('.');
   const [isOpen, setIsOpen] = useState(false);
 
-  if (['linked'].includes(eventAction) === false) {
+  if (['linked', 'received', 'sent'].includes(eventAction) === false) {
     throw new Error('Invalid event action for message event type.');
   }
+
+  const interactionLabel =
+    eventAction === 'received'
+      ? t`received an email from`
+      : eventAction === 'sent'
+        ? t`sent an email to`
+        : t`linked an email with`;
 
   return (
     <StyledEventRowMessageContainer>
       <StyledRowContainer>
         <EventRowItem>{authorFullName}</EventRowItem>
-        <EventRowItem variant="action">{t`linked an email with`}</EventRowItem>
+        <EventRowItem variant="action">{interactionLabel}</EventRowItem>
         <EventRowItem>{labelIdentifierValue}</EventRowItem>
         <EventCardToggleButton isOpen={isOpen} setIsOpen={setIsOpen} />
       </StyledRowContainer>

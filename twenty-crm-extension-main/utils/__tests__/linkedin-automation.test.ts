@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   detectConnectionDegree,
@@ -32,6 +32,10 @@ const renderProfile = (html: string) => {
   document.body.innerHTML = html;
   makeElementsVisible();
 };
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe('detectConnectionDegree', () => {
   beforeEach(() => {
@@ -112,7 +116,7 @@ describe('sendConnectionRequest', () => {
       ),
     });
     expect(result).toMatchObject({
-      errorMessage: expect.stringContaining('runner: 2026-08-07.2'),
+      errorMessage: expect.stringContaining('runner: 2026-08-13.1'),
     });
   });
 
@@ -594,6 +598,86 @@ describe('sendConnectionRequest', () => {
     expect(submittedNote).toBe('Hello Ada');
   });
 
+  it('waits for a direct profile action to settle after the dialog closes', async () => {
+    renderProfile(`
+      <main>
+        <section class="pv-top-card">
+          <h1>Ada Lovelace</h1>
+          <span class="dist-value">2nd</span>
+          <button id="connect" aria-label="Invite Ada Lovelace to connect">Connect</button>
+        </section>
+      </main>
+      <div id="modal-host"></div>
+    `);
+    const connectButton =
+      document.querySelector<HTMLButtonElement>('#connect')!;
+
+    connectButton.addEventListener('click', () => {
+      document.querySelector<HTMLElement>('#modal-host')!.innerHTML = `
+        <section class="new-invitation-sheet">
+          <h2>Add a note to your invitation?</h2>
+          <button>Add a note</button>
+          <button id="send-without-note">Send without a note</button>
+        </section>
+      `;
+      document
+        .querySelector<HTMLButtonElement>('#send-without-note')!
+        .addEventListener('click', () => {
+          document.querySelector('.new-invitation-sheet')?.remove();
+          setTimeout(() => {
+            connectButton.textContent = 'Pending';
+            connectButton.setAttribute('aria-label', 'Pending invitation');
+          }, 500);
+        });
+    });
+
+    expect(await sendConnectionRequest('')).toEqual({
+      status: 'COMPLETED',
+      connectionState: 'PENDING',
+    });
+  });
+
+  it('accepts a delayed sent toast while the direct Connect control is stale', async () => {
+    renderProfile(`
+      <main>
+        <section class="pv-top-card">
+          <h1>Ada Lovelace</h1>
+          <span class="dist-value">2nd</span>
+          <button id="connect" aria-label="Invite Ada Lovelace to connect">Connect</button>
+        </section>
+      </main>
+      <div id="modal-host"></div>
+      <div id="toast-host"></div>
+    `);
+
+    document
+      .querySelector<HTMLButtonElement>('#connect')!
+      .addEventListener('click', () => {
+        document.querySelector<HTMLElement>('#modal-host')!.innerHTML = `
+          <section class="new-invitation-sheet">
+            <h2>Add a note to your invitation?</h2>
+            <button>Add a note</button>
+            <button id="send-without-note">Send without a note</button>
+          </section>
+        `;
+        document
+          .querySelector<HTMLButtonElement>('#send-without-note')!
+          .addEventListener('click', () => {
+            document.querySelector('.new-invitation-sheet')?.remove();
+            setTimeout(() => {
+              document.querySelector<HTMLElement>('#toast-host')!.innerHTML = `
+                <div role="status">Your invitation to Ada has been sent</div>
+              `;
+            }, 500);
+          });
+      });
+
+    expect(await sendConnectionRequest('')).toEqual({
+      status: 'COMPLETED',
+      connectionState: 'PENDING',
+    });
+  });
+
   it('finds Connect in an overflow menu without ARIA menu roles', async () => {
     renderProfile(`
       <main>
@@ -642,7 +726,58 @@ describe('sendConnectionRequest', () => {
     });
   });
 
+  it('waits for an overflow-menu action to settle after the dialog closes', async () => {
+    renderProfile(`
+      <main>
+        <section class="pv-top-card">
+          <h1>Ada Lovelace</h1>
+          <span class="dist-value">2nd</span>
+          <button id="more" aria-label="More actions">More</button>
+        </section>
+      </main>
+      <div id="overlay-host"></div>
+    `);
+    const moreButton = document.querySelector<HTMLButtonElement>('#more')!;
+    const overlayHost = document.querySelector<HTMLElement>('#overlay-host')!;
+    let invitationWasSent = false;
+
+    const renderMenu = () => {
+      overlayHost.innerHTML = invitationWasSent
+        ? '<div role="menu"><button aria-label="Pending invitation">Pending</button></div>'
+        : '<div role="menu"><button id="menu-connect">Connect</button></div>';
+
+      overlayHost
+        .querySelector<HTMLButtonElement>('#menu-connect')
+        ?.addEventListener('click', () => {
+          overlayHost.innerHTML = `
+            <section class="new-invitation-sheet">
+              <h2>Add a note to your invitation?</h2>
+              <button>Add a note</button>
+              <button id="send-without-note">Send without a note</button>
+            </section>
+          `;
+          overlayHost
+            .querySelector<HTMLButtonElement>('#send-without-note')!
+            .addEventListener('click', () => {
+              renderMenu();
+              setTimeout(() => {
+                invitationWasSent = true;
+                renderMenu();
+              }, 500);
+            });
+        });
+    };
+
+    moreButton.addEventListener('click', renderMenu);
+
+    expect(await sendConnectionRequest('')).toEqual({
+      status: 'COMPLETED',
+      connectionState: 'PENDING',
+    });
+  });
+
   it('does not report success when a menu-based invitation has no sent confirmation', async () => {
+    vi.useFakeTimers();
     renderProfile(`
       <main>
         <section class="pv-top-card">
@@ -678,7 +813,10 @@ describe('sendConnectionRequest', () => {
 
     moreButton.addEventListener('click', renderMenu);
 
-    const result = await sendConnectionRequest('');
+    const resultPromise = sendConnectionRequest('');
+
+    await vi.runAllTimersAsync();
+    const result = await resultPromise;
 
     expect(result.status).toBe('FAILED');
     expect(result).toMatchObject({

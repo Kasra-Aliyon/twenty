@@ -3,6 +3,7 @@ import { type WorkspaceMember } from '~/generated-metadata/graphql';
 
 export type TimelineActivity = {
   id: string;
+  happensAt: string;
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;

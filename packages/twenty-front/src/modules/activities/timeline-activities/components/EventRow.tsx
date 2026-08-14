@@ -102,7 +102,7 @@ export const EventRow = ({
   const recordStore = useAtomFamilyStateValue(recordStoreFamilyState, recordId);
 
   const beautifiedCreatedAt = beautifyPastDateRelativeToNow(
-    event.createdAt,
+    event.happensAt ?? event.createdAt,
     localeCatalog,
   );
   const linkedObjectMetadataItem = useLinkedObjectObjectMetadataItem(

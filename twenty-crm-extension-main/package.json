@@ -2,7 +2,7 @@
   "name": "twenty-crm-linkedin-extension",
   "description": "Safely capture and incrementally sync LinkedIn data with Twenty CRM",
   "private": true,
-  "version": "1.2.1",
+  "version": "1.2.2",
   "type": "module",
   "scripts": {
     "dev": "wxt",

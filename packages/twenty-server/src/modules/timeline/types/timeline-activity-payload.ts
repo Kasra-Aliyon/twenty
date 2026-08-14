@@ -1,6 +1,8 @@
 import { type ObjectRecordBaseEvent } from 'twenty-shared/database-events';
 
 export type TimelineActivityPayload = {
+  id?: string;
+  happensAt?: Date;
   properties: ObjectRecordBaseEvent['properties'];
   linkedObjectMetadataId?: string;
   linkedRecordId?: string;

@@ -17,11 +17,24 @@ describe('groupEventsByMonth', () => {
 
     for (const group of grouped) {
       for (const item of group.items) {
-        const date = new Date(item.createdAt);
+        const date = new Date(item.happensAt ?? item.createdAt);
         expect(date.getMonth()).toBe(group.month);
         expect(date.getFullYear()).toBe(group.year);
       }
     }
+  });
+
+  it('uses interaction time instead of backfill creation time', () => {
+    const [activity] = mockedTimelineActivities;
+    const grouped = groupEventsByMonth([
+      {
+        ...activity,
+        createdAt: '2026-08-13T09:00:00.000Z',
+        happensAt: '2025-01-15T09:00:00.000Z',
+      },
+    ]);
+
+    expect(grouped[0]).toMatchObject({ month: 0, year: 2025 });
   });
 
   it('should sort groups by most recent first', () => {

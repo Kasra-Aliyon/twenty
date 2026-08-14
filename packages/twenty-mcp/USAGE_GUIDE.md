@@ -151,6 +151,57 @@ Unibox operations, and some user-owned LinkedIn data. Do not copy a browser
 session token into a shared configuration. If you do not have an intentionally
 issued user token, leave it unset and use the API-key-compatible tools.
 
+### Search downloaded LinkedIn data
+
+LinkedIn search tools query the records already downloaded into Twenty. They do
+not fetch LinkedIn live, and they require `TWENTY_USER_TOKEN` so results remain
+scoped to the owning workspace member.
+
+Search message bodies for one contact and an exact delivered-at range:
+
+```json
+{
+  "tool": "twenty_search_linkedin_messages",
+  "arguments": {
+    "contact": "Katrin Zaragoza",
+    "search": "publication plan",
+    "direction": "OUTBOUND",
+    "date_from": "2026-08-01T00:00:00.000Z",
+    "date_to": "2026-08-13T23:59:59.999Z",
+    "limit": 50,
+    "response_format": "json"
+  }
+}
+```
+
+Search sent invitation observations and outbound messages in one time window:
+
+```json
+{
+  "tool": "twenty_search_linkedin_activity",
+  "arguments": {
+    "types": ["MESSAGES", "INVITATIONS"],
+    "direction": "OUTBOUND",
+    "date_from": "2026-08-01T00:00:00.000Z",
+    "date_to": "2026-08-13T23:59:59.999Z",
+    "limit_per_type": 100,
+    "response_format": "json"
+  }
+}
+```
+
+The activity tool keeps results separated into messages, connections,
+invitations, and actions because those objects have different meanings and event
+timestamps. Established connections have no sent/received direction. Invitation
+rows are historical observations and do not by themselves prove that a request
+is still pending. Runner actions describe queue/execution attempts; downloaded
+messages describe delivered message history.
+
+Dedicated search results return `next_cursor`. Pass it as `starting_after` to
+continue that resource. Cross-source activity has independent pagination per
+resource, so continue through the corresponding dedicated
+`twenty_search_linkedin_*` tool.
+
 Keep advanced mode off initially. It exposes permanent record destruction and
 high-volume attachment/message reads.
 

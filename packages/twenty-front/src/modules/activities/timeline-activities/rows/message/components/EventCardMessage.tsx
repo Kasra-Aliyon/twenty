@@ -75,7 +75,6 @@ export const EventCardMessage = ({
       id: true,
       text: true,
       subject: true,
-      direction: true,
       messageThreadId: true,
       messageParticipants: {
         handle: true,

@@ -3,6 +3,7 @@ import { ObjectMetadataIcon } from '@/object-metadata/components/ObjectMetadataI
 import { type EnrichedObjectMetadataItem } from '@/object-metadata/types/EnrichedObjectMetadataItem';
 import {
   IconCirclePlus,
+  IconBrandLinkedin,
   IconEditCircle,
   IconRestore,
   IconTrash,
@@ -15,6 +16,10 @@ export const EventIconDynamicComponent = ({
   event: TimelineActivity;
   linkedObjectMetadataItem: EnrichedObjectMetadataItem | null;
 }) => {
+  if (event.name.startsWith('linkedin.')) {
+    return <IconBrandLinkedin />;
+  }
+
   const [, eventAction] = event.name.split('.');
 
   if (eventAction === 'created') {

@@ -11,7 +11,7 @@ export const groupEventsByMonth = (events: TimelineActivity[]) => {
   const acitivityGroups: EventGroup[] = [];
 
   for (const event of events) {
-    const d = new Date(event.createdAt);
+    const d = new Date(event.happensAt ?? event.createdAt);
     const month = d.getMonth();
     const year = d.getFullYear();
 

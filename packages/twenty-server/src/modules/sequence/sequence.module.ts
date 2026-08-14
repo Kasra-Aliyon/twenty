@@ -20,6 +20,7 @@ import { SequenceReplyListener } from 'src/modules/sequence/listeners/sequence-r
 import { SequenceTaskListener } from 'src/modules/sequence/listeners/sequence-task.listener';
 import { SequenceEmailSenderService } from 'src/modules/sequence/services/sequence-email-sender.service';
 import { SequenceExecutorService } from 'src/modules/sequence/services/sequence-executor.service';
+import { SequenceLinkedinInvitationReconcilerService } from 'src/modules/sequence/services/sequence-linkedin-invitation-reconciler.service';
 import { SequenceLinkedinThrottleService } from 'src/modules/sequence/services/sequence-linkedin-throttle.service';
 import { SequenceMetricsService } from 'src/modules/sequence/services/sequence-metrics.service';
 import { SequenceMailboxThrottleService } from 'src/modules/sequence/services/sequence-mailbox-throttle.service';
@@ -49,6 +50,7 @@ import { SequenceVariableService } from 'src/modules/sequence/services/sequence-
     SequenceEnrollmentListener,
     SequenceExecutorService,
     SequenceLinkedinActionListener,
+    SequenceLinkedinInvitationReconcilerService,
     SequenceLinkedinReplyListener,
     SequenceLinkedinThrottleService,
     SequenceMailboxThrottleService,

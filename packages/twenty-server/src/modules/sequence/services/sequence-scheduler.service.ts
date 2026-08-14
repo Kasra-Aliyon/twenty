@@ -26,6 +26,7 @@ import { type WorkspaceRepository } from 'src/engine/twenty-orm/repository/works
 import { buildSystemAuthContext } from 'src/engine/twenty-orm/utils/build-system-auth-context.util';
 import { LinkedinActionWorkspaceEntity } from 'src/modules/linkedin/standard-objects/linkedin-action.workspace-entity';
 import { SequenceMailboxThrottleService } from 'src/modules/sequence/services/sequence-mailbox-throttle.service';
+import { SequenceLinkedinInvitationReconcilerService } from 'src/modules/sequence/services/sequence-linkedin-invitation-reconciler.service';
 import { SequenceQueueService } from 'src/modules/sequence/services/sequence-queue.service';
 import { SequenceTaskCompletionService } from 'src/modules/sequence/services/sequence-task-completion.service';
 import {
@@ -61,9 +62,15 @@ export class SequenceSchedulerService {
     private readonly sequenceQueueService: SequenceQueueService,
     private readonly sequenceMailboxThrottleService: SequenceMailboxThrottleService,
     private readonly sequenceTaskCompletionService: SequenceTaskCompletionService,
+    private readonly sequenceLinkedinInvitationReconcilerService: SequenceLinkedinInvitationReconcilerService,
   ) {}
 
   async tick(workspaceId: string, now = new Date()): Promise<void> {
+    await this.sequenceLinkedinInvitationReconcilerService.reconcile({
+      workspaceId,
+      now,
+    });
+
     await this.globalWorkspaceOrmManager.executeInWorkspaceContext(async () => {
       const linkedinActionRepository =
         await this.globalWorkspaceOrmManager.getRepository(

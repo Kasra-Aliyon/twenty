@@ -7,7 +7,7 @@ export default defineConfig({
     name: 'Twenty CRM - LinkedIn Capture',
     description:
       'Safely capture and incrementally sync LinkedIn data with Twenty CRM',
-    version: '1.2.1',
+    version: '1.2.2',
     permissions: [
       'storage',
       'cookies',

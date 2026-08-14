@@ -11,6 +11,7 @@ import {
 import { type GlobalWorkspaceOrmManager } from 'src/engine/twenty-orm/global-workspace-datasource/global-workspace-orm.manager';
 import { LinkedinActionWorkspaceEntity } from 'src/modules/linkedin/standard-objects/linkedin-action.workspace-entity';
 import { type SequenceMailboxThrottleService } from 'src/modules/sequence/services/sequence-mailbox-throttle.service';
+import { type SequenceLinkedinInvitationReconcilerService } from 'src/modules/sequence/services/sequence-linkedin-invitation-reconciler.service';
 import { type SequenceQueueService } from 'src/modules/sequence/services/sequence-queue.service';
 import { SequenceSchedulerService } from 'src/modules/sequence/services/sequence-scheduler.service';
 import { type SequenceTaskCompletionService } from 'src/modules/sequence/services/sequence-task-completion.service';
@@ -191,11 +192,16 @@ describe('SequenceSchedulerService', () => {
     const sequenceTaskCompletionService = {
       completeTaskStep,
     } as unknown as SequenceTaskCompletionService;
+    const reconcileLinkedinInvitations = jest.fn();
+    const sequenceLinkedinInvitationReconcilerService = {
+      reconcile: reconcileLinkedinInvitations,
+    } as unknown as SequenceLinkedinInvitationReconcilerService;
     const service = new SequenceSchedulerService(
       globalWorkspaceOrmManager,
       sequenceQueueService,
       sequenceMailboxThrottleService,
       sequenceTaskCompletionService,
+      sequenceLinkedinInvitationReconcilerService,
     );
 
     return {
@@ -207,6 +213,7 @@ describe('SequenceSchedulerService', () => {
       acquireSendLock,
       releaseSendLock,
       completeTaskStep,
+      reconcileLinkedinInvitations,
     };
   };
 

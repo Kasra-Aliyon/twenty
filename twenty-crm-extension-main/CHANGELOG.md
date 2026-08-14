@@ -6,6 +6,8 @@ All notable changes to Twenty CRM LinkedIn Capture Extension.
 
 ### Changed
 
+- Wait for LinkedIn's delayed Pending or sent confirmation after an invitation
+  dialog closes instead of immediately failing on stale Connect controls.
 - Restored **Add to Twenty** on current LinkedIn company pages, including
   company-specific duplicate matching, website, employee count, and industry
   capture across signed-in and public layouts.

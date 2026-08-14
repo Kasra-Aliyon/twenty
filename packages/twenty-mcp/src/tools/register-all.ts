@@ -8,6 +8,8 @@ import { registerCompanyTools } from './companies.tools.js';
 import { registerDashboardTools } from './dashboards.tools.js';
 import { registerDiscoveryTools } from './discovery.tools.js';
 import { registerEmailTools } from './email.tools.js';
+import { registerLinkedinActivitySearchTool } from './linkedin-activity-search.tools.js';
+import { registerLinkedinSearchTools } from './linkedin-search.tools.js';
 import { registerLinkedinTools } from './linkedin.tools.js';
 import { registerListTools } from './lists.tools.js';
 import { registerOpportunityTools } from './opportunities.tools.js';
@@ -35,6 +37,8 @@ export const registerAllTools = (
   registerSequenceTools(server, dependencies);
   registerEmailTools(server, dependencies);
   registerLinkedinTools(server, dependencies);
+  registerLinkedinSearchTools(server, dependencies);
+  registerLinkedinActivitySearchTool(server, dependencies);
   registerUniboxTools(server, dependencies);
   registerViewTools(server, dependencies);
 

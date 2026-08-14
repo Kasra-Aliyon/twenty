@@ -61,6 +61,9 @@ export const useTimelineActivities = (
     filter,
     orderBy: [
       {
+        happensAt: 'DescNullsLast',
+      },
+      {
         createdAt: 'DescNullsFirst',
       },
     ],

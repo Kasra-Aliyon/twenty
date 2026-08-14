@@ -5,7 +5,7 @@ const LINKEDIN_CONNECTION_NOTE_MAX_LENGTH = 200;
 const LINKEDIN_DIRECT_MESSAGE_MAX_LENGTH = 2_000;
 
 const SEND_CONFIRMATION_TIMEOUT_MILLISECONDS = 8_000;
-const LINKEDIN_INVITATION_AUTOMATION_REVISION = '2026-08-07.2';
+const LINKEDIN_INVITATION_AUTOMATION_REVISION = '2026-08-13.1';
 const INVITATION_DIALOG_TITLE_PATTERN = /add a note to (?:your )?invitation/i;
 const RELATIONSHIP_PROMPT_TITLE_PATTERN = /how do you know\b/i;
 const RELATIONSHIP_MESSAGE_FIRST_PATTERN =
@@ -584,14 +584,22 @@ const waitForInvitationFlow = async (): Promise<InvitationFlowResult> => {
 
 const hasInvitationSentConfirmation = (): boolean => {
   const confirmationPattern =
-    /(?:invitation|connection request) (?:was )?sent/i;
+    /(?:invitation|connection request).{0,80}\b(?:sent|submitted)\b/i;
+  const failurePattern =
+    /(?:not|failed|unable|couldn['’]?t).{0,40}\b(?:sent|submitted)\b/i;
 
   return getAccessibleLinkedInRoots().some((currentRoot) =>
     LINKEDIN_SELECTORS.confirmation.some((selector) =>
       [...currentRoot.querySelectorAll<HTMLElement>(selector)].some(
-        (element) =>
-          isVisible(element) &&
-          confirmationPattern.test(normalizedText(element)),
+        (element) => {
+          const confirmationText = normalizedText(element);
+
+          return (
+            isVisible(element) &&
+            confirmationPattern.test(confirmationText) &&
+            !failurePattern.test(confirmationText)
+          );
+        },
       ),
     ),
   );
@@ -736,15 +744,16 @@ export const getLinkedInAutomationBlockReason = (): string | null => {
     : null;
 };
 
-// A send is only reported as completed once LinkedIn confirms it: the
-// invitation dialog closes and the profile stops offering Connect. Returning
-// COMPLETED after a fixed sleep reported successes that never left the browser.
+// A send is only reported as completed once LinkedIn confirms it. The profile
+// action controls can remain stale briefly after the dialog closes, so seeing
+// Connect is diagnostic evidence rather than an immediate terminal result.
 const confirmInvitationSent = async (
   dialog: HTMLElement,
   connectSource: 'DIRECT' | 'MENU',
 ): Promise<{ confirmed: boolean; reason: string | null }> => {
   const deadline = Date.now() + SEND_CONFIRMATION_TIMEOUT_MILLISECONDS;
   let didInspectOverflowMenu = false;
+  let staleConnectReason: string | null = null;
 
   while (Date.now() < deadline) {
     const blockReason = getLinkedInAutomationBlockReason();
@@ -769,11 +778,8 @@ const confirmInvitationSent = async (
       }
 
       if (connectSource === 'DIRECT' && controls.connect) {
-        return {
-          confirmed: false,
-          reason:
-            'LinkedIn closed the invitation dialog but still offers Connect',
-        };
+        staleConnectReason =
+          'LinkedIn closed the invitation dialog but still offers Connect';
       }
 
       if (
@@ -800,11 +806,8 @@ const confirmInvitationSent = async (
             return { confirmed: true, reason: null };
           }
 
-          return {
-            confirmed: false,
-            reason:
-              'LinkedIn closed the invitation dialog but the profile menu still offers Connect',
-          };
+          staleConnectReason =
+            'LinkedIn closed the invitation dialog but the profile menu still offers Connect';
         }
       }
     }
@@ -815,6 +818,7 @@ const confirmInvitationSent = async (
   return {
     confirmed: false,
     reason:
+      staleConnectReason ??
       'LinkedIn did not show Pending or another confirmation that the invitation was sent',
   };
 };

@@ -29,16 +29,21 @@ export class TimelineActivityRepository {
     workspaceId,
     payloads,
   }: TimelineActivityPayloadWorkspaceIdAndObjectSingularName) {
+    if (payloads.length === 0) {
+      return;
+    }
+
     const authContext = buildSystemAuthContext(workspaceId);
 
     await this.globalWorkspaceOrmManager.executeInWorkspaceContext(async () => {
-      const recentTimelineActivities = await this.findRecentTimelineActivities({
-        objectSingularName,
-        workspaceId,
-        payloads,
-      });
+      const existingTimelineActivities =
+        await this.findTimelineActivitiesForUpsert({
+          objectSingularName,
+          workspaceId,
+          payloads,
+        });
 
-      const payloadsToUpsert = payloads.flatMap(
+      const normalizedPayloadsToUpsert = payloads.flatMap(
         ({ name, properties, ...rest }) => {
           const [objectName, action] = name.split('.');
           const { diff } = properties;
@@ -55,6 +60,21 @@ export class TimelineActivityRepository {
           return [{ ...rest, name, properties: {} }];
         },
       );
+      const deterministicPayloadsById = new Map<
+        string,
+        (typeof normalizedPayloadsToUpsert)[number]
+      >();
+
+      for (const payload of normalizedPayloadsToUpsert) {
+        if (isDefined(payload.id)) {
+          deterministicPayloadsById.set(payload.id, payload);
+        }
+      }
+
+      const payloadsToUpsert = [
+        ...normalizedPayloadsToUpsert.filter(({ id }) => !isDefined(id)),
+        ...deterministicPayloadsById.values(),
+      ];
 
       const payloadsToInsert: TimelineActivityPayloadWorkspaceIdAndObjectSingularName['payloads'] =
         [];
@@ -63,25 +83,35 @@ export class TimelineActivityRepository {
         await this.getTimelineActivityPropertyName(objectSingularName);
 
       for (const payload of payloadsToUpsert) {
-        const recentTimelineActivity = recentTimelineActivities.find(
+        const existingTimelineActivity = existingTimelineActivities.find(
           (timelineActivity) =>
-            timelineActivity[timelineActivityPropertyName] ===
-              payload.recordId &&
-            timelineActivity.workspaceMemberId === payload.workspaceMemberId &&
-            (!isDefined(payload.linkedRecordId) ||
-              timelineActivity.linkedRecordId === payload.linkedRecordId) &&
-            timelineActivity.name === payload.name,
+            isDefined(payload.id)
+              ? timelineActivity.id === payload.id
+              : timelineActivity[timelineActivityPropertyName] ===
+                  payload.recordId &&
+                timelineActivity.workspaceMemberId ===
+                  payload.workspaceMemberId &&
+                (!isDefined(payload.linkedRecordId) ||
+                  timelineActivity.linkedRecordId === payload.linkedRecordId) &&
+                timelineActivity.name === payload.name,
         );
 
-        if (recentTimelineActivity) {
+        if (existingTimelineActivity) {
           const mergedProperties = objectRecordDiffMerge(
-            recentTimelineActivity.properties,
+            existingTimelineActivity.properties,
             payload.properties,
           );
 
           await this.updateTimelineActivity({
-            id: recentTimelineActivity.id,
+            id: existingTimelineActivity.id,
+            happensAt: payload.happensAt,
+            linkedObjectMetadataId: payload.linkedObjectMetadataId,
+            linkedRecordCachedName: payload.linkedRecordCachedName,
+            linkedRecordId: payload.linkedRecordId,
+            name: payload.name,
             properties: mergedProperties,
+            recordId: payload.recordId,
+            timelineActivityPropertyName,
             workspaceMemberId: payload.workspaceMemberId,
             workspaceId,
           });
@@ -98,7 +128,7 @@ export class TimelineActivityRepository {
     }, authContext);
   }
 
-  private async findRecentTimelineActivities({
+  private async findTimelineActivitiesForUpsert({
     objectSingularName,
     workspaceId,
     payloads,
@@ -128,11 +158,29 @@ export class TimelineActivityRepository {
       createdAt: MoreThan(tenMinutesAgo),
     };
 
-    return await timelineActivityTypeORMRepository.find({
-      where: whereConditions,
-      order: { createdAt: 'DESC' },
-      take: 1,
-    });
+    const deterministicIds = payloads.map(({ id }) => id).filter(isDefined);
+
+    const recentTimelineActivities =
+      await timelineActivityTypeORMRepository.find({
+        where: whereConditions,
+        order: { createdAt: 'DESC' },
+      });
+    const deterministicTimelineActivities =
+      deterministicIds.length === 0
+        ? recentTimelineActivities.slice(0, 0)
+        : await timelineActivityTypeORMRepository.find({
+            where: { id: In(deterministicIds) },
+          });
+
+    return [
+      ...deterministicTimelineActivities,
+      ...recentTimelineActivities.filter(
+        ({ id }) =>
+          !deterministicTimelineActivities.some(
+            (timelineActivity) => timelineActivity.id === id,
+          ),
+      ),
+    ];
   }
 
   public async insertTimelineActivities({
@@ -156,27 +204,63 @@ export class TimelineActivityRepository {
     const timelineActivityPropertyName =
       await this.getTimelineActivityPropertyName(objectSingularName);
 
-    return timelineActivityTypeORMRepository.insert(
-      payloads.map((payload) => ({
-        name: payload.name,
-        properties: payload.properties,
-        workspaceMemberId: payload.workspaceMemberId,
-        [timelineActivityPropertyName]: payload.recordId,
-        linkedRecordCachedName: payload.linkedRecordCachedName ?? '',
-        linkedRecordId: payload.linkedRecordId,
-        linkedObjectMetadataId: payload.linkedObjectMetadataId,
-      })),
+    const timelineActivityRecords = payloads.map((payload) => ({
+      id: payload.id,
+      happensAt: payload.happensAt,
+      name: payload.name,
+      properties: payload.properties,
+      workspaceMemberId: payload.workspaceMemberId,
+      [timelineActivityPropertyName]: payload.recordId,
+      linkedRecordCachedName: payload.linkedRecordCachedName ?? '',
+      linkedRecordId: payload.linkedRecordId,
+      linkedObjectMetadataId: payload.linkedObjectMetadataId,
+    }));
+    const recordsWithDeterministicIds = timelineActivityRecords.filter(
+      ({ id }) => isDefined(id),
     );
+    const recordsWithoutDeterministicIds = timelineActivityRecords.filter(
+      ({ id }) => !isDefined(id),
+    );
+
+    const results = await Promise.all([
+      recordsWithDeterministicIds.length === 0
+        ? undefined
+        : timelineActivityTypeORMRepository.upsert(
+            recordsWithDeterministicIds,
+            ['id'],
+          ),
+      recordsWithoutDeterministicIds.length === 0
+        ? undefined
+        : timelineActivityTypeORMRepository.insert(
+            recordsWithoutDeterministicIds,
+          ),
+    ]);
+
+    return results.filter(isDefined);
   }
 
   private async updateTimelineActivity({
     id,
+    happensAt,
+    linkedObjectMetadataId,
+    linkedRecordCachedName,
+    linkedRecordId,
+    name,
     properties,
+    recordId,
+    timelineActivityPropertyName,
     workspaceMemberId,
     workspaceId,
   }: {
     id: string;
+    happensAt: Date | undefined;
+    linkedObjectMetadataId: string | undefined;
+    linkedRecordCachedName: string | undefined;
+    linkedRecordId: string | undefined;
+    name: string;
     properties: Partial<ObjectRecord>;
+    recordId: string;
+    timelineActivityPropertyName: string;
     workspaceMemberId: string | undefined;
     workspaceId: string;
   }) {
@@ -190,8 +274,14 @@ export class TimelineActivityRepository {
       );
 
     return timelineActivityTypeORMRepository.update(id, {
-      properties: properties,
-      workspaceMemberId: workspaceMemberId,
+      ...(isDefined(happensAt) ? { happensAt } : {}),
+      ...(isDefined(linkedObjectMetadataId) ? { linkedObjectMetadataId } : {}),
+      ...(isDefined(linkedRecordCachedName) ? { linkedRecordCachedName } : {}),
+      ...(isDefined(linkedRecordId) ? { linkedRecordId } : {}),
+      [timelineActivityPropertyName]: recordId,
+      name,
+      properties,
+      workspaceMemberId,
     });
   }
 
