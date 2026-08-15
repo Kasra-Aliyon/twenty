@@ -91,6 +91,21 @@ export const buildLinkedinMessageStandardFlatFieldMetadatas = (
       settings: { displayFormat: DateDisplayFormat.RELATIVE },
     },
   }),
+  recipientReadAt: createStandardFieldFlatMetadata({
+    ...args,
+    context: {
+      fieldName: 'recipientReadAt',
+      type: FieldMetadataType.DATE_TIME,
+      label: i18nLabel(msg`Recipient read at`),
+      description: i18nLabel(
+        msg`Time LinkedIn confirmed that the recipient had read through this outbound message`,
+      ),
+      icon: 'IconEyeCheck',
+      isNullable: true,
+      isUIEditable: false,
+      settings: { displayFormat: DateDisplayFormat.RELATIVE },
+    },
+  }),
   direction: createStandardFieldFlatMetadata({
     ...args,
     context: {

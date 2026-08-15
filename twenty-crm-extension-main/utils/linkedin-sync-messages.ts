@@ -1,12 +1,15 @@
 import type {
   LinkedInHarvestMessage,
   LinkedInHarvestParticipant,
+  LinkedInHarvestReadReceipt,
   LinkedInHarvestThread,
   LinkedInHarvestThreadParticipant,
   LinkedInIdentity,
+  LinkedInMessageReadConfirmation,
   LinkedInSyncProgress,
 } from '../types';
 import {
+  confirmLinkedInMessageReads,
   getLinkedInMessageSyncCandidates,
   getOldestLinkedInThread,
   updateLinkedInThreadSummary,
@@ -51,6 +54,22 @@ const getNumber = (value: unknown, path: string[]): number | null => {
   return typeof candidate === 'number' ? candidate : null;
 };
 
+const getTimestamp = (value: unknown, path: string[]): number | null => {
+  const candidate = getValue(value, path);
+
+  if (typeof candidate === 'number' && Number.isFinite(candidate)) {
+    return candidate;
+  }
+
+  if (typeof candidate === 'string' && candidate.trim() !== '') {
+    const timestamp = Number(candidate);
+
+    return Number.isFinite(timestamp) ? timestamp : null;
+  }
+
+  return null;
+};
+
 const getArray = (value: unknown, path: string[]): unknown[] => {
   const candidate = getValue(value, path);
 
@@ -83,6 +102,12 @@ const getCompositeUrnId = (value: string): string => {
   const separatorIndex = value.lastIndexOf(',');
 
   return separatorIndex === -1 ? value : value.slice(separatorIndex + 1, -1);
+};
+
+const getMessageIdFromEventUrn = (value: string): string | null => {
+  const match = value.match(/\((?:[^,]+),([^)]+)\)$/);
+
+  return match?.[1] ?? null;
 };
 
 const normalizeHandle = (value: string): string => {
@@ -195,10 +220,100 @@ const toThread = (
   };
 };
 
+const getReadReceiptValues = (value: unknown): unknown[] => [
+  ...getArray(value, ['receipts']),
+  ...getArray(value, ['readReceipts']),
+  ...getArray(value, ['seenReceipts']),
+];
+
+const toReadReceipts = (
+  value: unknown,
+  identity: LinkedInIdentity,
+): LinkedInHarvestReadReceipt[] => {
+  const thread = toThread(value, identity);
+
+  if (!thread) {
+    return [];
+  }
+
+  const otherParticipants = thread.participants.filter(
+    (participant) => !participant.isSelf,
+  );
+
+  // A single timestamp cannot represent which members read a group thread.
+  if (otherParticipants.length !== 1) {
+    return [];
+  }
+
+  const recipient = otherParticipants[0];
+  const recipientIdentifiers = new Set(
+    [recipient.linkedinId, recipient.linkedinUrn].filter(
+      (identifier): identifier is string => identifier !== null,
+    ),
+  );
+  const selfIdentifiers = new Set([identity.linkedinId, identity.linkedinUrn]);
+
+  return getReadReceiptValues(value).flatMap((receipt) => {
+    const eventUrn = getString(receipt, ['seenReceipt', 'eventUrn']);
+    const seenAt = getTimestamp(receipt, ['seenReceipt', 'seenAt']);
+    const fromEntity = getString(receipt, ['fromEntity']);
+    const fromParticipant = getString(receipt, ['fromParticipant', 'string']);
+    const readerIdentifiers = [fromEntity, fromParticipant]
+      .filter((identifier): identifier is string => identifier !== null)
+      .map(getUrnId);
+
+    if (
+      !eventUrn ||
+      seenAt === null ||
+      readerIdentifiers.length === 0 ||
+      readerIdentifiers.some((identifier) => selfIdentifiers.has(identifier)) ||
+      (recipientIdentifiers.size > 0 &&
+        !readerIdentifiers.some((identifier) =>
+          recipientIdentifiers.has(identifier),
+        ))
+    ) {
+      return [];
+    }
+
+    const readThroughMessageId = getMessageIdFromEventUrn(eventUrn);
+
+    if (!readThroughMessageId) {
+      return [];
+    }
+
+    return [
+      {
+        sourceThreadId: thread.threadId,
+        readThroughMessageId,
+        recipientReadAt: new Date(seenAt).toISOString(),
+      },
+    ];
+  });
+};
+
+type ReadConfirmationMap = Map<string, LinkedInMessageReadConfirmation>;
+
+const mergeReadConfirmation = (
+  confirmations: ReadConfirmationMap,
+  confirmation: LinkedInMessageReadConfirmation,
+): void => {
+  const key = `${confirmation.threadId}:${confirmation.readThroughMessageId}`;
+  const existing = confirmations.get(key);
+
+  if (
+    !existing ||
+    Date.parse(confirmation.recipientReadAt) <
+      Date.parse(existing.recipientReadAt)
+  ) {
+    confirmations.set(key, confirmation);
+  }
+};
+
 const writeThreadPage = async (
   values: unknown[],
   identity: LinkedInIdentity,
   progress: LinkedInSyncProgress,
+  readConfirmations: ReadConfirmationMap,
 ): Promise<void> => {
   const byThreadId = new Map<string, LinkedInHarvestThread>();
 
@@ -239,6 +354,24 @@ const writeThreadPage = async (
     );
 
     await writeLinkedInThreadParticipants(identity.linkedinId, participants);
+
+    for (const value of values) {
+      for (const receipt of toReadReceipts(value, identity)) {
+        const threadId = twentyThreadIdByExternalId.get(
+          `${identity.linkedinId}:${receipt.sourceThreadId}`,
+        );
+
+        if (!threadId) {
+          continue;
+        }
+
+        mergeReadConfirmation(readConfirmations, {
+          threadId,
+          readThroughMessageId: receipt.readThroughMessageId,
+          recipientReadAt: receipt.recipientReadAt,
+        });
+      }
+    }
   }
 };
 
@@ -252,6 +385,7 @@ const syncIncrementalThreads = async (
   identity: LinkedInIdentity,
   since: number,
   progress: LinkedInSyncProgress,
+  readConfirmations: ReadConfirmationMap,
 ): Promise<IncrementalResult> => {
   let pagination = {
     cursor: null as string | null,
@@ -298,7 +432,7 @@ const syncIncrementalThreads = async (
       }
     }
 
-    await writeThreadPage(pageThreads, identity, progress);
+    await writeThreadPage(pageThreads, identity, progress, readConfirmations);
 
     if (since === 0) {
       shouldStop = true;
@@ -348,6 +482,7 @@ const syncIncrementalThreads = async (
 const syncHistoricalThreads = async (
   identity: LinkedInIdentity,
   progress: LinkedInSyncProgress,
+  readConfirmations: ReadConfirmationMap,
 ): Promise<boolean> => {
   const oldestThread = await getOldestLinkedInThread(identity.linkedinId);
 
@@ -381,6 +516,7 @@ const syncHistoricalThreads = async (
       elements.filter(isSyncableThread),
       identity,
       progress,
+      readConfirmations,
     );
 
     if (!page.hasMore) {
@@ -528,10 +664,12 @@ export const syncLinkedInMessages = async (
   }
 
   const since = state.safeSyncedThroughLastActivityAt ?? 0;
+  const readConfirmations: ReadConfirmationMap = new Map();
   const incrementalResult = await syncIncrementalThreads(
     identity,
     since,
     progress,
+    readConfirmations,
   );
 
   if (
@@ -552,6 +690,7 @@ export const syncLinkedInMessages = async (
     const historicalBackfillComplete = await syncHistoricalThreads(
       identity,
       progress,
+      readConfirmations,
     );
 
     if (historicalBackfillComplete) {
@@ -562,4 +701,19 @@ export const syncLinkedInMessages = async (
   }
 
   await syncMissingMessages(identity, progress);
+
+  if (readConfirmations.size > 0) {
+    try {
+      await confirmLinkedInMessageReads(identity.linkedinId, [
+        ...readConfirmations.values(),
+      ]);
+    } catch (error) {
+      console.warn(
+        '[Twenty] LinkedIn messages synced, but read receipts could not be stored:',
+        error,
+      );
+    }
+  }
 };
+
+export const linkedinSyncMessagesTesting = { toReadReceipts };

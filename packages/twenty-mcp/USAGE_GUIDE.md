@@ -190,6 +190,24 @@ Search sent invitation observations and outbound messages in one time window:
 }
 ```
 
+List outbound messages for which LinkedIn supplied a positive recipient read
+receipt:
+
+```json
+{
+  "tool": "twenty_list_linkedin_message_read_receipts",
+  "arguments": {
+    "status": "READ_CONFIRMED",
+    "limit": 50,
+    "response_format": "json"
+  }
+}
+```
+
+The tool reports `READ_CONFIRMED` only when the connector observed LinkedIn's
+receipt. A missing receipt is `UNKNOWN`, not `UNREAD`, because privacy settings
+and some LinkedIn message types can suppress receipts.
+
 The activity tool keeps results separated into messages, connections,
 invitations, and actions because those objects have different meanings and event
 timestamps. Established connections have no sent/received direction. Invitation

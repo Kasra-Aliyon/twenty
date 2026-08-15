@@ -1082,8 +1082,11 @@ export class SequenceExecutorService {
               ]
             : [],
         );
+        const threadIds = [
+          ...new Set(participants.map(({ threadId }) => threadId)),
+        ];
 
-        if (messageWhere.length === 0) {
+        if (threadIds.length === 0) {
           return false;
         }
 
@@ -1094,11 +1097,20 @@ export class SequenceExecutorService {
             { shouldBypassPermissionChecks: true },
           );
 
-        // LinkedIn does not expose recipient read receipts. Inbound activity is
-        // the connector-backed signal that the recipient saw the conversation.
+        // A confirmed receipt is the direct signal. A reply remains conclusive
+        // when LinkedIn withholds receipts because of privacy or message type.
         return (
           (await messageRepository.count({
-            where: messageWhere,
+            where: [
+              {
+                direction: 'OUTBOUND',
+                ownerWorkspaceMemberId,
+                threadId: In(threadIds),
+                deliveredAt: MoreThanOrEqual(outboundExecutedAt),
+                recipientReadAt: Not(IsNull()),
+              },
+              ...messageWhere,
+            ],
           })) > 0
         );
       }

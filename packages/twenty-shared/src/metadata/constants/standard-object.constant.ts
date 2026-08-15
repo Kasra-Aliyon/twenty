@@ -2669,6 +2669,9 @@ export const STANDARD_OBJECTS = {
       deliveredAt: {
         universalIdentifier: 'd8993ed2-9497-4773-b4a3-021e89c13274',
       },
+      recipientReadAt: {
+        universalIdentifier: 'fd30712f-712e-44a4-968a-a970f8be5e45',
+      },
       direction: {
         universalIdentifier: '42c10ed9-be5d-4ee4-8758-2cf6312da6d0',
       },

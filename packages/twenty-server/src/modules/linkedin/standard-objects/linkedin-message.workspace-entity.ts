@@ -16,6 +16,7 @@ export class LinkedinMessageWorkspaceEntity extends BaseWorkspaceEntity {
   messageId: string;
   body: string;
   deliveredAt: Date;
+  recipientReadAt: Date | null;
   direction: LinkedinMessageDirection;
   senderName: string;
   senderLinkedinUrn: string | null;

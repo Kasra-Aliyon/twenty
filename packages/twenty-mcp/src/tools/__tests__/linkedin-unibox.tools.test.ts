@@ -167,6 +167,96 @@ describe('LinkedIn and Unibox MCP authentication', () => {
     expect(result.isError).not.toBe(true);
   });
 
+  it('lists only positively confirmed recipient read receipts', async () => {
+    const { rest, result } = await callTwentyTool({
+      name: 'twenty_list_linkedin_message_read_receipts',
+      arguments: {
+        thread_id: THREAD_ID,
+        status: 'READ_CONFIRMED',
+        response_format: 'json',
+      },
+      restResult: {
+        data: {
+          linkedinMessages: [
+            {
+              id: 'message-id',
+              messageId: 'linkedin-message-id',
+              deliveredAt: '2026-08-14T10:00:00.000Z',
+              recipientReadAt: '2026-08-14T10:05:00.000Z',
+              direction: 'OUTBOUND',
+              threadId: THREAD_ID,
+            },
+          ],
+        },
+        totalCount: 1,
+      },
+    });
+
+    expect(rest).toHaveBeenCalledWith(
+      'GET',
+      '/rest/linkedinMessages',
+      expect.objectContaining({
+        query: expect.objectContaining({
+          depth: 0,
+          filter: `and(direction[eq]:\"OUTBOUND\",threadId[eq]:\"${THREAD_ID}\",recipientReadAt[is]:NOT_NULL)`,
+          order_by: 'deliveredAt[DescNullsLast]',
+        }),
+        token: 'user',
+      }),
+    );
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toEqual(
+      expect.objectContaining({
+        result: expect.objectContaining({
+          items: expect.arrayContaining([
+            expect.objectContaining({
+              recipientReadStatus: 'READ_CONFIRMED',
+            }),
+          ]),
+        }),
+      }),
+    );
+  });
+
+  it('labels missing LinkedIn receipts as unknown instead of unread', async () => {
+    const { rest, result } = await callTwentyTool({
+      name: 'twenty_list_linkedin_message_read_receipts',
+      arguments: { status: 'UNKNOWN', response_format: 'json' },
+      restResult: {
+        data: {
+          linkedinMessages: [
+            {
+              id: 'message-id',
+              recipientReadAt: null,
+              direction: 'OUTBOUND',
+            },
+          ],
+        },
+        totalCount: 1,
+      },
+    });
+
+    expect(rest).toHaveBeenCalledWith(
+      'GET',
+      '/rest/linkedinMessages',
+      expect.objectContaining({
+        query: expect.objectContaining({
+          filter: 'and(direction[eq]:\"OUTBOUND\",recipientReadAt[is]:NULL)',
+        }),
+        token: 'user',
+      }),
+    );
+    expect(result.structuredContent).toEqual(
+      expect.objectContaining({
+        result: expect.objectContaining({
+          items: expect.arrayContaining([
+            expect.objectContaining({ recipientReadStatus: 'UNKNOWN' }),
+          ]),
+        }),
+      }),
+    );
+  });
+
   it('lists LinkedIn connections newest-first', async () => {
     const { rest, result } = await callTwentyTool({
       name: 'twenty_list_linkedin_connections',

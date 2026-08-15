@@ -35,8 +35,9 @@ web/mobile clients, including long-running service examples, see the
   nested message details.
 - Search downloaded LinkedIn messages, threads, participants, connections,
   invitations, and runner actions by contact, content, direction, status, and
-  time range; query multiple LinkedIn activity sources together; and queue
-  confirmed message, invitation, and withdrawal actions.
+  time range; list confirmed recipient read receipts without treating missing
+  receipts as unread; query multiple LinkedIn activity sources together; and
+  queue confirmed message, invitation, and withdrawal actions.
 - Read Unibox threads and contacts and add confirmed contact selections to CRM.
 - Search globally across searchable standard and custom objects.
 
@@ -190,7 +191,7 @@ default_tools_approval_mode = "writes"
 | Dashboards           | `twenty_list_dashboards`, `twenty_get_dashboard`, `twenty_create_dashboard`, `twenty_duplicate_dashboard`, `twenty_add_dashboard_tab`, `twenty_add_dashboard_widget`, `twenty_update_dashboard_widget`                                                                                      |
 | Saved views          | `twenty_list_views`, `twenty_create_view`, `twenty_update_view`, `twenty_create_view_component`, `twenty_update_view_component`, `twenty_resolve_view_query`                                                                                                                                |
 | Record timelines     | `twenty_get_record_email_timeline`, `twenty_get_record_calendar_timeline`                                                                                                                                                                                                                   |
-| LinkedIn             | `twenty_search_linkedin_messages`, `twenty_search_linkedin_threads`, `twenty_search_linkedin_participants`, `twenty_search_linkedin_connections`, `twenty_search_linkedin_invitations`, `twenty_search_linkedin_actions`, `twenty_search_linkedin_activity`, `twenty_list_linkedin_connections`, `twenty_list_linkedin_invitations`, `twenty_list_linkedin_threads`, `twenty_send_linkedin_message`, `twenty_send_linkedin_invitation`, `twenty_withdraw_linkedin_invitation`, `twenty_list_linkedin_actions` |
+| LinkedIn             | `twenty_search_linkedin_messages`, `twenty_search_linkedin_threads`, `twenty_search_linkedin_participants`, `twenty_search_linkedin_connections`, `twenty_search_linkedin_invitations`, `twenty_search_linkedin_actions`, `twenty_search_linkedin_activity`, `twenty_list_linkedin_connections`, `twenty_list_linkedin_invitations`, `twenty_list_linkedin_threads`, `twenty_list_linkedin_message_read_receipts`, `twenty_send_linkedin_message`, `twenty_send_linkedin_invitation`, `twenty_withdraw_linkedin_invitation`, `twenty_list_linkedin_actions` |
 | Unibox               | `twenty_unibox_list_threads`, `twenty_unibox_get_thread`, `twenty_unibox_list_contacts`, `twenty_unibox_add_contacts_to_crm`                                                                                                                                                                |
 
 Advanced mode additionally exposes:

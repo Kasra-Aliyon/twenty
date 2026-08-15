@@ -173,6 +173,18 @@ export type LinkedInHarvestMessage = {
   senderLinkedinUrn: string | null;
 };
 
+export type LinkedInHarvestReadReceipt = {
+  sourceThreadId: string;
+  readThroughMessageId: string;
+  recipientReadAt: string;
+};
+
+export type LinkedInMessageReadConfirmation = {
+  threadId: string;
+  readThroughMessageId: string;
+  recipientReadAt: string;
+};
+
 export type LinkedInSyncProgress = {
   connections: number;
   invitations: number;

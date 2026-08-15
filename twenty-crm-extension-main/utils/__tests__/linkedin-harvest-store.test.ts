@@ -216,6 +216,92 @@ describe('LinkedIn harvest standard object writes', () => {
     expect(writtenData).not.toHaveProperty('senderHandle');
   });
 
+  it('marks every earlier outbound message read through the receipt boundary', async () => {
+    const { client, graphqlRequest } = createClient([
+      {
+        data: {
+          linkedinMessages: {
+            edges: [
+              {
+                node: {
+                  deliveredAt: '2026-07-22T10:02:00.000Z',
+                  threadId: 'twenty-thread-id',
+                },
+              },
+            ],
+          },
+        },
+      },
+      {
+        data: {
+          updateLinkedinMessages: [{ id: 'first' }, { id: 'second' }],
+        },
+      },
+    ]);
+
+    const result = await handleLinkedInHarvestStoreRequest(client, {
+      action: 'CONFIRM_MESSAGE_READS',
+      ownerLinkedinId: 'owner-id',
+      records: [
+        {
+          threadId: 'twenty-thread-id',
+          readThroughMessageId: 'linkedin-message-2',
+          recipientReadAt: '2026-07-22T10:03:00.000Z',
+        },
+      ],
+    });
+
+    expect(result).toEqual({ received: 1, confirmedMessages: 2 });
+    expect(graphqlRequest.mock.calls[0]?.[1]).toEqual({
+      externalId: 'owner-id:linkedin-message-2',
+    });
+    expect(graphqlRequest.mock.calls[1]?.[1]).toEqual({
+      filter: {
+        and: [
+          { threadId: { eq: 'twenty-thread-id' } },
+          { direction: { eq: 'OUTBOUND' } },
+          { deliveredAt: { lte: '2026-07-22T10:02:00.000Z' } },
+          { recipientReadAt: { is: 'NULL' } },
+        ],
+      },
+      data: { recipientReadAt: '2026-07-22T10:03:00.000Z' },
+    });
+  });
+
+  it('does not apply a receipt to a boundary from another thread', async () => {
+    const { client, graphqlRequest } = createClient([
+      {
+        data: {
+          linkedinMessages: {
+            edges: [
+              {
+                node: {
+                  deliveredAt: '2026-07-22T10:02:00.000Z',
+                  threadId: 'another-thread-id',
+                },
+              },
+            ],
+          },
+        },
+      },
+    ]);
+
+    const result = await handleLinkedInHarvestStoreRequest(client, {
+      action: 'CONFIRM_MESSAGE_READS',
+      ownerLinkedinId: 'owner-id',
+      records: [
+        {
+          threadId: 'twenty-thread-id',
+          readThroughMessageId: 'linkedin-message-2',
+          recipientReadAt: '2026-07-22T10:03:00.000Z',
+        },
+      ],
+    });
+
+    expect(result).toEqual({ received: 1, confirmedMessages: 0 });
+    expect(graphqlRequest).toHaveBeenCalledTimes(1);
+  });
+
   it('recomputes the thread preview and count from related messages', async () => {
     const { client, graphqlRequest } = createClient([
       {

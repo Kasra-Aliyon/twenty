@@ -736,7 +736,7 @@ describe('SequenceExecutorService', () => {
     );
   });
 
-  it('scopes LinkedIn activity conditions to the sender and message author', async () => {
+  it('scopes LinkedIn read and reply conditions to the sender and recipient thread', async () => {
     const conditionStep = {
       id: 'condition-step-id',
       sequenceId: sequence.id,
@@ -807,6 +807,13 @@ describe('SequenceExecutorService', () => {
     });
     expect(linkedinMessageRepository.count).toHaveBeenCalledWith({
       where: [
+        {
+          direction: 'OUTBOUND',
+          ownerWorkspaceMemberId: 'owner-workspace-member-id',
+          threadId: expect.anything(),
+          deliveredAt: expect.anything(),
+          recipientReadAt: expect.anything(),
+        },
         {
           direction: 'INBOUND',
           ownerWorkspaceMemberId: 'owner-workspace-member-id',

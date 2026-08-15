@@ -53,6 +53,20 @@ const createLinkedinAction = ({
     ['scheduledAt', scheduledAt ?? new Date().toISOString()],
   ]);
 
+const addRecipientReadStatus = (value: unknown): unknown => {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return value;
+  }
+
+  const record = value as Record<string, unknown>;
+
+  return {
+    ...record,
+    recipientReadStatus:
+      typeof record.recipientReadAt === 'string' ? 'READ_CONFIRMED' : 'UNKNOWN',
+  };
+};
+
 export const registerLinkedinTools = (
   server: McpServer,
   dependencies: ToolDependencies,
@@ -206,6 +220,57 @@ export const registerLinkedinTools = (
           }),
         response_format,
       ),
+  );
+
+  server.registerTool(
+    'twenty_list_linkedin_message_read_receipts',
+    {
+      title: 'List LinkedIn message read receipts',
+      description:
+        'Lists outbound LinkedIn messages with recipient read status. READ_CONFIRMED has a positive LinkedIn receipt; UNKNOWN never means unread because LinkedIn may withhold receipts.',
+      inputSchema: z.object({
+        thread_id: recordIdSchema.optional(),
+        status: z.enum(['ALL', 'READ_CONFIRMED', 'UNKNOWN']).default('ALL'),
+        limit: listLimitSchema,
+        response_format: responseFormatSchema,
+      }),
+      outputSchema: TOOL_OUTPUT_SCHEMA,
+      annotations: { readOnlyHint: true, idempotentHint: true },
+    },
+    async ({ thread_id, status, limit, response_format }) =>
+      runTool(async () => {
+        const result = await records.list({
+          object: STANDARD_OBJECTS.linkedinMessages,
+          filter: combineFilters('and', [
+            filterCondition('direction', 'eq', 'OUTBOUND'),
+            thread_id === undefined
+              ? undefined
+              : filterCondition('threadId', 'eq', thread_id),
+            status === 'ALL'
+              ? undefined
+              : status === 'READ_CONFIRMED'
+                ? 'recipientReadAt[is]:NOT_NULL'
+                : filterCondition('recipientReadAt', 'is', null),
+          ]),
+          orderBy: 'deliveredAt[DescNullsLast]',
+          limit,
+          depth: 0,
+          fields: [
+            'messageId',
+            'body',
+            'deliveredAt',
+            'recipientReadAt',
+            'direction',
+            'threadId',
+          ],
+          token: requireUserToken(dependencies.client),
+        });
+
+        return {
+          ...result,
+          items: result.items.map(addRecipientReadStatus),
+        };
+      }, response_format),
   );
 
   server.registerTool(

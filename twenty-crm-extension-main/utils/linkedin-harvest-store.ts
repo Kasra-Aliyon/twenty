@@ -6,6 +6,7 @@ import type {
   LinkedInHarvestMessage,
   LinkedInHarvestThread,
   LinkedInHarvestThreadParticipant,
+  LinkedInMessageReadConfirmation,
   LinkedInSyncTotals,
 } from '../types';
 import type { TwentyApiClient } from './twenty-api';
@@ -63,6 +64,11 @@ export type LinkedInHarvestStoreRequest =
       action: 'WRITE_MESSAGES';
       ownerLinkedinId: string;
       records: LinkedInHarvestMessage[];
+    }
+  | {
+      action: 'CONFIRM_MESSAGE_READS';
+      ownerLinkedinId: string;
+      records: LinkedInMessageReadConfirmation[];
     }
   | { action: 'UPDATE_THREAD_SUMMARY'; threadId: string }
   | { action: 'GET_OLDEST_THREAD'; ownerLinkedinId: string }
@@ -312,6 +318,79 @@ const writeMessagesWithClient = (
       threadId: record.threadId,
     })),
   );
+
+const confirmMessageReadsWithClient = async (
+  client: TwentyApiClient,
+  ownerLinkedinId: string,
+  records: LinkedInMessageReadConfirmation[],
+): Promise<{ received: number; confirmedMessages: number }> => {
+  let confirmedMessages = 0;
+
+  for (const record of records) {
+    const boundaryResult = await client.graphqlRequest<{
+      linkedinMessages: {
+        edges: Array<{
+          node: { deliveredAt: string; threadId: string };
+        }>;
+      };
+    }>(
+      `
+        query LinkedinMessageReadBoundary($externalId: String!) {
+          linkedinMessages(
+            filter: { externalId: { eq: $externalId } }
+            first: 1
+          ) {
+            edges {
+              node {
+                deliveredAt
+                threadId
+              }
+            }
+          }
+        }
+      `,
+      {
+        externalId: `${ownerLinkedinId}:${record.readThroughMessageId}`,
+      },
+    );
+    const boundaryMessage =
+      boundaryResult.data?.linkedinMessages.edges[0]?.node;
+
+    if (!boundaryMessage || boundaryMessage.threadId !== record.threadId) {
+      continue;
+    }
+
+    const updateResult = await client.graphqlRequest<{
+      updateLinkedinMessages: Array<{ id: string }>;
+    }>(
+      `
+        mutation ConfirmLinkedinMessagesRead(
+          $filter: LinkedinMessageFilterInput!
+          $data: LinkedinMessageUpdateInput!
+        ) {
+          updateLinkedinMessages(filter: $filter, data: $data) {
+            id
+          }
+        }
+      `,
+      {
+        filter: {
+          and: [
+            { threadId: { eq: record.threadId } },
+            { direction: { eq: 'OUTBOUND' } },
+            { deliveredAt: { lte: boundaryMessage.deliveredAt } },
+            { recipientReadAt: { is: 'NULL' } },
+          ],
+        },
+        data: { recipientReadAt: record.recipientReadAt },
+      },
+    );
+
+    confirmedMessages += updateResult.data?.updateLinkedinMessages.length ?? 0;
+  }
+
+  return { received: records.length, confirmedMessages };
+};
 
 const updateThreadSummaryWithClient = async (
   client: TwentyApiClient,
@@ -626,6 +705,12 @@ export const handleLinkedInHarvestStoreRequest = async (
         request.ownerLinkedinId,
         request.records,
       );
+    case 'CONFIRM_MESSAGE_READS':
+      return confirmMessageReadsWithClient(
+        client,
+        request.ownerLinkedinId,
+        request.records,
+      );
     case 'UPDATE_THREAD_SUMMARY':
       return updateThreadSummaryWithClient(client, request.threadId);
     case 'GET_OLDEST_THREAD':
@@ -707,6 +792,16 @@ export const writeLinkedInMessages = (
 ): Promise<WriteResult> =>
   sendStoreRequest({
     action: 'WRITE_MESSAGES',
+    ownerLinkedinId,
+    records,
+  });
+
+export const confirmLinkedInMessageReads = (
+  ownerLinkedinId: string,
+  records: LinkedInMessageReadConfirmation[],
+): Promise<{ received: number; confirmedMessages: number }> =>
+  sendStoreRequest({
+    action: 'CONFIRM_MESSAGE_READS',
     ownerLinkedinId,
     records,
   });

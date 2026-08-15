@@ -605,7 +605,7 @@ const SEQUENCE_CAPABILITIES = {
         ACCEPTED_LINKEDIN_INVITE:
           'True for a synced or recorded first-degree LinkedIn connection.',
         OPENED_LINKEDIN_MESSAGE:
-          'LinkedIn has no recipient read receipt; inbound conversation activity is used as the signal.',
+          'True for a confirmed recipient read receipt or an inbound reply after this enrollment sent its LinkedIn action.',
         HAS_PHONE_NUMBER: 'True when the person has a primary phone number.',
       },
     },

@@ -128,6 +128,12 @@ describe('Unibox LinkedIn standard metadata build', () => {
       isNullable: false,
       defaultValue: 0,
     });
+    expect(getField('linkedinMessage', 'recipientReadAt')).toMatchObject({
+      type: FieldMetadataType.DATE_TIME,
+      isNullable: true,
+      isUIEditable: false,
+      settings: { displayFormat: DateDisplayFormat.RELATIVE },
+    });
     expect(getField('linkedinMessage', 'direction')?.options).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ value: 'INBOUND' }),
