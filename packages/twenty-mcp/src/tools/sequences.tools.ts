@@ -10,6 +10,7 @@ import {
   SEQUENCE_ENROLLMENT_STATUSES,
   SEQUENCE_STATUSES,
   SEQUENCE_STEP_TYPES,
+  SEQUENCE_SEND_WINDOW_TIMEZONE_MODES,
   SEQUENCE_TASK_CONTINUE_MODES,
   SEQUENCE_TASK_PRIORITIES,
   SEQUENCE_TASK_TYPES,
@@ -44,6 +45,12 @@ const sequenceSettingsSchema = z.object({
       return false;
     }
   }, 'Must be an IANA timezone such as Europe/Helsinki or America/New_York'),
+  sendWindowTimezoneMode: z
+    .enum([
+      SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.SEQUENCE,
+      SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.RECIPIENT,
+    ])
+    .default(SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.SEQUENCE),
   dailyStartLimitEnabled: z.boolean(),
   dailyStarts: z.number().int().nonnegative(),
   staggerMinutes: z.number().nonnegative(),
@@ -51,6 +58,15 @@ const sequenceSettingsSchema = z.object({
   linkedinDailyActions: z.number().int().min(1).max(40),
   linkedinDelayPatternMinutes: z.array(z.number().positive()).min(1),
   stopOnReply: z.boolean(),
+  senderConnectedAccountIds: z
+    .array(recordIdSchema)
+    .max(20)
+    .refine(
+      (connectedAccountIds) =>
+        new Set(connectedAccountIds).size === connectedAccountIds.length,
+      'Sender pool cannot contain duplicate connected accounts.',
+    )
+    .optional(),
 });
 
 const CONNECTED_ACCOUNTS_QUERY = `
@@ -70,6 +86,8 @@ const CONNECTED_ACCOUNTS_QUERY = `
       lastCredentialsRefreshedAt
       createdAt
       updatedAt
+      sequenceDailyEmailLimitEnabled
+      sequenceDailyEmailLimit
     }
     myMessageChannels {
       handle
@@ -93,8 +111,47 @@ type ConnectedAccount = {
   provider?: unknown;
   authFailedAt?: unknown;
   archivedAt?: unknown;
+  sequenceDailyEmailLimitEnabled?: unknown;
+  sequenceDailyEmailLimit?: unknown;
   messageChannels?: MessageChannel[];
 };
+
+const UPDATE_SEQUENCE_MAILBOX_LIMIT_MUTATION = `
+  mutation TwentyMcpUpdateSequenceMailboxLimit(
+    $id: UUID!
+    $input: ConnectedAccountSequenceEmailSettingsInput!
+  ) {
+    updateConnectedAccountSequenceEmailSettings(id: $id, input: $input) {
+      id
+      handle
+      sequenceDailyEmailLimitEnabled
+      sequenceDailyEmailLimit
+    }
+  }
+`;
+
+const SEQUENCE_ANALYTICS_QUERY = `
+  query TwentyMcpSequenceAnalytics($sequenceId: UUID!) {
+    sequenceAnalytics(sequenceId: $sequenceId) {
+      enrolledCount
+      contactedCount
+      sentEmailCount
+      repliedCount
+      completedCount
+      failedCount
+      replyRate
+      emailVariants {
+        stepId
+        stepName
+        variantId
+        variantName
+        sentCount
+        repliedCount
+        replyRate
+      }
+    }
+  }
+`;
 
 const SEQUENCE_SENDER_PROVIDERS = new Set([
   'google',
@@ -164,10 +221,28 @@ const actionExecutionSettingsShape = {
     .describe('Task context used when executionMode is MANUAL.'),
 };
 
+const emailVariantSchema = z.object({
+  id: z.string().min(1).max(100),
+  name: z.string().min(1).max(60),
+  subject: z.string().min(1),
+  bodyHtml: z.string().min(1),
+  weight: z.number().positive(),
+});
+
 const emailSettingsSchema = z.object({
   ...actionExecutionSettingsShape,
   subject: z.string(),
   bodyHtml: z.string(),
+  variants: z
+    .array(emailVariantSchema)
+    .min(2)
+    .max(2)
+    .refine(
+      (variants) =>
+        new Set(variants.map(({ id }) => id)).size === variants.length,
+      'Email variant IDs must be unique.',
+    )
+    .optional(),
   threadAsReplyToPreviousEmail: z.boolean().default(false),
   stopOnReply: z.boolean().nullable().default(null),
 });
@@ -260,6 +335,18 @@ const stepInputSchema = z
         code: 'custom',
         message: 'manualTaskTitle is required for MANUAL execution.',
         path: ['settings', 'manualTaskTitle'],
+      });
+    }
+
+    if (
+      input.type === 'SEND_EMAIL' &&
+      input.settings.executionMode === 'MANUAL' &&
+      input.settings.variants !== undefined
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Email variants are supported only for AUTOMATED execution.',
+        path: ['settings', 'variants'],
       });
     }
 
@@ -504,13 +591,15 @@ const SEQUENCE_CAPABILITIES = {
     active_days:
       'Integers 0-6 where 0 is Sunday. Empty means the sequence never opens.',
     sending_window:
-      'windowStart/windowEnd are HH:mm in the configured IANA timezone.',
+      'windowStart/windowEnd are HH:mm. SEQUENCE mode uses settings.timezone. RECIPIENT mode uses the Person timeZone field and falls back to UTC when it is missing or invalid.',
     daily_start_limit:
-      'dailyStartLimitEnabled controls whether dailyStarts limits how many pending enrollments are admitted per local day.',
+      'dailyStartLimitEnabled controls whether dailyStarts limits pending admissions. SEQUENCE mode resets the quota by settings.timezone; RECIPIENT mode uses one sequence-wide UTC day.',
     daily_starts:
-      'Maximum pending enrollments admitted into the active sequence per local day.',
+      'Maximum pending enrollments admitted during the applicable sequence-timezone or UTC quota day.',
     stagger_minutes:
       'Minimum spacing used when scheduling automated email starts.',
+    sender_pool:
+      'senderConnectedAccountIds is an optional pool of synchronized mailboxes. Each enrollment is assigned one mailbox when admitted and remains pinned to it for threading and sender identity.',
     linkedin_limits:
       'linkedinDailyActionLimitEnabled controls only the daily action cap, which accepts 1-40 actions per day. The sending window and workspace-wide delay pattern are always enforced.',
     stop_on_reply:
@@ -544,10 +633,12 @@ const SEQUENCE_CAPABILITIES = {
       fields: [
         'subject',
         'bodyHtml',
+        'variants',
         'threadAsReplyToPreviousEmail',
         'stopOnReply',
       ],
-      automated: 'Sends through the selected connected account.',
+      automated:
+        'Sends through the enrollment mailbox. When variants are present, Twenty makes a deterministic weighted assignment and keeps attribution for reply-rate analytics. Subject and body support deterministic spintax such as {Hi|Hello}; template variables remain {{variableName}}.',
       manual: 'Creates an EMAIL task and waits for completion.',
     },
     DELAY: {
@@ -740,6 +831,62 @@ export const registerSequenceTools = (
         }),
         response_format,
       ),
+  );
+
+  server.registerTool(
+    'twenty_update_sequence_mailbox_limit',
+    {
+      title: 'Update a sequence mailbox daily limit',
+      description:
+        'Enables, disables, or changes the hard per-mailbox sequence email cap. The cap is shared by every sequence using the mailbox and resets at 00:00 UTC. Requires TWENTY_USER_TOKEN and explicit confirmation because increasing a limit can accelerate outreach.',
+      inputSchema: z.object({
+        connected_account_id: recordIdSchema,
+        enabled: z.boolean(),
+        daily_limit: z.number().int().min(1).max(200),
+        confirm: z.boolean().describe(CONFIRMATION_DESCRIPTION),
+        response_format: responseFormatSchema,
+      }),
+      outputSchema: TOOL_OUTPUT_SCHEMA,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+    },
+    async ({
+      connected_account_id,
+      enabled,
+      daily_limit,
+      confirm,
+      response_format,
+    }) =>
+      runTool(async () => {
+        if (!confirm) {
+          throw new Error(
+            'Mailbox limit update not performed: confirm the mailbox and daily limit first.',
+          );
+        }
+
+        const result = await dependencies.client.graphql<{
+          updateConnectedAccountSequenceEmailSettings: unknown;
+        }>(
+          UPDATE_SEQUENCE_MAILBOX_LIMIT_MUTATION,
+          {
+            id: connected_account_id,
+            input: {
+              sequenceDailyEmailLimitEnabled: enabled,
+              sequenceDailyEmailLimit: daily_limit,
+            },
+          },
+          {
+            endpoint: 'metadata',
+            token: requireUserToken(dependencies.client),
+          },
+        );
+
+        return result.updateConnectedAccountSequenceEmailSettings;
+      }, response_format),
   );
 
   server.registerTool(
@@ -1344,7 +1491,7 @@ export const registerSequenceTools = (
     {
       title: 'Get sequence metrics',
       description:
-        'Returns sequence counters plus enrollment counts grouped by status.',
+        'Returns the existing sequence counters and enrollment status groups, plus funnel totals, reply rate, and per-step/per-variant analytics.',
       inputSchema: z.object({
         sequence_id: recordIdSchema,
         response_format: responseFormatSchema,
@@ -1354,7 +1501,7 @@ export const registerSequenceTools = (
     },
     async ({ sequence_id, response_format }) =>
       runTool(async () => {
-        const [sequence, enrollmentGroups] = await Promise.all([
+        const [sequence, enrollmentGroups, result] = await Promise.all([
           records.get({
             object: STANDARD_OBJECTS.sequences,
             id: sequence_id,
@@ -1365,9 +1512,20 @@ export const registerSequenceTools = (
             aggregate: ['countId'],
             filter: filterCondition('sequenceId', 'eq', sequence_id),
           }),
+          dependencies.client.graphql<{
+            sequenceAnalytics: unknown;
+          }>(
+            SEQUENCE_ANALYTICS_QUERY,
+            { sequenceId: sequence_id },
+            { endpoint: 'metadata' },
+          ),
         ]);
 
-        return { sequence, enrollments_by_status: enrollmentGroups };
+        return {
+          sequence,
+          enrollments_by_status: enrollmentGroups,
+          analytics: result.sequenceAnalytics,
+        };
       }, response_format),
   );
 };
@@ -1379,6 +1537,7 @@ export const sequencesToolsTesting = {
   getSequenceStepStorageType,
   isReadySequenceSenderAccount,
   normalizedStepSettings,
+  sequenceSettingsSchema,
   stepData,
   stepInputSchema,
   withPreservedStepBranch,

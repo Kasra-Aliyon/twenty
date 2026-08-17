@@ -1,10 +1,13 @@
 import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
 
 import { isDefined } from 'twenty-shared/utils';
+import { type Repository } from 'typeorm';
 
 import { InjectCacheStorage } from 'src/engine/core-modules/cache-storage/decorators/cache-storage.decorator';
 import { CacheStorageService } from 'src/engine/core-modules/cache-storage/services/cache-storage.service';
 import { CacheStorageNamespace } from 'src/engine/core-modules/cache-storage/types/cache-storage-namespace.enum';
+import { ConnectedAccountEntity } from 'src/engine/metadata-modules/connected-account/entities/connected-account.entity';
 import { type WorkspaceRepository } from 'src/engine/twenty-orm/repository/workspace.repository';
 import {
   SEQUENCE_LAST_SEND_AT_CACHE_KEY_PREFIX,
@@ -19,6 +22,8 @@ export class SequenceMailboxThrottleService {
   constructor(
     @InjectCacheStorage(CacheStorageNamespace.ModuleMessaging)
     private readonly cacheStorageService: CacheStorageService,
+    @InjectRepository(ConnectedAccountEntity)
+    private readonly connectedAccountRepository: Repository<ConnectedAccountEntity>,
   ) {}
 
   async acquireSendLock({
@@ -129,6 +134,63 @@ export class SequenceMailboxThrottleService {
       key,
       date.toISOString(),
       SEQUENCE_LAST_SEND_AT_CACHE_TTL,
+    );
+  }
+
+  async reserveUtcDailySend({
+    workspaceId,
+    mailboxId,
+    now,
+  }: {
+    workspaceId: string;
+    mailboxId: string;
+    now: Date;
+  }): Promise<{ usageDate: string } | null> {
+    const usageDate = now.toISOString().slice(0, 10);
+    const reservedRows = (await this.connectedAccountRepository.query(
+      `UPDATE "core"."connectedAccount"
+       SET "sequenceDailyEmailUsageDate" = $3::date,
+           "sequenceDailyEmailUsageCount" = CASE
+             WHEN "sequenceDailyEmailUsageDate" = $3::date
+               THEN "sequenceDailyEmailUsageCount" + 1
+             ELSE 1
+           END,
+           "updatedAt" = NOW()
+       WHERE "id" = $1
+         AND "workspaceId" = $2
+         AND (
+           "sequenceDailyEmailLimitEnabled" = FALSE
+           OR CASE
+             WHEN "sequenceDailyEmailUsageDate" = $3::date
+               THEN "sequenceDailyEmailUsageCount"
+             ELSE 0
+           END < "sequenceDailyEmailLimit"
+         )
+       RETURNING "id"`,
+      [mailboxId, workspaceId, usageDate],
+    )) as { id: string }[];
+
+    return reservedRows.length === 1 ? { usageDate } : null;
+  }
+
+  async releaseUtcDailySendReservation({
+    workspaceId,
+    mailboxId,
+    usageDate,
+  }: {
+    workspaceId: string;
+    mailboxId: string;
+    usageDate: string;
+  }): Promise<void> {
+    await this.connectedAccountRepository.query(
+      `UPDATE "core"."connectedAccount"
+       SET "sequenceDailyEmailUsageCount" = "sequenceDailyEmailUsageCount" - 1,
+           "updatedAt" = NOW()
+       WHERE "id" = $1
+         AND "workspaceId" = $2
+         AND "sequenceDailyEmailUsageDate" = $3::date
+         AND "sequenceDailyEmailUsageCount" > 0`,
+      [mailboxId, workspaceId, usageDate],
     );
   }
 

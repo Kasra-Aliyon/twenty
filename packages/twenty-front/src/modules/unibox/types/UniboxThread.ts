@@ -1,4 +1,4 @@
-export type UniboxTab = 'EMAILS' | 'SENT' | 'DRAFT' | 'LINKEDIN';
+export type UniboxTab = 'EMAILS' | 'SENT' | 'DRAFT';
 
 export type UniboxDateRange =
   | 'ALL'

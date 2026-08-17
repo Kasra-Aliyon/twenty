@@ -34,6 +34,7 @@ const WORKFLOWS_FOLDER_ITEM_NAMES = [
 
 const LINK_NAVIGATION_MENU_ITEM_NAMES = [
   'unibox',
+  'linkedin',
   'lists',
   'sequences',
   'taskQueue',

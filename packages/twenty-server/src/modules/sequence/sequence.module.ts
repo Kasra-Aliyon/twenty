@@ -18,6 +18,8 @@ import { SequenceLinkedinActionListener } from 'src/modules/sequence/listeners/s
 import { SequenceLinkedinReplyListener } from 'src/modules/sequence/listeners/sequence-linkedin-reply.listener';
 import { SequenceReplyListener } from 'src/modules/sequence/listeners/sequence-reply.listener';
 import { SequenceTaskListener } from 'src/modules/sequence/listeners/sequence-task.listener';
+import { SequenceAnalyticsResolver } from 'src/modules/sequence/resolvers/sequence-analytics.resolver';
+import { SequenceAnalyticsService } from 'src/modules/sequence/services/sequence-analytics.service';
 import { SequenceEmailSenderService } from 'src/modules/sequence/services/sequence-email-sender.service';
 import { SequenceExecutorService } from 'src/modules/sequence/services/sequence-executor.service';
 import { SequenceLinkedinInvitationReconcilerService } from 'src/modules/sequence/services/sequence-linkedin-invitation-reconciler.service';
@@ -46,6 +48,8 @@ import { SequenceVariableService } from 'src/modules/sequence/services/sequence-
     ]),
   ],
   providers: [
+    SequenceAnalyticsResolver,
+    SequenceAnalyticsService,
     SequenceEmailSenderService,
     SequenceEnrollmentListener,
     SequenceExecutorService,

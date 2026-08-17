@@ -25,6 +25,7 @@ import { type WorkspaceEntityManager } from 'src/engine/twenty-orm/entity-manage
 import { type WorkspaceRepository } from 'src/engine/twenty-orm/repository/workspace.repository';
 import { buildSystemAuthContext } from 'src/engine/twenty-orm/utils/build-system-auth-context.util';
 import { LinkedinActionWorkspaceEntity } from 'src/modules/linkedin/standard-objects/linkedin-action.workspace-entity';
+import { PersonWorkspaceEntity } from 'src/modules/person/standard-objects/person.workspace-entity';
 import { SequenceMailboxThrottleService } from 'src/modules/sequence/services/sequence-mailbox-throttle.service';
 import { SequenceLinkedinInvitationReconcilerService } from 'src/modules/sequence/services/sequence-linkedin-invitation-reconciler.service';
 import { SequenceQueueService } from 'src/modules/sequence/services/sequence-queue.service';
@@ -44,6 +45,10 @@ import { SequenceWorkspaceEntity } from 'src/modules/sequence/standard-objects/s
 import { TaskWorkspaceEntity } from 'src/modules/task/standard-objects/task.workspace-entity';
 import { findNextSequenceStep } from 'src/modules/sequence/utils/find-next-sequence-step.util';
 import { parseSequenceSettings } from 'src/modules/sequence/utils/parse-sequence-settings.util';
+import {
+  isRecipientSequenceEmailWindow,
+  resolveSequenceEmailWindowSettings,
+} from 'src/modules/sequence/utils/resolve-sequence-email-window-settings.util';
 import {
   isWithinSendingWindow,
   nextWindowOpen,
@@ -113,28 +118,34 @@ export class SequenceSchedulerService {
       const activeSequences = await sequenceRepository.find({
         where: { status: SEQUENCE_STATUSES.ACTIVE },
       });
-      const eligibleSequences = activeSequences
-        .map((sequence) => ({
-          sequence,
-          settings: parseSequenceSettings(sequence.settings),
-        }))
-        .filter(({ settings }) => isWithinSendingWindow(now, settings));
+      const activeSequencesWithSettings = activeSequences.map((sequence) => ({
+        sequence,
+        settings: parseSequenceSettings(sequence.settings),
+      }));
+      const fixedWindowEligibleSequences = activeSequencesWithSettings.filter(
+        ({ settings }) => isWithinSendingWindow(now, settings),
+      );
+      const executionSequences = activeSequencesWithSettings.filter(
+        ({ settings }) =>
+          isWithinSendingWindow(now, settings) ||
+          (settings.activeDays.length > 0 &&
+            isRecipientSequenceEmailWindow(settings)),
+      );
 
-      if (eligibleSequences.length === 0) {
+      if (executionSequences.length === 0) {
         return;
       }
 
-      for (const { sequence, settings } of eligibleSequences) {
+      for (const { sequence } of executionSequences) {
         await this.admitPendingEnrollments({
           enrollmentRepository,
           sequenceRepository,
           sequence,
-          settings,
           now,
         });
       }
 
-      const sequenceIds = eligibleSequences.map(({ sequence }) => sequence.id);
+      const sequenceIds = executionSequences.map(({ sequence }) => sequence.id);
       const [dueEnrollments, steps] = await Promise.all([
         enrollmentRepository.find({
           where: {
@@ -156,18 +167,53 @@ export class SequenceSchedulerService {
         }),
       ]);
       const settingsBySequenceId = new Map(
-        eligibleSequences.map(({ sequence, settings }) => [
+        executionSequences.map(({ sequence, settings }) => [
           sequence.id,
           settings,
         ]),
       );
       const senderBySequenceId = new Map(
-        eligibleSequences.map(({ sequence }) => [
+        executionSequences.map(({ sequence }) => [
           sequence.id,
           sequence.senderConnectedAccountId,
         ]),
       );
+      const fixedWindowEligibleSequenceIds = new Set(
+        fixedWindowEligibleSequences.map(({ sequence }) => sequence.id),
+      );
       const stepsBySequenceId = this.groupStepsBySequenceId(steps);
+      const recipientTimeZonePersonIds = [
+        ...new Set(
+          dueEnrollments
+            .filter((enrollment) => {
+              const settings = settingsBySequenceId.get(enrollment.sequenceId);
+
+              return (
+                isDefined(settings) && isRecipientSequenceEmailWindow(settings)
+              );
+            })
+            .map(({ personId }) => personId),
+        ),
+      ];
+      const recipientTimeZoneByPersonId = new Map<string, string | null>();
+
+      if (recipientTimeZonePersonIds.length > 0) {
+        const personRepository =
+          await this.globalWorkspaceOrmManager.getRepository(
+            workspaceId,
+            PersonWorkspaceEntity,
+            { shouldBypassPermissionChecks: true },
+          );
+        const recipients = await personRepository.find({
+          where: { id: In(recipientTimeZonePersonIds) },
+          select: { id: true, timeZone: true },
+        });
+
+        for (const recipient of recipients) {
+          recipientTimeZoneByPersonId.set(recipient.id, recipient.timeZone);
+        }
+      }
+
       const dueEmailsByMailboxId = new Map<string, DueEmail[]>();
 
       for (const enrollment of dueEnrollments) {
@@ -177,19 +223,37 @@ export class SequenceSchedulerService {
           currentStepPosition: enrollment.currentStepPosition,
         });
         const settings = settingsBySequenceId.get(enrollment.sequenceId);
+        const isAutomatedEmail =
+          isDefined(nextStep) &&
+          nextStep.settings.type === SEQUENCE_STEP_TYPES.SEND_EMAIL &&
+          nextStep.settings.executionMode !==
+            SEQUENCE_ACTION_EXECUTION_MODES.MANUAL;
 
-        if (
-          !isDefined(nextStep) ||
-          nextStep.settings.type !== SEQUENCE_STEP_TYPES.SEND_EMAIL ||
-          nextStep.settings.executionMode ===
-            SEQUENCE_ACTION_EXECUTION_MODES.MANUAL ||
-          !isDefined(settings)
-        ) {
+        if (!isAutomatedEmail) {
+          if (!fixedWindowEligibleSequenceIds.has(enrollment.sequenceId)) {
+            continue;
+          }
+
           await this.sequenceQueueService.enqueueProcess({
             workspaceId,
             enrollmentId: enrollment.id,
           });
 
+          continue;
+        }
+
+        if (!isDefined(settings)) {
+          continue;
+        }
+
+        const effectiveSettings = resolveSequenceEmailWindowSettings({
+          settings,
+          recipientTimeZone: recipientTimeZoneByPersonId.get(
+            enrollment.personId,
+          ),
+        });
+
+        if (effectiveSettings.activeDays.length === 0) {
           continue;
         }
 
@@ -208,7 +272,10 @@ export class SequenceSchedulerService {
 
         const mailboxEnrollments = dueEmailsByMailboxId.get(mailboxId) ?? [];
 
-        mailboxEnrollments.push({ enrollment, settings });
+        mailboxEnrollments.push({
+          enrollment,
+          settings: effectiveSettings,
+        });
         dueEmailsByMailboxId.set(mailboxId, mailboxEnrollments);
       }
 
@@ -551,13 +618,11 @@ export class SequenceSchedulerService {
     enrollmentRepository,
     sequenceRepository,
     sequence,
-    settings,
     now,
   }: {
     enrollmentRepository: WorkspaceRepository<SequenceEnrollmentWorkspaceEntity>;
     sequenceRepository: WorkspaceRepository<SequenceWorkspaceEntity>;
     sequence: SequenceWorkspaceEntity;
-    settings: SequenceSettings;
     now: Date;
   }): Promise<void> {
     const workspaceDataSource =
@@ -581,22 +646,30 @@ export class SequenceSchedulerService {
         return;
       }
 
+      const lockedSettings = parseSequenceSettings(lockedSequence.settings);
+
       let remainingStarts = SEQUENCE_SCHEDULER_BATCH_SIZE;
 
-      if (settings.dailyStartLimitEnabled) {
+      if (lockedSettings.dailyStartLimitEnabled) {
+        const quotaTimeZone = isRecipientSequenceEmailWindow(lockedSettings)
+          ? 'UTC'
+          : lockedSettings.timezone;
         const startedToday = await enrollmentRepository.count(
           {
             where: {
               sequenceId: sequence.id,
               startedAt: MoreThanOrEqual(
-                startOfDayInTimezone(now, settings.timezone),
+                startOfDayInTimezone(now, quotaTimeZone),
               ),
             },
           },
           workspaceTransactionManager,
         );
 
-        remainingStarts = Math.max(0, settings.dailyStarts - startedToday);
+        remainingStarts = Math.max(
+          0,
+          lockedSettings.dailyStarts - startedToday,
+        );
       }
 
       if (remainingStarts === 0) {
@@ -614,9 +687,48 @@ export class SequenceSchedulerService {
         },
         workspaceTransactionManager,
       );
+      const senderPool = this.getEffectiveSenderPool({
+        sequence: lockedSequence,
+        settings: lockedSettings,
+      });
+      const hasExplicitSenderPool =
+        (lockedSettings.senderConnectedAccountIds?.length ?? 0) > 0;
+      const activeSenderAssignments =
+        senderPool.length > 1
+          ? await enrollmentRepository.find(
+              {
+                where: {
+                  sequenceId: sequence.id,
+                  status: SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
+                  senderConnectedAccountId: In(senderPool),
+                },
+                select: { senderConnectedAccountId: true },
+              },
+              workspaceTransactionManager,
+            )
+          : [];
+      const assignmentCountBySenderId = new Map(
+        senderPool.map((senderConnectedAccountId) => [
+          senderConnectedAccountId,
+          activeSenderAssignments.filter(
+            (enrollment) =>
+              enrollment.senderConnectedAccountId === senderConnectedAccountId,
+          ).length,
+        ]),
+      );
 
       for (const enrollment of pendingEnrollments) {
-        await enrollmentRepository.update(
+        const senderConnectedAccountId =
+          !hasExplicitSenderPool &&
+          isDefined(enrollment.senderConnectedAccountId) &&
+          senderPool.includes(enrollment.senderConnectedAccountId)
+            ? enrollment.senderConnectedAccountId
+            : this.getLeastLoadedSender({
+                senderPool,
+                assignmentCountBySenderId,
+              });
+
+        const updateResult = await enrollmentRepository.update(
           {
             id: enrollment.id,
             status: SEQUENCE_ENROLLMENT_STATUSES.PENDING,
@@ -626,14 +738,59 @@ export class SequenceSchedulerService {
             startedAt: now,
             waitingOn: SEQUENCE_WAITING_ON.DELAY,
             nextActionAt: now,
-            senderConnectedAccountId:
-              enrollment.senderConnectedAccountId ??
-              lockedSequence.senderConnectedAccountId,
+            senderConnectedAccountId,
           },
           workspaceTransactionManager,
         );
+
+        if (
+          updateResult.affected === 1 &&
+          isDefined(senderConnectedAccountId)
+        ) {
+          assignmentCountBySenderId.set(
+            senderConnectedAccountId,
+            (assignmentCountBySenderId.get(senderConnectedAccountId) ?? 0) + 1,
+          );
+        }
       }
     });
+  }
+
+  private getEffectiveSenderPool({
+    sequence,
+    settings,
+  }: {
+    sequence: SequenceWorkspaceEntity;
+    settings: SequenceSettings;
+  }): string[] {
+    if ((settings.senderConnectedAccountIds?.length ?? 0) > 0) {
+      return settings.senderConnectedAccountIds ?? [];
+    }
+
+    return isDefined(sequence.senderConnectedAccountId)
+      ? [sequence.senderConnectedAccountId]
+      : [];
+  }
+
+  private getLeastLoadedSender({
+    senderPool,
+    assignmentCountBySenderId,
+  }: {
+    senderPool: string[];
+    assignmentCountBySenderId: Map<string, number>;
+  }): string | null {
+    return (
+      senderPool.reduce<string | null>((leastLoadedSenderId, senderId) => {
+        if (!isDefined(leastLoadedSenderId)) {
+          return senderId;
+        }
+
+        return (assignmentCountBySenderId.get(senderId) ?? 0) <
+          (assignmentCountBySenderId.get(leastLoadedSenderId) ?? 0)
+          ? senderId
+          : leastLoadedSenderId;
+      }, null) ?? null
+    );
   }
 
   private async allocateMailboxSlots({

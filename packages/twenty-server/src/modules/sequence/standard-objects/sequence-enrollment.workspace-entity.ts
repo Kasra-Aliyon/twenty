@@ -13,6 +13,10 @@ export type SequenceSentEmailMetadata = {
   headerMessageId: string;
   threadExternalId: string;
   sentAt: string;
+  connectedAccountId?: string;
+  variantId?: string;
+  variantName?: string;
+  repliedAt?: string;
 };
 
 export type SequenceLastSendAttempt = {

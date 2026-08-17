@@ -15,6 +15,18 @@ let mockCurrentCommandMenuContext = {
   isSelectAll: true,
   numberOfSelectedRecords: 2,
 };
+let mockSequences = [
+  {
+    id: 'sequence-id',
+    name: 'First sequence',
+    status: 'ACTIVE',
+    senderConnectedAccountId: 'sender-id' as string | null,
+    settings: {
+      stopOnReply: true,
+      senderConnectedAccountIds: ['sender-id'],
+    },
+  },
+];
 
 jest.mock('@/workspace/hooks/useIsFeatureEnabled', () => ({
   useIsFeatureEnabled: () => true,
@@ -101,15 +113,7 @@ jest.mock('@/object-record/hooks/useFindManyRecords', () => ({
   }) =>
     objectNameSingular === 'sequence'
       ? {
-          records: [
-            {
-              id: 'sequence-id',
-              name: 'First sequence',
-              status: 'ACTIVE',
-              senderConnectedAccountId: 'sender-id',
-              settings: { stopOnReply: true },
-            },
-          ],
+          records: mockSequences,
           fetchMoreRecords: jest.fn(),
           hasNextPage: false,
           loading: false,
@@ -192,6 +196,18 @@ describe('AddToSequenceAction', () => {
       isSelectAll: true,
       numberOfSelectedRecords: 2,
     };
+    mockSequences = [
+      {
+        id: 'sequence-id',
+        name: 'First sequence',
+        status: 'ACTIVE',
+        senderConnectedAccountId: 'sender-id',
+        settings: {
+          stopOnReply: true,
+          senderConnectedAccountIds: ['sender-id'],
+        },
+      },
+    ];
     mockFetchAllTargetedPeople.mockResolvedValue([
       { id: 'person-id-1' },
       { id: 'person-id-2' },
@@ -240,7 +256,6 @@ describe('AddToSequenceAction', () => {
           {
             sequenceId: 'sequence-id',
             personId: 'person-id-2',
-            senderConnectedAccountId: 'sender-id',
             stopOnReply: true,
           },
         ],
@@ -278,7 +293,6 @@ describe('AddToSequenceAction', () => {
           {
             sequenceId: 'sequence-id',
             personId: 'person-id-2',
-            senderConnectedAccountId: 'sender-id',
             stopOnReply: true,
           },
         ],
@@ -286,5 +300,36 @@ describe('AddToSequenceAction', () => {
     });
 
     expect(mockFetchAllTargetedPeople).not.toHaveBeenCalled();
+  });
+
+  it('allows enrollment when the sequence uses a mailbox pool without a legacy sender', async () => {
+    mockSequences = [
+      {
+        id: 'sequence-id',
+        name: 'First sequence',
+        status: 'ACTIVE',
+        senderConnectedAccountId: null,
+        settings: {
+          stopOnReply: true,
+          senderConnectedAccountIds: ['pooled-sender-id'],
+        },
+      },
+    ];
+
+    render(<AddToSequenceAction objectNameSingular="person" />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'First sequence' }));
+
+    await waitFor(() => {
+      expect(mockBatchCreateManyRecords).toHaveBeenCalledWith({
+        recordsToCreate: [
+          {
+            sequenceId: 'sequence-id',
+            personId: 'person-id-2',
+            stopOnReply: true,
+          },
+        ],
+      });
+    });
   });
 });

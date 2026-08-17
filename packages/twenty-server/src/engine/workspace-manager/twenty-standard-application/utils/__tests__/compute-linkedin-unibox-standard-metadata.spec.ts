@@ -55,7 +55,7 @@ describe('Unibox LinkedIn standard metadata build', () => {
     ];
   };
 
-  it('builds the Unibox navigation item', () => {
+  it('builds separate Unibox and LinkedIn navigation items', () => {
     expect(
       allFlatEntityMaps.flatNavigationMenuItemMaps.byUniversalIdentifier[
         STANDARD_NAVIGATION_MENU_ITEMS.unibox.universalIdentifier
@@ -65,6 +65,16 @@ describe('Unibox LinkedIn standard metadata build', () => {
       link: '/unibox',
       icon: 'IconInbox',
       position: -1,
+    });
+    expect(
+      allFlatEntityMaps.flatNavigationMenuItemMaps.byUniversalIdentifier[
+        STANDARD_NAVIGATION_MENU_ITEMS.linkedin.universalIdentifier
+      ],
+    ).toMatchObject({
+      name: 'LinkedIn',
+      link: '/linkedin',
+      icon: 'IconBrandLinkedin',
+      position: -0.5,
     });
   });
 

@@ -78,6 +78,8 @@ describe('SettingsApplicationConnectionsSection', () => {
           connectionProviderId: 'provider-1',
           name: 'Main connection',
           visibility: 'workspace',
+          sequenceDailyEmailLimitEnabled: false,
+          sequenceDailyEmailLimit: 30,
           lastCredentialsRefreshedAt: null,
           connectionParameters: null,
           createdAt: '2026-05-01T00:00:00.000Z',

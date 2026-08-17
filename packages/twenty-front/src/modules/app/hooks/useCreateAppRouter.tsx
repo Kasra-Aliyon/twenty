@@ -78,6 +78,12 @@ const UniboxPage = lazy(() =>
   })),
 );
 
+const LinkedinPage = lazy(() =>
+  import('~/pages/linkedin/LinkedinPage').then((module) => ({
+    default: module.LinkedinPage,
+  })),
+);
+
 const SignInUp = lazy(() =>
   import('~/pages/auth/SignInUp').then((module) => ({
     default: module.SignInUp,
@@ -338,6 +344,14 @@ export const useCreateAppRouter = (
               element={
                 <LazyRoute>
                   <UniboxPage />
+                </LazyRoute>
+              }
+            />
+            <Route
+              path={AppPath.LinkedinPage}
+              element={
+                <LazyRoute>
+                  <LinkedinPage />
                 </LazyRoute>
               }
             />

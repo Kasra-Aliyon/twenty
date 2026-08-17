@@ -1,14 +1,19 @@
 import { useUpdateOneRecord } from '@/object-record/hooks/useUpdateOneRecord';
 import { LINKEDIN_DAILY_ACTION_LIMITS } from '@/sequence/constants/linkedin-daily-actions';
-import { useMyConnectedAccounts } from '@/settings/accounts/hooks/useMyConnectedAccounts';
-import { useSnackBar } from '@/ui/feedback/snack-bar-manager/hooks/useSnackBar';
-import { Select } from '@/ui/input/components/Select';
+import { SequenceMailboxMultiSelect } from '@/sequence/components/SequenceMailboxMultiSelect';
 import { getDefaultSequenceSettings } from '@/sequence/constants/default-sequence-settings';
 import { type SequenceSenderAccount } from '@/sequence/types/SequenceSenderAccount';
 import { isSequenceSenderAccount } from '@/sequence/utils/isSequenceSenderAccount';
+import { useMyConnectedAccounts } from '@/settings/accounts/hooks/useMyConnectedAccounts';
+import { useSnackBar } from '@/ui/feedback/snack-bar-manager/hooks/useSnackBar';
+import { Select } from '@/ui/input/components/Select';
 import { styled } from '@linaria/react';
 import { t } from '@lingui/core/macro';
 import { useState } from 'react';
+import {
+  SEQUENCE_SEND_WINDOW_TIMEZONE_MODES,
+  type SequenceSettings,
+} from 'twenty-shared/types';
 import { Button, Toggle, type SelectOption } from 'twenty-ui/input';
 import { themeCssVariables } from 'twenty-ui/theme-constants';
 
@@ -32,6 +37,21 @@ const WEEK_DAYS = [
   { value: 0, label: t`Sun` },
 ] as const;
 
+type SendWindowTimezoneMode =
+  (typeof SEQUENCE_SEND_WINDOW_TIMEZONE_MODES)[keyof typeof SEQUENCE_SEND_WINDOW_TIMEZONE_MODES];
+
+const SEND_WINDOW_TIMEZONE_MODE_OPTIONS: SelectOption<SendWindowTimezoneMode>[] =
+  [
+    {
+      value: SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.SEQUENCE,
+      label: t`Sequence time zone`,
+    },
+    {
+      value: SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.RECIPIENT,
+      label: t`Each recipient's time zone`,
+    },
+  ];
+
 const StyledDayPicker = styled.div`
   display: grid;
   gap: ${themeCssVariables.spacing[1]};
@@ -52,6 +72,11 @@ const StyledDayButton = styled.button<{ isSelected: boolean }>`
   color: ${themeCssVariables.font.color.primary};
   cursor: pointer;
   height: 32px;
+
+  &:disabled {
+    color: ${themeCssVariables.font.color.tertiary};
+    cursor: not-allowed;
+  }
 `;
 
 const StyledToggleRow = styled.label`
@@ -77,7 +102,7 @@ export const SequenceSettingsSection = ({
   canUpdate,
 }: SequenceSettingsSectionProps) => {
   const defaults = getDefaultSequenceSettings();
-  const [settings, setSettings] = useState({
+  const [settings, setSettings] = useState<SequenceSettings>({
     ...defaults,
     ...sequence.settings,
   });
@@ -87,8 +112,12 @@ export const SequenceSettingsSection = ({
       defaults.linkedinDelayPatternMinutes
     ).join(','),
   );
-  const [senderConnectedAccountId, setSenderConnectedAccountId] = useState(
-    sequence.senderConnectedAccountId ?? '',
+  const [senderConnectedAccountIds, setSenderConnectedAccountIds] = useState(
+    (sequence.settings.senderConnectedAccountIds?.length ?? 0) > 0
+      ? (sequence.settings.senderConnectedAccountIds ?? [])
+      : sequence.senderConnectedAccountId
+        ? [sequence.senderConnectedAccountId]
+        : [],
   );
   const [isSaving, setIsSaving] = useState(false);
   const { updateOneRecord } = useUpdateOneRecord();
@@ -101,11 +130,23 @@ export const SequenceSettingsSection = ({
       label: account.handle,
       value: account.id,
     }));
-  const effectiveSenderConnectedAccountId = accountOptions.some(
-    (option) => option.value === senderConnectedAccountId,
-  )
-    ? senderConnectedAccountId
-    : (accountOptions[0]?.value ?? '');
+  const unavailableSelectedAccountOptions: SelectOption<string>[] =
+    senderConnectedAccountIds
+      .filter(
+        (accountId) =>
+          !accountOptions.some((option) => option.value === accountId),
+      )
+      .map((accountId) => ({
+        label: t`Unavailable mailbox (${accountId.slice(0, 8)})`,
+        value: accountId,
+      }));
+  const mailboxOptions = [
+    ...accountOptions,
+    ...unavailableSelectedAccountOptions,
+  ];
+  const isRecipientTimezoneMode =
+    settings.sendWindowTimezoneMode ===
+    SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.RECIPIENT;
 
   const toggleDay = (day: number) => {
     setSettings((currentSettings) => ({
@@ -135,8 +176,21 @@ export const SequenceSettingsSection = ({
       return;
     }
 
+    if (!isRecipientTimezoneMode) {
+      try {
+        new Intl.DateTimeFormat('en-US', {
+          timeZone: settings.timezone,
+        }).format();
+      } catch {
+        enqueueErrorSnackBar({
+          message: t`Enter a valid IANA timezone such as Europe/Helsinki.`,
+        });
+        return;
+      }
+    }
+
     if (
-      !effectiveSenderConnectedAccountId ||
+      senderConnectedAccountIds.length === 0 ||
       settings.activeDays.length === 0
     ) {
       enqueueErrorSnackBar({
@@ -155,8 +209,9 @@ export const SequenceSettingsSection = ({
           settings: {
             ...settings,
             linkedinDelayPatternMinutes,
+            senderConnectedAccountIds,
           },
-          senderConnectedAccountId: effectiveSenderConnectedAccountId,
+          senderConnectedAccountId: senderConnectedAccountIds[0],
         },
       });
       enqueueSuccessSnackBar({ message: t`Sequence settings saved.` });
@@ -182,6 +237,7 @@ export const SequenceSettingsSection = ({
               type="button"
               isSelected={settings.activeDays.includes(day.value)}
               aria-pressed={settings.activeDays.includes(day.value)}
+              disabled={!canUpdate}
               onClick={() => toggleDay(day.value)}
             >
               {day.label}
@@ -191,11 +247,26 @@ export const SequenceSettingsSection = ({
       </StyledField>
 
       <StyledFieldsGrid>
+        <Select
+          dropdownId={`sequence-settings-timezone-mode-${sequence.id}`}
+          label={t`Apply sending hours in`}
+          fullWidth
+          value={settings.sendWindowTimezoneMode}
+          options={SEND_WINDOW_TIMEZONE_MODE_OPTIONS}
+          disabled={!canUpdate}
+          onChange={(sendWindowTimezoneMode) =>
+            setSettings((currentSettings) => ({
+              ...currentSettings,
+              sendWindowTimezoneMode,
+            }))
+          }
+        />
         <StyledField>
           <span>{t`Window starts`}</span>
           <StyledInput
             type="time"
             value={settings.windowStart}
+            disabled={!canUpdate}
             onChange={(event) =>
               setSettings((currentSettings) => ({
                 ...currentSettings,
@@ -209,6 +280,7 @@ export const SequenceSettingsSection = ({
           <StyledInput
             type="time"
             value={settings.windowEnd}
+            disabled={!canUpdate}
             onChange={(event) =>
               setSettings((currentSettings) => ({
                 ...currentSettings,
@@ -221,6 +293,7 @@ export const SequenceSettingsSection = ({
           <span>{t`Timezone`}</span>
           <StyledInput
             value={settings.timezone}
+            disabled={!canUpdate || isRecipientTimezoneMode}
             onChange={(event) =>
               setSettings((currentSettings) => ({
                 ...currentSettings,
@@ -231,6 +304,11 @@ export const SequenceSettingsSection = ({
           />
         </StyledField>
       </StyledFieldsGrid>
+      <StyledHelperText>
+        {isRecipientTimezoneMode
+          ? t`The selected days and hours use the Time zone field on each recipient's Person record. Missing or invalid values fall back to UTC.`
+          : t`The selected days and hours use the sequence time zone.`}
+      </StyledHelperText>
 
       <StyledToggleRow>
         <span>{t`Enforce daily enrollment start cap`}</span>
@@ -276,28 +354,38 @@ export const SequenceSettingsSection = ({
             }
           />
         </StyledField>
-        {accountOptions.length > 0 && (
-          <Select
-            dropdownId={`sequence-settings-sender-${sequence.id}`}
-            label={t`Sender mailbox`}
-            fullWidth
-            value={effectiveSenderConnectedAccountId}
-            options={accountOptions}
-            onChange={setSenderConnectedAccountId}
-          />
+        {mailboxOptions.length > 0 && (
+          <StyledField>
+            <span>{t`Sender mailbox pool`}</span>
+            <SequenceMailboxMultiSelect
+              dropdownId={`sequence-settings-sender-pool-${sequence.id}`}
+              options={mailboxOptions}
+              selectedAccountIds={senderConnectedAccountIds}
+              disabled={!canUpdate}
+              onChange={setSenderConnectedAccountIds}
+            />
+          </StyledField>
         )}
       </StyledFieldsGrid>
       <StyledHelperText>
         {settings.dailyStartLimitEnabled
-          ? t`Pending enrollments are admitted up to this daily cap.`
+          ? isRecipientTimezoneMode
+            ? t`Pending enrollments are admitted up to this cap per UTC day.`
+            : t`Pending enrollments are admitted up to this cap per day in the sequence time zone.`
           : t`Testing mode: pending enrollments are admitted without a daily cap, in scheduler batches.`}
       </StyledHelperText>
 
-      {accountOptions.length === 0 && (
+      {mailboxOptions.length === 0 && (
         <StyledField>
-          <span>{t`Sender mailbox`}</span>
+          <span>{t`Sender mailbox pool`}</span>
           <span>{t`Connect an email account and wait for inbox sync to finish before activating this sequence.`}</span>
         </StyledField>
+      )}
+
+      {mailboxOptions.length > 0 && (
+        <StyledHelperText>
+          {t`Choose up to 20 mailboxes. Each contact is assigned one mailbox for the full sequence so replies and follow-ups stay in the same thread.`}
+        </StyledHelperText>
       )}
 
       <StyledToggleRow>

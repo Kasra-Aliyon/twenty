@@ -5,7 +5,7 @@ import {
   SEQUENCE_STEP_TYPES,
   type SequenceEmailStepSettings,
 } from 'twenty-shared/types';
-import { isDefined } from 'twenty-shared/utils';
+import { isDefined, renderSpintax } from 'twenty-shared/utils';
 
 import { EmailComposerService } from 'src/engine/core-modules/tool/tools/email-tool/email-composer.service';
 import { SendEmailService } from 'src/modules/messaging/message-outbound-manager/services/send-email.service';
@@ -17,10 +17,13 @@ import {
 } from 'src/modules/sequence/standard-objects/sequence-enrollment.workspace-entity';
 import { type SequenceStepWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence-step.workspace-entity';
 import { renderSequenceTemplate } from 'src/modules/sequence/utils/render-sequence-template.util';
+import { selectSequenceEmailVariant } from 'src/modules/sequence/utils/select-sequence-email-variant.util';
 
 export type SequenceEmailSendResult = {
   headerMessageId: string;
   threadExternalId: string;
+  variantId?: string;
+  variantName?: string;
 };
 
 @Injectable()
@@ -53,12 +56,32 @@ export class SequenceEmailSenderService {
       person,
       connectedAccountId,
     });
-    const subject = renderSequenceTemplate(settings.subject, variables, {
-      escapeValues: false,
+    const selectedVariant = selectSequenceEmailVariant({
+      enrollmentId: enrollment.id,
+      stepId: step.id,
+      variants: settings.variants,
     });
-    const body = renderSequenceTemplate(settings.bodyHtml, variables, {
-      escapeValues: true,
-    });
+    const spintaxSeed = `${enrollment.id}:${step.id}:${selectedVariant?.id ?? 'control'}`;
+    const subject = renderSequenceTemplate(
+      renderSpintax(
+        selectedVariant?.subject ?? settings.subject,
+        `${spintaxSeed}:subject`,
+      ),
+      variables,
+      {
+        escapeValues: false,
+      },
+    );
+    const body = renderSequenceTemplate(
+      renderSpintax(
+        selectedVariant?.bodyHtml ?? settings.bodyHtml,
+        `${spintaxSeed}:body`,
+      ),
+      variables,
+      {
+        escapeValues: true,
+      },
+    );
     const inReplyTo = settings.threadAsReplyToPreviousEmail
       ? this.findPreviousEmailHeaderMessageId({
           currentStep: step,
@@ -104,6 +127,12 @@ export class SequenceEmailSenderService {
       headerMessageId: sendResult.headerMessageId,
       threadExternalId:
         sendResult.threadExternalId ?? sendResult.headerMessageId,
+      ...(isDefined(selectedVariant)
+        ? {
+            variantId: selectedVariant.id,
+            variantName: selectedVariant.name,
+          }
+        : {}),
     };
   }
 

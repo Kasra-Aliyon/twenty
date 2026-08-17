@@ -141,6 +141,10 @@ describe('Sequence standard metadata build', () => {
       allFlatEntityMaps.flatFieldMetadataMaps.byUniversalIdentifier[
         STANDARD_OBJECTS.person.fields.emailOptOut.universalIdentifier
       ];
+    const timeZoneField =
+      allFlatEntityMaps.flatFieldMetadataMaps.byUniversalIdentifier[
+        STANDARD_OBJECTS.person.fields.timeZone.universalIdentifier
+      ];
     const enrollmentStatusField =
       allFlatEntityMaps.flatFieldMetadataMaps.byUniversalIdentifier[
         STANDARD_OBJECTS.sequenceEnrollment.fields.status.universalIdentifier
@@ -158,6 +162,11 @@ describe('Sequence standard metadata build', () => {
       type: FieldMetadataType.BOOLEAN,
       defaultValue: false,
     });
+    expect(timeZoneField).toMatchObject({
+      type: FieldMetadataType.TEXT,
+      isNullable: true,
+    });
+    expect(timeZoneField?.isUIReadOnly).not.toBe(true);
     expect(enrollmentStatusField?.options).toEqual(
       expect.arrayContaining(
         Object.values(SEQUENCE_ENROLLMENT_STATUSES).map((value) =>
@@ -179,6 +188,23 @@ describe('Sequence standard metadata build', () => {
         ),
       ),
     );
+  });
+
+  it('shows the recipient timezone on Person lists and record pages', () => {
+    for (const viewField of [
+      STANDARD_OBJECTS.person.views.allPeople.viewFields.timeZone,
+      STANDARD_OBJECTS.person.views.personRecordPageFields.viewFields.timeZone,
+    ]) {
+      expect(
+        allFlatEntityMaps.flatViewFieldMaps.byUniversalIdentifier[
+          viewField.universalIdentifier
+        ],
+      ).toMatchObject({
+        fieldMetadataUniversalIdentifier:
+          STANDARD_OBJECTS.person.fields.timeZone.universalIdentifier,
+        isVisible: true,
+      });
+    }
   });
 
   it('builds the LinkedIn queue, person state, relation, and indexes', () => {

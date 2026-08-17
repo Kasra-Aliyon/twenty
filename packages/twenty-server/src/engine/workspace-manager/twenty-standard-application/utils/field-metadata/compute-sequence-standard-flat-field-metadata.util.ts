@@ -120,6 +120,8 @@ export const buildSequenceStandardFlatFieldMetadatas = (
           windowStart: '09:00',
           windowEnd: '17:00',
           timezone: 'UTC',
+          sendWindowTimezoneMode: 'SEQUENCE',
+          senderConnectedAccountIds: [],
           dailyStartLimitEnabled: false,
           dailyStarts: 25,
           staggerMinutes: 5,

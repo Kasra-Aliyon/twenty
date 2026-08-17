@@ -297,7 +297,9 @@ export type {
   SequenceWaitingOn,
   SequenceTaskType,
   TaskPriority,
+  SequenceSendWindowTimezoneMode,
   SequenceSettings,
+  SequenceEmailVariant,
   SequenceActionExecutionSettings,
   SequenceEmailStepSettings,
   SequenceDelayStepSettings,
@@ -320,6 +322,7 @@ export {
   SEQUENCE_WAITING_ON,
   SEQUENCE_TASK_TYPES,
   TASK_PRIORITIES,
+  SEQUENCE_SEND_WINDOW_TIMEZONE_MODES,
 } from './SequenceTypes';
 export type { SerializedRelation } from './SerializedRelation.type';
 export { SERIALIZED_RELATION_BRAND } from './SerializedRelation.type';

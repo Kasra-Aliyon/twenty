@@ -7,8 +7,8 @@ import {
   buildLinkedinDataFilter,
   formatLinkedinDataDate,
   StyledLinkedinDataPrimaryText,
+  StyledLinkedinDataProfileLink,
   StyledLinkedinDataSecondaryText,
-  StyledLinkedinDataStatus,
   UniboxLinkedInDataTable,
 } from '~/pages/unibox/components/UniboxLinkedInDataTable';
 
@@ -21,14 +21,17 @@ export const UniboxLinkedInInvitationsTable = ({
   search: string;
   dateRange: UniboxDateRange;
 }) => {
+  const dataFilter = buildLinkedinDataFilter({
+    dateField: 'sentAt',
+    dateRange,
+    search,
+    searchFields: ['name', 'handle', 'headline', 'message'],
+  });
   const result = useFindManyRecords<LinkedinUniboxInvitation>({
     objectNameSingular: 'linkedinInvitation',
-    filter: buildLinkedinDataFilter({
-      dateField: 'sentAt',
-      dateRange,
-      search,
-      searchFields: ['name', 'handle', 'headline', 'message'],
-    }),
+    filter: dataFilter
+      ? { and: [{ direction: { eq: 'SENT' } }, dataFilter] }
+      : { direction: { eq: 'SENT' } },
     orderBy: [{ sentAt: 'DescNullsLast' }],
     recordGqlFields: {
       id: true,
@@ -64,14 +67,16 @@ export const UniboxLinkedInInvitationsTable = ({
           ),
         },
         {
-          key: 'direction',
-          label: t`Direction`,
+          key: 'profile',
+          label: t`LinkedIn profile`,
           render: (record) => (
-            <StyledLinkedinDataStatus
-              tone={record.direction === 'RECEIVED' ? 'green' : 'blue'}
+            <StyledLinkedinDataProfileLink
+              href={`https://www.linkedin.com/in/${record.handle}`}
+              target="_blank"
+              rel="noreferrer"
             >
-              {record.direction === 'RECEIVED' ? t`Received` : t`Sent`}
-            </StyledLinkedinDataStatus>
+              {record.handle || t`Open profile`}
+            </StyledLinkedinDataProfileLink>
           ),
         },
         {
@@ -81,7 +86,7 @@ export const UniboxLinkedInInvitationsTable = ({
         },
         {
           key: 'sentAt',
-          label: t`Sent`,
+          label: t`Request sent`,
           render: (record) => formatLinkedinDataDate(record.sentAt),
         },
       ]}

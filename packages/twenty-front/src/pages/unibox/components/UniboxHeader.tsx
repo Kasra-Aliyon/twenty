@@ -82,8 +82,6 @@ export const UniboxHeaderActions = ({
   selectedAccountIds,
   onlyCrmContacts,
   isDraftEnabled,
-  isLinkedinEnabled,
-  showLinkedinContactFilter,
   onTabChange,
   onToggleAccount,
   onOnlyCrmContactsChange,
@@ -95,8 +93,6 @@ export const UniboxHeaderActions = ({
   selectedAccountIds: string[];
   onlyCrmContacts: boolean;
   isDraftEnabled: boolean;
-  isLinkedinEnabled: boolean;
-  showLinkedinContactFilter: boolean;
   onTabChange: (tab: UniboxTab) => void;
   onToggleAccount: (accountId: string) => void;
   onOnlyCrmContactsChange: (value: boolean) => void;
@@ -129,17 +125,8 @@ export const UniboxHeaderActions = ({
             {t`Draft`}
           </StyledTab>
         )}
-        {isLinkedinEnabled && (
-          <StyledTab
-            type="button"
-            isActive={tab === 'LINKEDIN'}
-            onClick={() => onTabChange('LINKEDIN')}
-          >
-            {t`LinkedIn`}
-          </StyledTab>
-        )}
       </StyledTabs>
-      {tab !== 'DRAFT' && (tab !== 'LINKEDIN' || showLinkedinContactFilter) && (
+      {tab !== 'DRAFT' && (
         <>
           <StyledToggleLabel>
             {t`Only Twenty contacts`}
@@ -150,26 +137,24 @@ export const UniboxHeaderActions = ({
               aria-label={t`Only Twenty contacts`}
             />
           </StyledToggleLabel>
-          {tab !== 'LINKEDIN' && (
-            <AvatarGroup
-              avatars={accounts.map((account) => (
-                <StyledAccount
-                  key={account.id}
-                  type="button"
-                  isSelected={selectedAccountIds.includes(account.id)}
-                  aria-label={t`Filter by ${account.handle}`}
-                  onClick={() => onToggleAccount(account.id)}
-                >
-                  <Avatar
-                    placeholder={account.handle}
-                    placeholderColorSeed={account.id}
-                    size="sm"
-                    type="rounded"
-                  />
-                </StyledAccount>
-              ))}
-            />
-          )}
+          <AvatarGroup
+            avatars={accounts.map((account) => (
+              <StyledAccount
+                key={account.id}
+                type="button"
+                isSelected={selectedAccountIds.includes(account.id)}
+                aria-label={t`Filter by ${account.handle}`}
+                onClick={() => onToggleAccount(account.id)}
+              >
+                <Avatar
+                  placeholder={account.handle}
+                  placeholderColorSeed={account.id}
+                  size="sm"
+                  type="rounded"
+                />
+              </StyledAccount>
+            ))}
+          />
         </>
       )}
       <IconButton

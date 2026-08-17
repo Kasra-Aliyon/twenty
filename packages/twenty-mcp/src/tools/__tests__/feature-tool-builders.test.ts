@@ -89,6 +89,24 @@ describe('feature tool input builders', () => {
     ).toBe(false);
   });
 
+  it('defaults legacy sequence settings to the sequence timezone mode', () => {
+    const parsed = sequencesToolsTesting.sequenceSettingsSchema.parse({
+      activeDays: [1, 2, 3, 4, 5],
+      windowStart: '09:00',
+      windowEnd: '17:00',
+      timezone: 'UTC',
+      dailyStartLimitEnabled: false,
+      dailyStarts: 25,
+      staggerMinutes: 5,
+      linkedinDailyActionLimitEnabled: true,
+      linkedinDailyActions: 20,
+      linkedinDelayPatternMinutes: [1, 2, 3],
+      stopOnReply: true,
+    });
+
+    expect(parsed.sendWindowTimezoneMode).toBe('SEQUENCE');
+  });
+
   it('models current sequence branches and manual execution settings', () => {
     const parsed = sequencesToolsTesting.stepInputSchema.parse({
       type: 'SEND_LINKEDIN_MESSAGE',
@@ -118,6 +136,48 @@ describe('feature tool input builders', () => {
         messageTemplate: 'Hi {{ firstName }}',
       },
     });
+  });
+
+  it('accepts weighted email variants and rejects duplicate variant IDs', () => {
+    const settings = {
+      subject: 'Fallback',
+      bodyHtml: '<p>Fallback</p>',
+      variants: [
+        {
+          id: 'variant-a',
+          name: 'A',
+          subject: 'Subject A',
+          bodyHtml: '<p>Body A</p>',
+          weight: 70,
+        },
+        {
+          id: 'variant-b',
+          name: 'B',
+          subject: 'Subject B',
+          bodyHtml: '<p>Body B</p>',
+          weight: 30,
+        },
+      ],
+    };
+
+    expect(
+      sequencesToolsTesting.stepInputSchema.safeParse({
+        type: 'SEND_EMAIL',
+        settings,
+      }).success,
+    ).toBe(true);
+    expect(
+      sequencesToolsTesting.stepInputSchema.safeParse({
+        type: 'SEND_EMAIL',
+        settings: {
+          ...settings,
+          variants: settings.variants.map((variant) => ({
+            ...variant,
+            id: 'duplicate',
+          })),
+        },
+      }).success,
+    ).toBe(false);
   });
 
   it('supports conditions and automated phone enrichment', () => {

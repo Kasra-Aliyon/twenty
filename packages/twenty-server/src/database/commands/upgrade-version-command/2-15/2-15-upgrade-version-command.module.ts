@@ -22,6 +22,9 @@ import { AddPersonLinkedinConnectedAtCommand } from 'src/database/commands/upgra
 import { AddPersonAndCompanyCountryColumnsCommand } from 'src/database/commands/upgrade-version-command/2-15/2-15-workspace-command-1800000018000-add-person-and-company-country-columns.command';
 import { AddCompanyCountryViewFieldCommand } from 'src/database/commands/upgrade-version-command/2-15/2-15-workspace-command-1800000019000-add-company-country-view-field.command';
 import { AddLinkedinMessageReadReceiptsCommand } from 'src/database/commands/upgrade-version-command/2-15/2-15-workspace-command-1800000020000-add-linkedin-message-read-receipts.command';
+import { BackstopSequenceEmailLimitColumnsCommand } from 'src/database/commands/upgrade-version-command/2-15/2-15-workspace-command-1800000021000-backstop-sequence-email-limit-columns.command';
+import { AddPersonTimeZoneCommand } from 'src/database/commands/upgrade-version-command/2-15/2-15-workspace-command-1800000022000-add-person-time-zone.command';
+import { AddLinkedinNavigationItemCommand } from 'src/database/commands/upgrade-version-command/2-15/2-15-workspace-command-1800000023000-add-linkedin-navigation-item.command';
 import { ApplicationModule } from 'src/engine/core-modules/application/application.module';
 import { FeatureFlagModule } from 'src/engine/core-modules/feature-flag/feature-flag.module';
 import { UserWorkspaceEntity } from 'src/engine/core-modules/user-workspace/user-workspace.entity';
@@ -70,6 +73,9 @@ import { LinkedinModule } from 'src/modules/linkedin/linkedin.module';
     AddPersonAndCompanyCountryColumnsCommand,
     AddCompanyCountryViewFieldCommand,
     AddLinkedinMessageReadReceiptsCommand,
+    BackstopSequenceEmailLimitColumnsCommand,
+    AddPersonTimeZoneCommand,
+    AddLinkedinNavigationItemCommand,
   ],
 })
 export class V2_15_UpgradeVersionCommandModule {}

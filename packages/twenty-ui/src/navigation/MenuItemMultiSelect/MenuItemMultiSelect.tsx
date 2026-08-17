@@ -16,6 +16,7 @@ type MenuItemMultiSelectProps = {
   withIconContainer?: boolean;
   text: string;
   className: string;
+  disabled?: boolean;
   onSelectChange?: (selected: boolean) => void;
 };
 
@@ -28,9 +29,14 @@ export const MenuItemMultiSelect = ({
   selected,
   isKeySelected,
   className,
+  disabled = false,
   onSelectChange,
 }: MenuItemMultiSelectProps) => {
   const handleOnClick = () => {
+    if (disabled) {
+      return;
+    }
+
     onSelectChange?.(!selected);
   };
 
@@ -38,10 +44,14 @@ export const MenuItemMultiSelect = ({
     <StyledMenuItemBase
       isKeySelected={isKeySelected}
       className={className}
+      disabled={disabled}
+      role="option"
+      aria-selected={selected}
+      aria-disabled={disabled}
       onClick={handleOnClick}
     >
       <div className={styles.leftContentWithCheckboxContainer}>
-        <Checkbox checked={selected} aria-label={text} />
+        <Checkbox checked={selected} disabled={disabled} aria-label={text} />
         {color ? (
           <Tag color={color} text={text} Icon={LeftIcon} />
         ) : (

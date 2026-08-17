@@ -114,6 +114,25 @@ describe('SequenceInvariantService', () => {
     );
   });
 
+  it('leaves pooled enrollment senders unassigned until scheduler admission', async () => {
+    sequenceRepository.find.mockResolvedValueOnce([
+      {
+        ...sequence,
+        settings: {
+          ...DEFAULT_SEQUENCE_SETTINGS,
+          senderConnectedAccountIds: ['sender-a', 'sender-b'],
+        },
+      },
+    ]);
+
+    const [normalized] = await service.normalizeEnrollmentCreates({
+      authContext,
+      data: [{ sequenceId: sequence.id, personId: 'person-id' }],
+    });
+
+    expect(normalized.senderConnectedAccountId).toBeNull();
+  });
+
   it('rejects enrollment in an archived sequence', async () => {
     sequenceRepository.find.mockResolvedValueOnce([
       { ...sequence, deletedAt: new Date() },
@@ -150,6 +169,20 @@ describe('SequenceInvariantService', () => {
     );
   });
 
+  it('rejects sender pools larger than the supported maximum', () => {
+    expect(() =>
+      service.normalizeSequenceCreate({
+        settings: {
+          ...DEFAULT_SEQUENCE_SETTINGS,
+          senderConnectedAccountIds: Array.from(
+            { length: 21 },
+            (_, index) => `sender-${index}`,
+          ),
+        },
+      }),
+    ).toThrow('at most 20 mailboxes');
+  });
+
   it('allows settings changes on a paused sequence with active enrollments', async () => {
     activeEnrollmentCount = 1;
 
@@ -172,6 +205,23 @@ describe('SequenceInvariantService', () => {
         authContext,
         sequenceId: sequence.id,
         data: { senderConnectedAccountId: 'new-sender-id' },
+      }),
+    ).rejects.toThrow('Wait for active enrollments');
+  });
+
+  it('rejects sender pool changes while an enrollment is active', async () => {
+    activeEnrollmentCount = 1;
+
+    await expect(
+      service.assertSequenceUpdateAllowed({
+        authContext,
+        sequenceId: sequence.id,
+        data: {
+          settings: {
+            ...DEFAULT_SEQUENCE_SETTINGS,
+            senderConnectedAccountIds: ['sender-id', 'sender-b'],
+          },
+        },
       }),
     ).rejects.toThrow('Wait for active enrollments');
   });
@@ -290,6 +340,51 @@ describe('SequenceInvariantService', () => {
       expectedUserWorkspaceId: undefined,
       workspaceId: authContext.workspace.id,
     });
+  });
+
+  it('rejects activation when one update explicitly clears the only sender', async () => {
+    await expect(
+      service.assertSequenceUpdateAllowed({
+        authContext,
+        sequenceId: sequence.id,
+        data: {
+          status: SEQUENCE_STATUSES.ACTIVE,
+          senderConnectedAccountId: null,
+          settings: DEFAULT_SEQUENCE_SETTINGS,
+        },
+      }),
+    ).rejects.toThrow('Choose a sender');
+    expect(sequenceSenderService.getReadySenderOrThrow).not.toHaveBeenCalled();
+  });
+
+  it('validates every mailbox in a sender pool before activation', async () => {
+    sequenceRepository.find.mockResolvedValueOnce([
+      {
+        ...sequence,
+        settings: {
+          ...DEFAULT_SEQUENCE_SETTINGS,
+          senderConnectedAccountIds: ['sender-a', 'sender-b'],
+        },
+      },
+    ]);
+
+    await service.assertSequenceUpdateAllowed({
+      authContext,
+      sequenceId: sequence.id,
+      data: { status: SEQUENCE_STATUSES.ACTIVE },
+    });
+
+    expect(sequenceSenderService.getReadySenderOrThrow).toHaveBeenCalledTimes(
+      2,
+    );
+    expect(sequenceSenderService.getReadySenderOrThrow).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ connectedAccountId: 'sender-a' }),
+    );
+    expect(sequenceSenderService.getReadySenderOrThrow).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ connectedAccountId: 'sender-b' }),
+    );
   });
 
   it('blocks activation when sender inbox sync is unavailable', async () => {
@@ -428,6 +523,63 @@ describe('SequenceInvariantService', () => {
       }),
     ).rejects.toThrow('email step email-step-id is not fully configured');
     expect(sequenceSenderService.getReadySenderOrThrow).not.toHaveBeenCalled();
+  });
+
+  it('blocks activation when A/B variants are malformed', async () => {
+    stepRepository.find.mockResolvedValue([
+      {
+        id: 'email-step-id',
+        sequenceId: sequence.id,
+        settings: {
+          type: SEQUENCE_STEP_TYPES.SEND_EMAIL,
+          subject: 'Fallback',
+          bodyHtml: '<p>Fallback</p>',
+          threadAsReplyToPreviousEmail: false,
+          stopOnReply: null,
+          variants: [
+            {
+              id: 'only-variant',
+              name: 'A',
+              subject: 'A',
+              bodyHtml: '<p>A</p>',
+              weight: 100,
+            },
+          ],
+        },
+      },
+    ]);
+
+    await expect(
+      service.assertSequenceUpdateAllowed({
+        authContext,
+        sequenceId: sequence.id,
+        data: { status: SEQUENCE_STATUSES.ACTIVE },
+      }),
+    ).rejects.toThrow('invalid A/B variants');
+  });
+
+  it('blocks activation when an email contains malformed spintax', async () => {
+    stepRepository.find.mockResolvedValue([
+      {
+        id: 'email-step-id',
+        sequenceId: sequence.id,
+        settings: {
+          type: SEQUENCE_STEP_TYPES.SEND_EMAIL,
+          subject: '{Hi|Hello',
+          bodyHtml: '<p>Body</p>',
+          threadAsReplyToPreviousEmail: false,
+          stopOnReply: null,
+        },
+      },
+    ]);
+
+    await expect(
+      service.assertSequenceUpdateAllowed({
+        authContext,
+        sequenceId: sequence.id,
+        data: { status: SEQUENCE_STATUSES.ACTIVE },
+      }),
+    ).rejects.toThrow('invalid spintax');
   });
 
   it('allows an active sequence to be archived so its open work can be stopped', async () => {

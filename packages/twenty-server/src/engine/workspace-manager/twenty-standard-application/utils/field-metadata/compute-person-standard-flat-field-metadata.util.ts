@@ -276,6 +276,24 @@ export const buildPersonStandardFlatFieldMetadatas = ({
     twentyStandardApplicationId,
     now,
   }),
+  timeZone: createStandardFieldFlatMetadata({
+    objectName,
+    workspaceId,
+    context: {
+      fieldName: 'timeZone',
+      type: FieldMetadataType.TEXT,
+      label: i18nLabel(msg`Time zone`),
+      description: i18nLabel(
+        msg`IANA time zone used for recipient-local sequence emails`,
+      ),
+      icon: 'IconTimezone',
+      isNullable: true,
+    },
+    standardObjectMetadataRelatedEntityIds,
+    dependencyFlatEntityMaps,
+    twentyStandardApplicationId,
+    now,
+  }),
   emailOptOut: createStandardFieldFlatMetadata({
     objectName,
     workspaceId,

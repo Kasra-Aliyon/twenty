@@ -116,7 +116,9 @@ const StyledActions = styled.div`
 const getStepSummary = (step: SequenceStepRecord): string => {
   switch (step.settings.type) {
     case SEQUENCE_STEP_TYPES.SEND_EMAIL:
-      return step.settings.subject || t`Click to configure the email`;
+      return step.settings.variants && step.settings.variants.length > 1
+        ? t`A/B · ${step.settings.subject || 'Email variants'}`
+        : step.settings.subject || t`Click to configure the email`;
     case SEQUENCE_STEP_TYPES.DELAY:
       return t`${step.settings.days}d ${step.settings.hours}h ${step.settings.minutes}m`;
     case SEQUENCE_STEP_TYPES.CREATE_TASK:

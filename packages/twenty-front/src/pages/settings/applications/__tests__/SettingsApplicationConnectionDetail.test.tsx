@@ -149,6 +149,8 @@ describe('SettingsApplicationConnectionDetail', () => {
           connectionProviderId: 'provider-1',
           name: 'Original name',
           visibility: 'user',
+          sequenceDailyEmailLimitEnabled: false,
+          sequenceDailyEmailLimit: 30,
           lastCredentialsRefreshedAt: null,
           connectionParameters: null,
           createdAt: '2026-05-01T00:00:00.000Z',

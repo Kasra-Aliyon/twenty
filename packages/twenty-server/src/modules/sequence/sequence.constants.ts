@@ -1,10 +1,15 @@
-import { type SequenceSettings } from 'twenty-shared/types';
+import {
+  SEQUENCE_SEND_WINDOW_TIMEZONE_MODES,
+  type SequenceSettings,
+} from 'twenty-shared/types';
 
 export const DEFAULT_SEQUENCE_SETTINGS: SequenceSettings = {
   activeDays: [1, 2, 3, 4, 5],
   windowStart: '09:00',
   windowEnd: '17:00',
   timezone: 'UTC',
+  sendWindowTimezoneMode: SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.SEQUENCE,
+  senderConnectedAccountIds: [],
   dailyStartLimitEnabled: false,
   dailyStarts: 25,
   staggerMinutes: 5,
@@ -13,6 +18,8 @@ export const DEFAULT_SEQUENCE_SETTINGS: SequenceSettings = {
   linkedinDelayPatternMinutes: [1, 2, 2.5, 3, 3.5, 4, 5],
   stopOnReply: true,
 };
+
+export const SEQUENCE_SENDER_POOL_MAXIMUM = 20;
 
 export const SEQUENCE_SCHEDULER_BATCH_SIZE = 100;
 

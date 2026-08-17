@@ -43,6 +43,14 @@ export type ConnectedAccountVisibility = 'user' | 'workspace';
     `AND (("connectionParameters"->'CALDAV'->>'password') IS NULL OR ("connectionParameters"->'CALDAV'->>'password') LIKE 'enc:v2:%')` +
     `)`,
 )
+@Check(
+  'CHK_connectedAccount_sequenceDailyEmailLimit_range',
+  '"sequenceDailyEmailLimit" BETWEEN 1 AND 200',
+)
+@Check(
+  'CHK_connectedAccount_sequenceDailyEmailUsageCount_nonnegative',
+  '"sequenceDailyEmailUsageCount" >= 0',
+)
 export class ConnectedAccountEntity extends WorkspaceRelatedEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -111,6 +119,18 @@ export class ConnectedAccountEntity extends WorkspaceRelatedEntity {
 
   @Column({ type: 'varchar', nullable: false, default: 'user' })
   visibility: ConnectedAccountVisibility;
+
+  @Column({ type: 'boolean', nullable: false, default: false })
+  sequenceDailyEmailLimitEnabled: boolean;
+
+  @Column({ type: 'integer', nullable: false, default: 30 })
+  sequenceDailyEmailLimit: number;
+
+  @Column({ type: 'date', nullable: true })
+  sequenceDailyEmailUsageDate: string | null;
+
+  @Column({ type: 'integer', nullable: false, default: 0 })
+  sequenceDailyEmailUsageCount: number;
 
   @OneToMany(
     'MessageChannelEntity',

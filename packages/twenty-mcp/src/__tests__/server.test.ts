@@ -36,7 +36,7 @@ describe('MCP server registration', () => {
   it('publishes the complete default tool catalog with schemas', async () => {
     const names = await listToolNames(false);
 
-    expect(names).toHaveLength(122);
+    expect(names).toHaveLength(123);
     expect(new Set(names).size).toBe(names.length);
     expect(names).toEqual(
       expect.arrayContaining([
@@ -56,6 +56,7 @@ describe('MCP server registration', () => {
         'twenty_get_record_email_timeline',
         'twenty_get_record_calendar_timeline',
         'twenty_get_sequence_capabilities',
+        'twenty_update_sequence_mailbox_limit',
         'twenty_list_sequence_steps',
         'twenty_enroll_person_in_sequence',
         'twenty_mark_enrollment_replied',
@@ -79,7 +80,7 @@ describe('MCP server registration', () => {
   it('adds opt-in advanced read and permanent-destroy tools', async () => {
     const names = await listToolNames(true);
 
-    expect(names).toHaveLength(126);
+    expect(names).toHaveLength(127);
     expect(names).toEqual(
       expect.arrayContaining([
         'twenty_destroy_record',

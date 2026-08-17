@@ -175,6 +175,8 @@ export { resolveRichTextVariables } from './rich-text-variable-resolver';
 export { safeParseRelativeDateFilterJsonStringified } from './safeParseRelativeDateFilterJsonStringified';
 export { getGenericOperationName } from './sentry/getGenericOperationName';
 export { getHumanReadableNameFromCode } from './sentry/getHumanReadableNameFromCode';
+export type { SpintaxValidationResult } from './spintax/render-spintax.util';
+export { validateSpintax, renderSpintax } from './spintax/render-spintax.util';
 export { appendCopySuffix } from './strings/appendCopySuffix';
 export { camelToKebab } from './strings/camelToKebab';
 export { camelToSnakeCase } from './strings/camelToSnakeCase';

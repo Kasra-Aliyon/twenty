@@ -103,11 +103,21 @@ export const TASK_PRIORITIES = {
 export type TaskPriority =
   (typeof TASK_PRIORITIES)[keyof typeof TASK_PRIORITIES];
 
+export const SEQUENCE_SEND_WINDOW_TIMEZONE_MODES = {
+  SEQUENCE: 'SEQUENCE',
+  RECIPIENT: 'RECIPIENT',
+} as const;
+
+export type SequenceSendWindowTimezoneMode =
+  (typeof SEQUENCE_SEND_WINDOW_TIMEZONE_MODES)[keyof typeof SEQUENCE_SEND_WINDOW_TIMEZONE_MODES];
+
 export type SequenceSettings = {
   activeDays: number[];
   windowStart: string;
   windowEnd: string;
   timezone: string;
+  sendWindowTimezoneMode: SequenceSendWindowTimezoneMode;
+  senderConnectedAccountIds?: string[];
   dailyStartLimitEnabled: boolean;
   dailyStarts: number;
   staggerMinutes: number;
@@ -115,6 +125,14 @@ export type SequenceSettings = {
   linkedinDailyActions: number;
   linkedinDelayPatternMinutes: number[];
   stopOnReply: boolean;
+};
+
+export type SequenceEmailVariant = {
+  id: string;
+  name: string;
+  subject: string;
+  bodyHtml: string;
+  weight: number;
 };
 
 export type SequenceActionExecutionSettings = SequenceStepPlacementSettings & {
@@ -129,6 +147,9 @@ export type SequenceEmailStepSettings = SequenceActionExecutionSettings & {
   type: typeof SEQUENCE_STEP_TYPES.SEND_EMAIL;
   subject: string;
   bodyHtml: string;
+  // Optional so email steps created before A/B testing remain valid.
+  // Runtime validation requires exactly two variants when this is present.
+  variants?: SequenceEmailVariant[];
   threadAsReplyToPreviousEmail: boolean;
   stopOnReply: boolean | null;
 };

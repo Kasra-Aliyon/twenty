@@ -53,7 +53,10 @@ export const useNavigationMenuItemSectionItems = (): NavigationMenuItem[] => {
       return false;
     }
 
-    if (!isUniboxEnabled && item.link === AppPath.UniboxPage) {
+    if (
+      !isUniboxEnabled &&
+      (item.link === AppPath.UniboxPage || item.link === AppPath.LinkedinPage)
+    ) {
       return false;
     }
 

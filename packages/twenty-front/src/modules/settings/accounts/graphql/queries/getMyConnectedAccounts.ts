@@ -15,6 +15,8 @@ export const GET_MY_CONNECTED_ACCOUNTS = gql`
       connectionProviderId
       name
       visibility
+      sequenceDailyEmailLimitEnabled
+      sequenceDailyEmailLimit
       lastCredentialsRefreshedAt
       connectionParameters {
         IMAP {

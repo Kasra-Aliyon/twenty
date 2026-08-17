@@ -157,6 +157,7 @@ export const DEFAULT_SEQUENCE_SETTINGS = {
   windowStart: '09:00',
   windowEnd: '17:00',
   timezone: 'UTC',
+  sendWindowTimezoneMode: 'SEQUENCE',
   dailyStartLimitEnabled: false,
   dailyStarts: 25,
   staggerMinutes: 5,
@@ -164,4 +165,10 @@ export const DEFAULT_SEQUENCE_SETTINGS = {
   linkedinDailyActions: 20,
   linkedinDelayPatternMinutes: [1, 2, 2.5, 3, 3.5, 4, 5],
   stopOnReply: true,
+  senderConnectedAccountIds: [],
+} as const;
+
+export const SEQUENCE_SEND_WINDOW_TIMEZONE_MODES = {
+  SEQUENCE: 'SEQUENCE',
+  RECIPIENT: 'RECIPIENT',
 } as const;

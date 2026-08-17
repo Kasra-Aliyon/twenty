@@ -217,7 +217,6 @@ const AddToSequenceActionContent = ({
         recordsToCreate: peopleToEnroll.map((person) => ({
           sequenceId: sequence.id,
           personId: person.id,
-          senderConnectedAccountId: sequence.senderConnectedAccountId,
           stopOnReply: sequence.settings.stopOnReply,
         })),
       });
@@ -255,7 +254,10 @@ const AddToSequenceActionContent = ({
                 text={sequence.name}
                 contextualText={sequence.status}
                 disabled={
-                  areEnrollmentsLoading || !sequence.senderConnectedAccountId
+                  areEnrollmentsLoading ||
+                  (!sequence.senderConnectedAccountId &&
+                    (sequence.settings.senderConnectedAccountIds?.length ??
+                      0) === 0)
                 }
                 onClick={() => void addToSequence(sequence)}
               />

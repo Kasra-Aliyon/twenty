@@ -2192,6 +2192,9 @@ export const STANDARD_OBJECTS = {
       address: {
         universalIdentifier: '66ebfe61-eb63-4ea6-aaab-f8a6c10020bf',
       },
+      timeZone: {
+        universalIdentifier: 'f9229e02-8942-4a85-8989-96ee5401aafc',
+      },
       avatarUrl: {
         universalIdentifier: '20202020-b8a6-40df-961c-373dc5d2ec21',
       },
@@ -2297,6 +2300,9 @@ export const STANDARD_OBJECTS = {
           addressCountry: {
             universalIdentifier: 'b67b4df6-9a47-4203-92f4-dad23ed849ea',
           },
+          timeZone: {
+            universalIdentifier: '7312f469-8f85-40fb-b666-a7c02a237bda',
+          },
         },
       },
       personRecordPageFields: {
@@ -2324,6 +2330,9 @@ export const STANDARD_OBJECTS = {
           },
           address: {
             universalIdentifier: '7704f85b-75cf-4e60-bb2d-41cd822c70ab',
+          },
+          timeZone: {
+            universalIdentifier: '07b77dd7-4662-40cc-8039-ab972a63607d',
           },
           company: {
             universalIdentifier: '20202020-af02-4a02-8a02-ae0a1ea12203',

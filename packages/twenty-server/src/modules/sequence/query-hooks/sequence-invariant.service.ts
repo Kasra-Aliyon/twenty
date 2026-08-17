@@ -14,6 +14,7 @@ import {
   type SequenceConditionType,
   type SequenceEnrollmentStatus,
 } from 'twenty-shared/types';
+import { validateSpintax } from 'twenty-shared/utils';
 import { In } from 'typeorm';
 
 import {
@@ -26,6 +27,7 @@ import { GlobalWorkspaceOrmManager } from 'src/engine/twenty-orm/global-workspac
 import {
   LINKEDIN_CONNECTION_NOTE_MAX_LENGTH,
   LINKEDIN_DIRECT_MESSAGE_MAX_LENGTH,
+  SEQUENCE_SENDER_POOL_MAXIMUM,
 } from 'src/modules/sequence/sequence.constants';
 import { SequenceSenderService } from 'src/modules/sequence/services/sequence-sender.service';
 import { type SequenceEnrollmentWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence-enrollment.workspace-entity';
@@ -91,8 +93,11 @@ export class SequenceInvariantService {
   normalizeSequenceCreate(
     data: Partial<SequenceWorkspaceEntity>,
   ): Partial<SequenceWorkspaceEntity> {
+    this.assertSenderPoolSize(data.settings);
+
     return {
       ...data,
+      settings: parseSequenceSettings(data.settings),
       status: SEQUENCE_STATUSES.DRAFT,
       enrolledCount: 0,
       activeCount: 0,
@@ -145,7 +150,11 @@ export class SequenceInvariantService {
         currentStepPosition: -1,
         waitingOn: null,
         nextActionAt: null,
-        senderConnectedAccountId: sequence.senderConnectedAccountId,
+        senderConnectedAccountId:
+          (parseSequenceSettings(sequence.settings).senderConnectedAccountIds
+            ?.length ?? 0) > 0
+            ? null
+            : sequence.senderConnectedAccountId,
         stopOnReply: parseSequenceSettings(sequence.settings).stopOnReply,
         startedAt: null,
         endedAt: null,
@@ -170,6 +179,7 @@ export class SequenceInvariantService {
       enrollmentId,
     });
     const fieldNames = Object.keys(data);
+
     const requestedStatus = data.status;
 
     if (
@@ -313,6 +323,8 @@ export class SequenceInvariantService {
 
     const fieldNames = Object.keys(data);
 
+    this.assertSenderPoolSize(data.settings);
+
     if (fieldNames.some((fieldName) => SEQUENCE_ENGINE_FIELDS.has(fieldName))) {
       this.throwBadRequest(
         'Sequence counters are managed by the sequence engine',
@@ -330,8 +342,31 @@ export class SequenceInvariantService {
       this.throwBadRequest('Pause the sequence before changing its settings');
     }
 
+    const currentSettings = parseSequenceSettings(sequence.settings);
+    const nextSettings = parseSequenceSettings(
+      data.settings ?? sequence.settings,
+    );
+    const nextSenderConnectedAccountId = fieldNames.includes(
+      'senderConnectedAccountId',
+    )
+      ? (data.senderConnectedAccountId ?? null)
+      : sequence.senderConnectedAccountId;
+    const currentSenderPool = this.getEffectiveSenderPool({
+      senderConnectedAccountId: sequence.senderConnectedAccountId,
+      settings: currentSettings,
+    });
+    const nextSenderPool = this.getEffectiveSenderPool({
+      senderConnectedAccountId: nextSenderConnectedAccountId,
+      settings: nextSettings,
+    });
+    const changesSenderPool =
+      currentSenderPool.length !== nextSenderPool.length ||
+      currentSenderPool.some(
+        (senderId, index) => senderId !== nextSenderPool[index],
+      );
+
     if (
-      fieldNames.includes('senderConnectedAccountId') &&
+      (fieldNames.includes('senderConnectedAccountId') || changesSenderPool) &&
       (await this.hasActiveEnrollments({
         authContext,
         sequenceIds: [sequenceId],
@@ -347,8 +382,10 @@ export class SequenceInvariantService {
         authContext,
         sequenceId,
       });
-      const senderConnectedAccountId =
-        data.senderConnectedAccountId ?? sequence.senderConnectedAccountId;
+      const senderConnectedAccountIds = this.getEffectiveSenderPool({
+        senderConnectedAccountId: nextSenderConnectedAccountId,
+        settings: nextSettings,
+      });
 
       if (steps.length === 0) {
         this.throwBadRequest('Add a step before activating the sequence');
@@ -377,25 +414,27 @@ export class SequenceInvariantService {
         hasLinkedinActionStep ||
         hasSenderDependentCondition;
 
-      if (requiresReadySender && !senderConnectedAccountId) {
+      if (requiresReadySender && senderConnectedAccountIds.length === 0) {
         this.throwBadRequest('Choose a sender before activating the sequence');
       }
 
-      if (requiresReadySender && senderConnectedAccountId) {
-        try {
-          await this.sequenceSenderService.getReadySenderOrThrow({
-            connectedAccountId: senderConnectedAccountId,
-            expectedUserWorkspaceId: isUserAuthContext(authContext)
-              ? authContext.userWorkspaceId
-              : undefined,
-            workspaceId: authContext.workspace.id,
-          });
-        } catch (error) {
-          this.throwBadRequest(
-            error instanceof Error
-              ? error.message
-              : 'The selected sender mailbox is not ready',
-          );
+      if (requiresReadySender) {
+        for (const connectedAccountId of senderConnectedAccountIds) {
+          try {
+            await this.sequenceSenderService.getReadySenderOrThrow({
+              connectedAccountId,
+              expectedUserWorkspaceId: isUserAuthContext(authContext)
+                ? authContext.userWorkspaceId
+                : undefined,
+              workspaceId: authContext.workspace.id,
+            });
+          } catch (error) {
+            this.throwBadRequest(
+              error instanceof Error
+                ? error.message
+                : 'A selected sender mailbox is not ready',
+            );
+          }
         }
       }
     }
@@ -478,6 +517,51 @@ export class SequenceInvariantService {
           ) {
             this.throwBadRequest(
               `Sequence email step ${step.id} is not fully configured`,
+            );
+          }
+
+          if (settings.variants !== undefined) {
+            const variants = settings.variants;
+            const hasValidVariants =
+              settings.executionMode !==
+                SEQUENCE_ACTION_EXECUTION_MODES.MANUAL &&
+              Array.isArray(variants) &&
+              variants.length === 2 &&
+              new Set(variants.map(({ id }) => id)).size === variants.length &&
+              variants.every(
+                (variant) =>
+                  typeof variant.id === 'string' &&
+                  variant.id.trim().length > 0 &&
+                  typeof variant.name === 'string' &&
+                  variant.name.trim().length > 0 &&
+                  typeof variant.subject === 'string' &&
+                  variant.subject.trim().length > 0 &&
+                  typeof variant.bodyHtml === 'string' &&
+                  variant.bodyHtml.trim().length > 0 &&
+                  typeof variant.weight === 'number' &&
+                  Number.isFinite(variant.weight) &&
+                  variant.weight > 0,
+              );
+
+            if (!hasValidVariants) {
+              this.throwBadRequest(
+                `Sequence email step ${step.id} has invalid A/B variants`,
+              );
+            }
+          }
+
+          if (
+            [
+              settings.subject,
+              settings.bodyHtml,
+              ...(settings.variants ?? []).flatMap((variant) => [
+                variant.subject,
+                variant.bodyHtml,
+              ]),
+            ].some((template) => !validateSpintax(template).isValid)
+          ) {
+            this.throwBadRequest(
+              `Sequence email step ${step.id} has invalid spintax`,
             );
           }
           break;
@@ -569,6 +653,34 @@ export class SequenceInvariantService {
 
     if (sequence.deletedAt) {
       this.throwBadRequest('The sequence is already archived');
+    }
+  }
+
+  private getEffectiveSenderPool({
+    senderConnectedAccountId,
+    settings,
+  }: {
+    senderConnectedAccountId: string | null;
+    settings: ReturnType<typeof parseSequenceSettings>;
+  }): string[] {
+    if ((settings.senderConnectedAccountIds?.length ?? 0) > 0) {
+      return settings.senderConnectedAccountIds ?? [];
+    }
+
+    return senderConnectedAccountId ? [senderConnectedAccountId] : [];
+  }
+
+  private assertSenderPoolSize(settings: unknown): void {
+    if (
+      typeof settings === 'object' &&
+      settings !== null &&
+      'senderConnectedAccountIds' in settings &&
+      Array.isArray(settings.senderConnectedAccountIds) &&
+      settings.senderConnectedAccountIds.length > SEQUENCE_SENDER_POOL_MAXIMUM
+    ) {
+      this.throwBadRequest(
+        `A sequence sender pool can contain at most ${SEQUENCE_SENDER_POOL_MAXIMUM} mailboxes`,
+      );
     }
   }
 

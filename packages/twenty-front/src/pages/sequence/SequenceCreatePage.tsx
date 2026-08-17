@@ -83,7 +83,10 @@ const SequenceCreatePageContent = () => {
         name: name.trim(),
         status: SEQUENCE_STATUSES.DRAFT,
         senderConnectedAccountId,
-        settings: getDefaultSequenceSettings(),
+        settings: {
+          ...getDefaultSequenceSettings(),
+          senderConnectedAccountIds: [senderConnectedAccountId],
+        },
       });
 
       navigate(

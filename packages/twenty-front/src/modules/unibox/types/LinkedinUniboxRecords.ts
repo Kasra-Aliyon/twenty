@@ -16,6 +16,7 @@ export type LinkedinUniboxConnection = {
   id: string;
   name: string;
   handle: string;
+  linkedinUrn: string | null;
   headline: string | null;
   connectedAt: string | null;
   profileUrl: LinksMetadata | null;

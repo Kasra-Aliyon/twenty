@@ -1,6 +1,7 @@
 import { styled } from '@linaria/react';
+import { isNonEmptyString } from '@sniptt/guards';
 import { format } from 'date-fns';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { generatePath, Link } from 'react-router-dom';
 import { AppPath, CoreObjectNameSingular } from 'twenty-shared/types';
 import { Avatar } from 'twenty-ui/data-display';
@@ -13,10 +14,12 @@ import { useCreateOneRecord } from '@/object-record/hooks/useCreateOneRecord';
 import { useFindManyRecords } from '@/object-record/hooks/useFindManyRecords';
 import { type Person } from '@/people/types/Person';
 import {
+  type LinkedinUniboxConnection,
   type LinkedinUniboxMessage,
   type LinkedinUniboxParticipant,
 } from '@/unibox/types/LinkedinUniboxRecords';
 import { type UniboxThread } from '@/unibox/types/UniboxThread';
+import { getLinkedinProfileUrl } from '@/unibox/utils/getLinkedinProfileUrl';
 import { t } from '@lingui/core/macro';
 import { splitFullName } from '~/utils/format/spiltFullName';
 
@@ -70,6 +73,21 @@ const StyledParticipantName = styled.div`
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+`;
+
+const StyledParticipantNameLink = styled.a`
+  color: ${themeCssVariables.color.blue};
+  display: block;
+  font-size: ${themeCssVariables.font.size.sm};
+  font-weight: ${themeCssVariables.font.weight.medium};
+  overflow: hidden;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  &:hover {
+    text-decoration: underline;
+  }
 `;
 
 const StyledHeadline = styled.div`
@@ -195,6 +213,48 @@ export const UniboxLinkedInThreadView = ({
     recordGqlFields: LINKEDIN_PARTICIPANT_FIELDS,
     skip: !summary,
   });
+  const participantLinkedinUrns = useMemo(
+    () => [
+      ...new Set(
+        participants
+          .map(({ linkedinUrn }) => linkedinUrn)
+          .filter(
+            (linkedinUrn): linkedinUrn is string =>
+              linkedinUrn !== null && isNonEmptyString(linkedinUrn),
+          ),
+      ),
+    ],
+    [participants],
+  );
+  const { records: matchingConnections } =
+    useFindManyRecords<LinkedinUniboxConnection>({
+      objectNameSingular: 'linkedinConnection',
+      filter: { linkedinUrn: { in: participantLinkedinUrns } },
+      recordGqlFields: {
+        id: true,
+        handle: true,
+        linkedinUrn: true,
+        profileUrl: true,
+      },
+      skip: !summary || participantLinkedinUrns.length === 0,
+    });
+  const connectionByLinkedinUrn = useMemo(
+    () =>
+      new Map(
+        matchingConnections.flatMap((connection) =>
+          isNonEmptyString(connection.linkedinUrn)
+            ? [[connection.linkedinUrn, connection] as const]
+            : [],
+        ),
+      ),
+    [matchingConnections],
+  );
+
+  const getParticipantProfileUrl = (participant: LinkedinUniboxParticipant) =>
+    getLinkedinProfileUrl(participant) ??
+    getLinkedinProfileUrl(
+      connectionByLinkedinUrn.get(participant.linkedinUrn ?? '') ?? {},
+    );
 
   if (!summary) {
     return (
@@ -204,11 +264,7 @@ export const UniboxLinkedInThreadView = ({
 
   const handleAddToTwenty = async (participant: LinkedinUniboxParticipant) => {
     const [firstName, lastName] = splitFullName(participant.name);
-    const primaryLinkUrl =
-      participant.profileUrl?.primaryLinkUrl ||
-      (participant.handle
-        ? `https://www.linkedin.com/in/${participant.handle}`
-        : '');
+    const primaryLinkUrl = getParticipantProfileUrl(participant);
 
     if (!primaryLinkUrl) {
       return;
@@ -217,7 +273,10 @@ export const UniboxLinkedInThreadView = ({
     const person = await createOneRecord({
       name: { firstName, lastName },
       linkedinLink: {
-        primaryLinkLabel: participant.handle || t`LinkedIn`,
+        primaryLinkLabel:
+          participant.handle ||
+          connectionByLinkedinUrn.get(participant.linkedinUrn ?? '')?.handle ||
+          t`LinkedIn`,
         primaryLinkUrl,
       },
     });
@@ -238,9 +297,7 @@ export const UniboxLinkedInThreadView = ({
             const personId =
               participant.personId ||
               createdPersonIdByParticipantId[participant.id];
-            const hasLinkedinProfile = Boolean(
-              participant.profileUrl?.primaryLinkUrl || participant.handle,
-            );
+            const linkedinProfileUrl = getParticipantProfileUrl(participant);
 
             return (
               <StyledParticipant key={participant.id}>
@@ -253,9 +310,19 @@ export const UniboxLinkedInThreadView = ({
                   type="rounded"
                 />
                 <StyledParticipantText>
-                  <StyledParticipantName>
-                    {participant.name}
-                  </StyledParticipantName>
+                  {linkedinProfileUrl ? (
+                    <StyledParticipantNameLink
+                      href={linkedinProfileUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {participant.name}
+                    </StyledParticipantNameLink>
+                  ) : (
+                    <StyledParticipantName>
+                      {participant.name}
+                    </StyledParticipantName>
+                  )}
                   {participant.headline && (
                     <StyledHeadline>{participant.headline}</StyledHeadline>
                   )}
@@ -276,7 +343,7 @@ export const UniboxLinkedInThreadView = ({
                     size="small"
                     variant="secondary"
                     isLoading={isCreatingPerson}
-                    disabled={!hasLinkedinProfile}
+                    disabled={!linkedinProfileUrl}
                     onClick={() => void handleAddToTwenty(participant)}
                   />
                 )}

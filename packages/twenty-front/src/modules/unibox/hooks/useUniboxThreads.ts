@@ -7,7 +7,6 @@ import { UNIBOX_THREADS } from '@/unibox/graphql/queries/uniboxThreads';
 import {
   type UniboxDateRange,
   type UniboxFilters,
-  type UniboxTab,
   type UniboxThread,
 } from '@/unibox/types/UniboxThread';
 
@@ -57,11 +56,13 @@ type UniboxThreadsVariables = {
 };
 
 export const useUniboxThreads = ({
-  tab,
+  channel,
+  folder,
   filters,
   skip = false,
 }: {
-  tab: UniboxTab;
+  channel: UniboxThreadsVariables['input']['channel'];
+  folder: UniboxThreadsVariables['input']['folder'];
   filters: UniboxFilters;
   skip?: boolean;
 }) => {
@@ -72,10 +73,10 @@ export const useUniboxThreads = ({
   );
   const variables: UniboxThreadsVariables = {
     input: {
-      channel: tab === 'LINKEDIN' ? 'LINKEDIN' : 'EMAIL',
-      folder: tab === 'SENT' ? 'SENT' : 'INBOX',
+      channel,
+      folder,
       connectedAccountIds:
-        tab !== 'LINKEDIN' && filters.accountIds.length > 0
+        channel === 'EMAIL' && filters.accountIds.length > 0
           ? filters.accountIds
           : undefined,
       recordListId: filters.recordListId ?? undefined,
@@ -104,9 +105,8 @@ export const useUniboxThreads = ({
     notifyOnNetworkStatusChange: true,
   });
 
-  const expectedChannel = tab === 'LINKEDIN' ? 'LINKEDIN' : 'EMAIL';
   const threads = (data?.uniboxThreads.threads ?? []).filter(
-    ({ channel }) => channel === expectedChannel,
+    (thread) => thread.channel === channel,
   );
   const totalCount = data?.uniboxThreads.totalCount ?? 0;
   const hasNextPage = !isEndReached && threads.length < totalCount;

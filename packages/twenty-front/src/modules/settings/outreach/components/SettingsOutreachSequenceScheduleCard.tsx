@@ -1,9 +1,14 @@
-import { type SequenceSettings } from 'twenty-shared/types';
+import {
+  SEQUENCE_SEND_WINDOW_TIMEZONE_MODES,
+  type SequenceSettings,
+} from 'twenty-shared/types';
+import { type SelectOption } from 'twenty-ui/input';
 import { Card, CardContent } from 'twenty-ui/surfaces';
 import { themeCssVariables } from 'twenty-ui/theme-constants';
 import { styled } from '@linaria/react';
 import { t } from '@lingui/core/macro';
 
+import { Select } from '@/ui/input/components/Select';
 import { SettingsTextInput } from '@/ui/input/components/SettingsTextInput';
 
 import {
@@ -21,6 +26,21 @@ const WEEK_DAYS = [
   { value: 6, label: t`Sat` },
   { value: 0, label: t`Sun` },
 ] as const;
+
+type SendWindowTimezoneMode =
+  (typeof SEQUENCE_SEND_WINDOW_TIMEZONE_MODES)[keyof typeof SEQUENCE_SEND_WINDOW_TIMEZONE_MODES];
+
+const SEND_WINDOW_TIMEZONE_MODE_OPTIONS: SelectOption<SendWindowTimezoneMode>[] =
+  [
+    {
+      value: SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.SEQUENCE,
+      label: t`Sequence time zone`,
+    },
+    {
+      value: SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.RECIPIENT,
+      label: t`Each recipient's time zone`,
+    },
+  ];
 
 const StyledScheduleHeader = styled.div`
   display: flex;
@@ -74,6 +94,10 @@ export const SettingsOutreachSequenceScheduleCard = ({
   disabled,
   onChange,
 }: SettingsOutreachSequenceScheduleCardProps) => {
+  const isRecipientTimezoneMode =
+    settings.sendWindowTimezoneMode ===
+    SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.RECIPIENT;
+
   const toggleDay = (day: number) => {
     onChange({
       activeDays: settings.activeDays.includes(day)
@@ -89,7 +113,9 @@ export const SettingsOutreachSequenceScheduleCard = ({
           <StyledSettingText>
             <StyledSettingTitle>{t`Sending days`}</StyledSettingTitle>
             <StyledSettingDescription>
-              {t`The scheduler admits contacts and creates outbound actions only on the selected days.`}
+              {isRecipientTimezoneMode
+                ? t`The scheduler applies these days and hours using the Time zone field on each recipient's Person record. Missing or invalid values fall back to UTC.`
+                : t`The scheduler admits contacts and creates outbound actions only on the selected days and hours in the sequence time zone.`}
             </StyledSettingDescription>
           </StyledSettingText>
           <StyledDayPicker>
@@ -110,6 +136,17 @@ export const SettingsOutreachSequenceScheduleCard = ({
       </CardContent>
       <CardContent>
         <StyledScheduleFields>
+          <Select
+            dropdownId="outreach-sequence-timezone-mode"
+            label={t`Apply sending hours in`}
+            fullWidth
+            value={settings.sendWindowTimezoneMode}
+            options={SEND_WINDOW_TIMEZONE_MODE_OPTIONS}
+            disabled={disabled}
+            onChange={(sendWindowTimezoneMode) =>
+              onChange({ sendWindowTimezoneMode })
+            }
+          />
           <SettingsTextInput
             instanceId="outreach-sequence-window-start"
             label={t`Window starts`}
@@ -131,7 +168,7 @@ export const SettingsOutreachSequenceScheduleCard = ({
             label={t`Timezone`}
             value={settings.timezone}
             placeholder="Europe/Helsinki"
-            disabled={disabled}
+            disabled={disabled || isRecipientTimezoneMode}
             onChange={(timezone) => onChange({ timezone })}
           />
         </StyledScheduleFields>

@@ -136,6 +136,18 @@ export const computeStandardPersonViewFields = (
         subFieldName: 'addressCountry',
       },
     }),
+    allPeopleTimeZone: createStandardViewFieldFlatMetadata({
+      ...args,
+      objectName: 'person',
+      context: {
+        viewName: 'allPeople',
+        viewFieldName: 'timeZone',
+        fieldName: 'timeZone',
+        position: 10,
+        isVisible: true,
+        size: 170,
+      },
+    }),
 
     // personRecordPageFields view fields
     // General group
@@ -175,6 +187,19 @@ export const computeStandardPersonViewFields = (
         position: 2,
         isVisible: true,
         size: 150,
+        viewFieldGroupName: 'general',
+      },
+    }),
+    personRecordPageFieldsTimeZone: createStandardViewFieldFlatMetadata({
+      ...args,
+      objectName: 'person',
+      context: {
+        viewName: 'personRecordPageFields',
+        viewFieldName: 'timeZone',
+        fieldName: 'timeZone',
+        position: 6,
+        isVisible: true,
+        size: 170,
         viewFieldGroupName: 'general',
       },
     }),

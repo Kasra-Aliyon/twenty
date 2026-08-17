@@ -28,6 +28,7 @@ export enum AppPath {
   SequencePage = '/sequences/:sequenceId',
   TaskQueuePage = '/tasks',
   UniboxPage = '/unibox',
+  LinkedinPage = '/linkedin',
 
   RecordIndexPage = '/objects/:objectNamePlural',
   RecordShowPage = '/object/:objectNameSingular/:objectRecordId',

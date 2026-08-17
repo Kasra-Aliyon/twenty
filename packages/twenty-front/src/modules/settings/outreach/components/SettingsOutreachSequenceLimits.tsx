@@ -8,7 +8,11 @@ import { useSnackBar } from '@/ui/feedback/snack-bar-manager/hooks/useSnackBar';
 import { Select } from '@/ui/input/components/Select';
 import { CombinedGraphQLErrors } from '@apollo/client/errors';
 import { t } from '@lingui/core/macro';
-import { SEQUENCE_STATUSES, type SequenceSettings } from 'twenty-shared/types';
+import {
+  SEQUENCE_SEND_WINDOW_TIMEZONE_MODES,
+  SEQUENCE_STATUSES,
+  type SequenceSettings,
+} from 'twenty-shared/types';
 import { Button, type SelectOption } from 'twenty-ui/input';
 import { Section } from 'twenty-ui/layout';
 import { H2Title } from 'twenty-ui/typography';
@@ -102,15 +106,20 @@ export const SettingsOutreachSequenceLimits = () => {
       return;
     }
 
-    try {
-      new Intl.DateTimeFormat('en-US', {
-        timeZone: effectiveSettings.timezone,
-      }).format();
-    } catch {
-      enqueueErrorSnackBar({
-        message: t`Enter a valid IANA timezone such as Europe/Helsinki.`,
-      });
-      return;
+    if (
+      effectiveSettings.sendWindowTimezoneMode ===
+      SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.SEQUENCE
+    ) {
+      try {
+        new Intl.DateTimeFormat('en-US', {
+          timeZone: effectiveSettings.timezone,
+        }).format();
+      } catch {
+        enqueueErrorSnackBar({
+          message: t`Enter a valid IANA timezone such as Europe/Helsinki.`,
+        });
+        return;
+      }
     }
 
     setIsSaving(true);

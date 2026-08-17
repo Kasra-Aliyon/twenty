@@ -20,6 +20,13 @@ describe('parseSequenceSettings', () => {
         windowStart: '23:59',
         windowEnd: '00:00',
         timezone: 'Europe/Helsinki',
+        sendWindowTimezoneMode: SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.RECIPIENT,
+        senderConnectedAccountIds: [
+          'connected-account-2',
+          'connected-account-1',
+          'connected-account-2',
+          '',
+        ],
         dailyStartLimitEnabled: true,
         dailyStarts: 12.9,
         staggerMinutes: 0.5,
@@ -33,6 +40,8 @@ describe('parseSequenceSettings', () => {
       windowStart: '23:59',
       windowEnd: '00:00',
       timezone: 'Europe/Helsinki',
+      sendWindowTimezoneMode: SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.RECIPIENT,
+      senderConnectedAccountIds: ['connected-account-2', 'connected-account-1'],
       dailyStartLimitEnabled: true,
       dailyStarts: 12,
       staggerMinutes: 0.5,
@@ -50,6 +59,7 @@ describe('parseSequenceSettings', () => {
         windowStart: '24:00',
         windowEnd: '09:60',
         timezone: 'Not/A_Timezone',
+        sendWindowTimezoneMode: 'LOCAL',
         dailyStartLimitEnabled: 'true',
         dailyStarts: -1,
         staggerMinutes: Number.NaN,
@@ -91,4 +101,17 @@ describe('parseSequenceSettings', () => {
       parseSequenceSettings({ linkedinDailyActions: 50 }).linkedinDailyActions,
     ).toBe(40);
   });
+
+  it('caps the sender pool at 20 connected accounts', () => {
+    const senderConnectedAccountIds = Array.from(
+      { length: 25 },
+      (_, index) => `connected-account-${index}`,
+    );
+
+    expect(
+      parseSequenceSettings({ senderConnectedAccountIds })
+        .senderConnectedAccountIds,
+    ).toEqual(senderConnectedAccountIds.slice(0, 20));
+  });
 });
+import { SEQUENCE_SEND_WINDOW_TIMEZONE_MODES } from 'twenty-shared/types';

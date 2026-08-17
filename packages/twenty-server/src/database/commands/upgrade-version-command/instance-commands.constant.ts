@@ -79,6 +79,7 @@ import { AddViewRecordListIdFastInstanceCommand } from './2-15/2-15-instance-com
 import { AddIsPlainTextEmailEnabledFastInstanceCommand } from 'src/database/commands/upgrade-version-command/2-15/2-15-instance-command-fast-1800000006000-add-is-plain-text-email-enabled';
 import { AddViewFieldSubFieldNameFastInstanceCommand } from 'src/database/commands/upgrade-version-command/2-15/2-15-instance-command-fast-1786114573952-add-view-field-sub-field-name';
 import { AllowViewFieldSubFieldsFastInstanceCommand } from 'src/database/commands/upgrade-version-command/2-15/2-15-instance-command-fast-1800000018500-allow-view-field-sub-fields';
+import { AddSequenceEmailLimitsToConnectedAccountFastInstanceCommand } from 'src/database/commands/upgrade-version-command/2-15/2-15-instance-command-fast-1800000020500-add-sequence-email-limits-to-connected-account';
 
 export const INSTANCE_COMMANDS = [
   AddViewFieldGroupIdIndexOnViewFieldFastInstanceCommand,
@@ -160,4 +161,5 @@ export const INSTANCE_COMMANDS = [
   AddIsPlainTextEmailEnabledFastInstanceCommand,
   AddViewFieldSubFieldNameFastInstanceCommand,
   AllowViewFieldSubFieldsFastInstanceCommand,
+  AddSequenceEmailLimitsToConnectedAccountFastInstanceCommand,
 ];

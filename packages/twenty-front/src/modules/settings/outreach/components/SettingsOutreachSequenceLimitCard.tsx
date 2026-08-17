@@ -1,7 +1,10 @@
 import { LINKEDIN_DAILY_ACTION_LIMITS } from '@/sequence/constants/linkedin-daily-actions';
 import { SettingsCounter } from '@/settings/components/SettingsCounter';
 import { t } from '@lingui/core/macro';
-import { type SequenceSettings } from 'twenty-shared/types';
+import {
+  SEQUENCE_SEND_WINDOW_TIMEZONE_MODES,
+  type SequenceSettings,
+} from 'twenty-shared/types';
 import { Toggle } from 'twenty-ui/input';
 import { Card, CardContent } from 'twenty-ui/surfaces';
 
@@ -48,7 +51,10 @@ export const SettingsOutreachSequenceLimitCard = ({
         <StyledSettingText>
           <StyledSettingTitle>{t`Daily enrollment admissions`}</StyledSettingTitle>
           <StyledSettingDescription>
-            {t`Contacts allowed to move from pending to active per local day.`}
+            {settings.sendWindowTimezoneMode ===
+            SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.RECIPIENT
+              ? t`Contacts allowed to move from pending to active per UTC day.`
+              : t`Contacts allowed to move from pending to active per day in the sequence time zone.`}
           </StyledSettingDescription>
         </StyledSettingText>
         <SettingsCounter

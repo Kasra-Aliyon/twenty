@@ -25,6 +25,7 @@ import { Button } from 'twenty-ui/input';
 import { themeCssVariables } from 'twenty-ui/theme-constants';
 
 import { SequenceActionsMenu } from './components/SequenceActionsMenu';
+import { SequenceAnalyticsSection } from './components/SequenceAnalyticsSection';
 import { SequenceContactsTable } from './components/SequenceContactsTable';
 import { StyledPageContent, StyledPill } from './components/SequencePageStyles';
 import { SequenceSettingsSection } from './components/SequenceSettingsSection';
@@ -34,7 +35,7 @@ import {
   type SequenceRecord,
 } from './types/SequenceRecords';
 
-type SequenceTab = 'steps' | 'contacts' | 'settings';
+type SequenceTab = 'steps' | 'contacts' | 'analytics' | 'settings';
 
 const ACTIVE_ENROLLMENT_REFRESH_INTERVAL_MILLISECONDS = 15_000;
 
@@ -234,6 +235,13 @@ const SequencePageContent = () => {
             </StyledTab>
             <StyledTab
               type="button"
+              isActive={activeTab === 'analytics'}
+              onClick={() => setActiveTab('analytics')}
+            >
+              {t`Analytics`}
+            </StyledTab>
+            <StyledTab
+              type="button"
               isActive={activeTab === 'settings'}
               onClick={() => setActiveTab('settings')}
             >
@@ -283,6 +291,9 @@ const SequencePageContent = () => {
                 await Promise.all([refetch(), refetchActiveEnrollments()]);
               }}
             />
+          )}
+          {activeTab === 'analytics' && (
+            <SequenceAnalyticsSection sequenceId={sequence.id} />
           )}
           {activeTab === 'settings' && (
             <SequenceSettingsSection

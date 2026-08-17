@@ -2,14 +2,18 @@ import {
   LINKEDIN_ACTION_STATUSES,
   LINKEDIN_ACTION_TYPES,
   SEQUENCE_ENROLLMENT_STATUSES,
+  SEQUENCE_SEND_WINDOW_TIMEZONE_MODES,
   SEQUENCE_STATUSES,
   SEQUENCE_STEP_TYPES,
   SEQUENCE_WAITING_ON,
   type SequenceEnrollmentStatus,
+  type SequenceSettings,
 } from 'twenty-shared/types';
+import { MoreThanOrEqual } from 'typeorm';
 
 import { type GlobalWorkspaceOrmManager } from 'src/engine/twenty-orm/global-workspace-datasource/global-workspace-orm.manager';
 import { LinkedinActionWorkspaceEntity } from 'src/modules/linkedin/standard-objects/linkedin-action.workspace-entity';
+import { PersonWorkspaceEntity } from 'src/modules/person/standard-objects/person.workspace-entity';
 import { type SequenceMailboxThrottleService } from 'src/modules/sequence/services/sequence-mailbox-throttle.service';
 import { type SequenceLinkedinInvitationReconcilerService } from 'src/modules/sequence/services/sequence-linkedin-invitation-reconciler.service';
 import { type SequenceQueueService } from 'src/modules/sequence/services/sequence-queue.service';
@@ -86,6 +90,11 @@ describe('SequenceSchedulerService', () => {
     taskWaitingEnrollments = [],
     sequenceTasks = [],
     dailyStartLimitEnabled = true,
+    senderPool,
+    activeSenderAssignments = [],
+    sequenceSettings = {},
+    steps = [step],
+    recipientTimeZones = {},
   }: {
     startedToday: number;
     pendingEnrollments?: SequenceEnrollmentWorkspaceEntity[];
@@ -101,12 +110,21 @@ describe('SequenceSchedulerService', () => {
       status: string;
     }>;
     dailyStartLimitEnabled?: boolean;
+    senderPool?: string[];
+    activeSenderAssignments?: SequenceEnrollmentWorkspaceEntity[];
+    sequenceSettings?: Partial<SequenceSettings>;
+    steps?: SequenceStepWorkspaceEntity[];
+    recipientTimeZones?: Record<string, string | null>;
   }) => {
     const activeSequence = {
       ...sequence,
       settings: {
         ...sequence.settings,
+        ...sequenceSettings,
         dailyStartLimitEnabled,
+        ...(senderPool === undefined
+          ? {}
+          : { senderConnectedAccountIds: senderPool }),
       },
     } as SequenceWorkspaceEntity;
     const sequenceRepository = {
@@ -132,12 +150,24 @@ describe('SequenceSchedulerService', () => {
           return taskWaitingEnrollments;
         }
 
+        if ('senderConnectedAccountId' in options.where) {
+          return activeSenderAssignments;
+        }
+
         return dueEnrollments;
       }),
       update: jest.fn().mockResolvedValue({ affected: 1 }),
     };
     const stepRepository = {
-      find: jest.fn().mockResolvedValue([step]),
+      find: jest.fn().mockResolvedValue(steps),
+    };
+    const personRepository = {
+      find: jest.fn().mockResolvedValue(
+        Object.entries(recipientTimeZones).map(([id, timeZone]) => ({
+          id,
+          timeZone,
+        })),
+      ),
     };
     const linkedinActionRepository = {
       find: jest.fn().mockImplementation(async (options) => {
@@ -160,6 +190,7 @@ describe('SequenceSchedulerService', () => {
       [SequenceWorkspaceEntity, sequenceRepository],
       [SequenceEnrollmentWorkspaceEntity, enrollmentRepository],
       [SequenceStepWorkspaceEntity, stepRepository],
+      [PersonWorkspaceEntity, personRepository],
       [LinkedinActionWorkspaceEntity, linkedinActionRepository],
       [TaskWorkspaceEntity, taskRepository],
     ]);
@@ -208,6 +239,7 @@ describe('SequenceSchedulerService', () => {
       service,
       sequenceRepository,
       enrollmentRepository,
+      personRepository,
       linkedinActionRepository,
       enqueueProcess,
       acquireSendLock,
@@ -340,6 +372,108 @@ describe('SequenceSchedulerService', () => {
     );
   });
 
+  it('rotates new enrollments across the least-loaded sender pool', async () => {
+    const pendingEnrollments = [
+      {
+        ...buildEnrollment(
+          'first-pending-id',
+          SEQUENCE_ENROLLMENT_STATUSES.PENDING,
+        ),
+        senderConnectedAccountId: 'mailbox-a',
+      },
+      {
+        ...buildEnrollment(
+          'second-pending-id',
+          SEQUENCE_ENROLLMENT_STATUSES.PENDING,
+        ),
+        senderConnectedAccountId: 'mailbox-a',
+      },
+    ] as SequenceEnrollmentWorkspaceEntity[];
+    const { service, enrollmentRepository } = setup({
+      startedToday: 0,
+      pendingEnrollments,
+      dailyStartLimitEnabled: false,
+      senderPool: ['mailbox-a', 'mailbox-b'],
+    });
+
+    await service.tick(workspaceId, now);
+
+    expect(enrollmentRepository.update).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ id: 'first-pending-id' }),
+      expect.objectContaining({ senderConnectedAccountId: 'mailbox-a' }),
+      expect.any(Object),
+    );
+    expect(enrollmentRepository.update).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ id: 'second-pending-id' }),
+      expect.objectContaining({ senderConnectedAccountId: 'mailbox-b' }),
+      expect.any(Object),
+    );
+  });
+
+  it('admits recipient-mode enrollments outside the fixed sequence window and counts the UTC quota day', async () => {
+    const recipientNow = new Date('2024-01-01T22:30:00.000Z');
+    const pendingEnrollment = buildEnrollment(
+      'recipient-pending-id',
+      SEQUENCE_ENROLLMENT_STATUSES.PENDING,
+    );
+    const { service, enrollmentRepository } = setup({
+      startedToday: 0,
+      pendingEnrollments: [pendingEnrollment],
+      sequenceSettings: {
+        activeDays: [1],
+        windowStart: '09:00',
+        windowEnd: '17:00',
+        timezone: 'Europe/Helsinki',
+        sendWindowTimezoneMode: SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.RECIPIENT,
+      },
+    });
+
+    await service.tick(workspaceId, recipientNow);
+
+    expect(enrollmentRepository.count).toHaveBeenCalledWith(
+      {
+        where: {
+          sequenceId: sequence.id,
+          startedAt: MoreThanOrEqual(new Date('2024-01-01T00:00:00.000Z')),
+        },
+      },
+      expect.any(Object),
+    );
+    expect(enrollmentRepository.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: pendingEnrollment.id,
+        status: SEQUENCE_ENROLLMENT_STATUSES.PENDING,
+      }),
+      expect.objectContaining({
+        status: SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
+        startedAt: recipientNow,
+        nextActionAt: recipientNow,
+      }),
+      expect.any(Object),
+    );
+  });
+
+  it('does not admit recipient-mode enrollments when no sending days are enabled', async () => {
+    const pendingEnrollment = buildEnrollment(
+      'recipient-pending-id',
+      SEQUENCE_ENROLLMENT_STATUSES.PENDING,
+    );
+    const { service, enrollmentRepository } = setup({
+      startedToday: 0,
+      pendingEnrollments: [pendingEnrollment],
+      sequenceSettings: {
+        activeDays: [],
+        sendWindowTimezoneMode: SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.RECIPIENT,
+      },
+    });
+
+    await service.tick(workspaceId, now);
+
+    expect(enrollmentRepository.update).not.toHaveBeenCalled();
+  });
+
   it('enqueues one due email and reserves the next staggered slot', async () => {
     const firstEnrollment = buildEnrollment('first-id');
     const secondEnrollment = buildEnrollment('second-id');
@@ -369,6 +503,100 @@ describe('SequenceSchedulerService', () => {
         nextActionAt: new Date('2024-01-01T10:05:00.000Z'),
       }),
     );
+  });
+
+  it('schedules a recipient-local email while the fixed sequence timezone is closed', async () => {
+    const recipientNow = new Date('2024-01-01T16:00:00.000Z');
+    const dueEnrollment = buildEnrollment('recipient-local-id');
+    const { service, enrollmentRepository, enqueueProcess, personRepository } =
+      setup({
+        startedToday: 0,
+        dueEnrollments: [dueEnrollment],
+        sequenceSettings: {
+          activeDays: [1],
+          windowStart: '09:00',
+          windowEnd: '17:00',
+          timezone: 'Europe/Helsinki',
+          sendWindowTimezoneMode: SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.RECIPIENT,
+        },
+        recipientTimeZones: {
+          [dueEnrollment.personId]: 'America/New_York',
+        },
+      });
+
+    await service.tick(workspaceId, recipientNow);
+
+    expect(personRepository.find).toHaveBeenCalledWith({
+      where: { id: expect.anything() },
+      select: { id: true, timeZone: true },
+    });
+    expect(enrollmentRepository.update).toHaveBeenCalledWith(
+      expect.objectContaining({ id: dueEnrollment.id }),
+      expect.objectContaining({
+        waitingOn: SEQUENCE_WAITING_ON.EMAIL_SCHEDULED,
+        nextActionAt: recipientNow,
+      }),
+    );
+    expect(enqueueProcess).toHaveBeenCalledWith({
+      workspaceId,
+      enrollmentId: dueEnrollment.id,
+    });
+  });
+
+  it('uses UTC when a recipient-local email has no determined timezone', async () => {
+    const recipientNow = new Date('2024-01-01T16:00:00.000Z');
+    const dueEnrollment = buildEnrollment('utc-fallback-id');
+    const { service, enrollmentRepository, enqueueProcess } = setup({
+      startedToday: 0,
+      dueEnrollments: [dueEnrollment],
+      sequenceSettings: {
+        activeDays: [1],
+        windowStart: '09:00',
+        windowEnd: '17:00',
+        timezone: 'Europe/Helsinki',
+        sendWindowTimezoneMode: SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.RECIPIENT,
+      },
+      recipientTimeZones: { [dueEnrollment.personId]: null },
+    });
+
+    await service.tick(workspaceId, recipientNow);
+
+    expect(enrollmentRepository.update).toHaveBeenCalledWith(
+      expect.objectContaining({ id: dueEnrollment.id }),
+      expect.objectContaining({ nextActionAt: recipientNow }),
+    );
+    expect(enqueueProcess).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps non-email steps behind the fixed sequence window in recipient mode', async () => {
+    const recipientNow = new Date('2024-01-01T16:00:00.000Z');
+    const dueEnrollment = buildEnrollment('task-id');
+    const taskStep = {
+      id: 'task-step-id',
+      sequenceId: sequence.id,
+      position: 0,
+      type: SEQUENCE_STEP_TYPES.CREATE_TASK,
+      settings: { type: SEQUENCE_STEP_TYPES.CREATE_TASK },
+    } as SequenceStepWorkspaceEntity;
+    const { service, enqueueProcess } = setup({
+      startedToday: 0,
+      dueEnrollments: [dueEnrollment],
+      steps: [taskStep],
+      sequenceSettings: {
+        activeDays: [1],
+        windowStart: '09:00',
+        windowEnd: '17:00',
+        timezone: 'Europe/Helsinki',
+        sendWindowTimezoneMode: SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.RECIPIENT,
+      },
+      recipientTimeZones: {
+        [dueEnrollment.personId]: 'America/New_York',
+      },
+    });
+
+    await service.tick(workspaceId, recipientNow);
+
+    expect(enqueueProcess).not.toHaveBeenCalled();
   });
 
   it('resumes an enrollment whose LinkedIn action already finished', async () => {

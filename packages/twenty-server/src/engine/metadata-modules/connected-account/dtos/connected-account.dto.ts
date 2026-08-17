@@ -1,8 +1,10 @@
-import { Field, HideField, ObjectType } from '@nestjs/graphql';
+import { Field, HideField, Int, ObjectType } from '@nestjs/graphql';
 
 import {
   IsArray,
+  IsBoolean,
   IsDateString,
+  IsInt,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -99,6 +101,14 @@ export class ConnectedAccountDTO {
   @IsString()
   @Field(() => String)
   visibility: string;
+
+  @IsBoolean()
+  @Field(() => Boolean)
+  sequenceDailyEmailLimitEnabled: boolean;
+
+  @IsInt()
+  @Field(() => Int)
+  sequenceDailyEmailLimit: number;
 
   @HideField()
   workspaceId: string;

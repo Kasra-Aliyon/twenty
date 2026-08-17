@@ -1,8 +1,12 @@
-import { type SequenceSettings } from 'twenty-shared/types';
+import {
+  SEQUENCE_SEND_WINDOW_TIMEZONE_MODES,
+  type SequenceSettings,
+} from 'twenty-shared/types';
 
 import {
   DEFAULT_SEQUENCE_SETTINGS,
   LINKEDIN_DAILY_ACTIONS_MAXIMUM,
+  SEQUENCE_SENDER_POOL_MAXIMUM,
 } from 'src/modules/sequence/sequence.constants';
 
 const TIME_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
@@ -61,12 +65,32 @@ export const parseSequenceSettings = (value: unknown): SequenceSettings => {
     typeof value.timezone === 'string' && isValidTimeZone(value.timezone)
       ? value.timezone
       : DEFAULT_SEQUENCE_SETTINGS.timezone;
+  const sendWindowTimezoneMode =
+    value.sendWindowTimezoneMode ===
+    SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.RECIPIENT
+      ? SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.RECIPIENT
+      : SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.SEQUENCE;
+  const senderConnectedAccountIds = Array.isArray(
+    value.senderConnectedAccountIds,
+  )
+    ? [
+        ...new Set(
+          value.senderConnectedAccountIds.filter(
+            (connectedAccountId): connectedAccountId is string =>
+              typeof connectedAccountId === 'string' &&
+              connectedAccountId.trim().length > 0,
+          ),
+        ),
+      ].slice(0, SEQUENCE_SENDER_POOL_MAXIMUM)
+    : DEFAULT_SEQUENCE_SETTINGS.senderConnectedAccountIds;
 
   return {
     activeDays,
     windowStart,
     windowEnd,
     timezone,
+    sendWindowTimezoneMode,
+    senderConnectedAccountIds,
     dailyStartLimitEnabled:
       typeof value.dailyStartLimitEnabled === 'boolean'
         ? value.dailyStartLimitEnabled

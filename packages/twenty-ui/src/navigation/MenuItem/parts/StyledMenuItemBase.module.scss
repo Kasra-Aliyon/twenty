@@ -79,6 +79,10 @@
   cursor: pointer;
 
   @include menu-item-base-states;
+
+  &[data-disabled] {
+    cursor: default;
+  }
 }
 
 .hoverableMenuItemBase {

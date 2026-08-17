@@ -12,6 +12,14 @@ export const STANDARD_NAVIGATION_MENU_ITEMS = {
     icon: 'IconInbox',
     position: -1,
   },
+  linkedin: {
+    universalIdentifier: '6a92c867-f927-4c11-b4e8-5e3795b9120d',
+    type: NavigationMenuItemType.LINK,
+    name: 'LinkedIn',
+    link: AppPath.LinkedinPage,
+    icon: 'IconBrandLinkedin',
+    position: -0.5,
+  },
   allCompanies: {
     universalIdentifier: '20202020-b001-4b01-8b01-c0aba11c0001',
     type: NavigationMenuItemType.OBJECT,
@@ -116,6 +124,7 @@ export const STANDARD_NAVIGATION_MENU_ITEM_DEFAULT_COLORS: Partial<
   Record<keyof typeof STANDARD_NAVIGATION_MENU_ITEMS, string>
 > = {
   unibox: 'blue',
+  linkedin: 'blue',
   allCompanies: 'blue',
   allPeople: 'blue',
   allTasks: 'turquoise',

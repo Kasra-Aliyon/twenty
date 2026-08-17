@@ -6,6 +6,7 @@ import {
   SEQUENCE_CONDITION_BRANCHES,
   SEQUENCE_CONDITION_TYPES,
   SEQUENCE_ENROLLMENT_STATUSES,
+  SEQUENCE_SEND_WINDOW_TIMEZONE_MODES,
   SEQUENCE_STATUSES,
   SEQUENCE_STEP_TYPES,
   SEQUENCE_TASK_TYPES,
@@ -82,7 +83,11 @@ describe('SequenceExecutorService', () => {
     },
   } as SequenceStepWorkspaceEntity;
 
-  const buildPerson = (emailOptOut = false) =>
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  const buildPerson = (emailOptOut = false, timeZone: string | null = null) =>
     ({
       id: 'person-id',
       name: { firstName: 'Ada', lastName: 'Lovelace' },
@@ -91,6 +96,7 @@ describe('SequenceExecutorService', () => {
         additionalEmails: null,
       },
       emailOptOut,
+      timeZone,
       linkedinConnectionState: LINKEDIN_CONNECTION_STATES.NOT_CONNECTED,
       linkedinLink: null,
       phones: {
@@ -113,6 +119,7 @@ describe('SequenceExecutorService', () => {
     linkedinActionCount = 0,
     observedConnectedActionCount = 0,
     latestLinkedinAction = null,
+    dailyEmailReservationAvailable = true,
   }: {
     currentEnrollment?: SequenceEnrollmentWorkspaceEntity;
     currentSequence?: SequenceWorkspaceEntity;
@@ -124,6 +131,7 @@ describe('SequenceExecutorService', () => {
     linkedinActionCount?: number;
     observedConnectedActionCount?: number;
     latestLinkedinAction?: LinkedinActionWorkspaceEntity | null;
+    dailyEmailReservationAvailable?: boolean;
   } = {}) => {
     const enrollmentRepository = {
       findOne: jest.fn().mockResolvedValue(currentEnrollment),
@@ -214,11 +222,19 @@ describe('SequenceExecutorService', () => {
     const releaseSendLock = jest.fn();
     const getLastSendAt = jest.fn().mockResolvedValue(null);
     const setLastSendAt = jest.fn();
+    const reserveUtcDailySend = jest
+      .fn()
+      .mockResolvedValue(
+        dailyEmailReservationAvailable ? { usageDate: '2026-08-17' } : null,
+      );
+    const releaseUtcDailySendReservation = jest.fn();
     const sequenceMailboxThrottleService = {
       acquireSendLock,
       releaseSendLock,
       getLastSendAt,
       setLastSendAt,
+      reserveUtcDailySend,
+      releaseUtcDailySendReservation,
     } as unknown as SequenceMailboxThrottleService;
     const reserveSlot = jest.fn().mockResolvedValue(new Date());
     const sequenceLinkedinThrottleService = {
@@ -269,6 +285,8 @@ describe('SequenceExecutorService', () => {
       releaseSendLock,
       getLastSendAt,
       setLastSendAt,
+      reserveUtcDailySend,
+      releaseUtcDailySendReservation,
       linkedinActionRepository,
       linkedinConnectionRepository,
       linkedinMessageRepository,
@@ -282,7 +300,8 @@ describe('SequenceExecutorService', () => {
   };
 
   it('claims the email step before sending and advances only after success', async () => {
-    const { service, enrollmentRepository, send } = setup();
+    const { service, enrollmentRepository, send, reserveUtcDailySend } =
+      setup();
 
     send.mockImplementation(async () => {
       expect(enrollmentRepository.update).toHaveBeenCalledTimes(1);
@@ -312,6 +331,15 @@ describe('SequenceExecutorService', () => {
 
     await service.process({ workspaceId, enrollmentId });
 
+    expect(reserveUtcDailySend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId,
+        mailboxId: 'connected-account-id',
+      }),
+    );
+    expect(reserveUtcDailySend.mock.invocationCallOrder[0]).toBeLessThan(
+      enrollmentRepository.update.mock.invocationCallOrder[0],
+    );
     expect(send).toHaveBeenCalledTimes(1);
     expect(enrollmentRepository.update).toHaveBeenCalledTimes(2);
     expect(enrollmentRepository.update.mock.calls[1][1]).toEqual(
@@ -325,6 +353,97 @@ describe('SequenceExecutorService', () => {
         },
       }),
     );
+  });
+
+  it('preserves reply attribution when a reply wins the send persistence race', async () => {
+    const previousSentEmailsByStepId = {
+      'previous-step-id': {
+        headerMessageId: 'previous-header-message-id',
+        threadExternalId: 'previous-thread-external-id',
+        sentAt: '2026-08-16T10:00:00.000Z',
+      },
+    };
+    const currentEnrollment = {
+      ...enrollment,
+      sentEmailsByStepId: previousSentEmailsByStepId,
+    } as SequenceEnrollmentWorkspaceEntity;
+    const repliedEnrollment = {
+      ...currentEnrollment,
+      status: SEQUENCE_ENROLLMENT_STATUSES.REPLIED,
+      sentEmailsByStepId: {
+        'previous-step-id': {
+          ...previousSentEmailsByStepId['previous-step-id'],
+          repliedAt: '2026-08-17T10:00:00.000Z',
+        },
+      },
+    } as SequenceEnrollmentWorkspaceEntity;
+    const { service, enrollmentRepository } = setup({ currentEnrollment });
+
+    enrollmentRepository.findOne
+      .mockResolvedValueOnce(currentEnrollment)
+      .mockResolvedValueOnce(repliedEnrollment);
+    enrollmentRepository.update
+      .mockResolvedValueOnce({ affected: 1 })
+      .mockResolvedValueOnce({ affected: 0 })
+      .mockResolvedValueOnce({ affected: 1 });
+
+    await service.process({ workspaceId, enrollmentId });
+
+    expect(enrollmentRepository.update).toHaveBeenCalledTimes(3);
+    expect(enrollmentRepository.update.mock.calls[2][1]).toEqual({
+      sentEmailsByStepId: {
+        'previous-step-id': expect.objectContaining({
+          repliedAt: '2026-08-17T10:00:00.000Z',
+        }),
+        [stepId]: expect.objectContaining({
+          headerMessageId: 'header-message-id',
+          threadExternalId: 'thread-external-id',
+        }),
+      },
+    });
+  });
+
+  it('reschedules without claiming when the mailbox daily cap is reached', async () => {
+    const { service, enrollmentRepository, send, reserveUtcDailySend } = setup({
+      dailyEmailReservationAvailable: false,
+    });
+
+    await service.process({ workspaceId, enrollmentId });
+
+    expect(reserveUtcDailySend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId,
+        mailboxId: 'connected-account-id',
+      }),
+    );
+    expect(send).not.toHaveBeenCalled();
+    expect(enrollmentRepository.update).toHaveBeenCalledWith(
+      expect.objectContaining({ id: enrollmentId }),
+      expect.objectContaining({ nextActionAt: expect.any(Date) }),
+    );
+    expect(
+      enrollmentRepository.update.mock.calls[0][1].nextActionAt.getTime(),
+    ).toBeGreaterThan(Date.now());
+  });
+
+  it('pins a legacy sender before reserving mailbox usage', async () => {
+    const { service, enrollmentRepository, send, reserveUtcDailySend } = setup({
+      currentEnrollment: {
+        ...enrollment,
+        senderConnectedAccountId: null,
+      },
+      dailyEmailReservationAvailable: false,
+    });
+
+    await service.process({ workspaceId, enrollmentId });
+
+    expect(enrollmentRepository.update.mock.calls[0][1]).toEqual({
+      senderConnectedAccountId: 'connected-account-id',
+    });
+    expect(
+      enrollmentRepository.update.mock.invocationCallOrder[0],
+    ).toBeLessThan(reserveUtcDailySend.mock.invocationCallOrder[0]);
+    expect(send).not.toHaveBeenCalled();
   });
 
   it('fails opted-out people without claiming or sending', async () => {
@@ -414,19 +533,62 @@ describe('SequenceExecutorService', () => {
   });
 
   it('does not send when another worker wins the email claim', async () => {
-    const { service, enrollmentRepository, send, setLastSendAt } = setup();
+    const {
+      service,
+      enrollmentRepository,
+      send,
+      setLastSendAt,
+      reserveUtcDailySend,
+      releaseUtcDailySendReservation,
+    } = setup();
 
     enrollmentRepository.update.mockResolvedValueOnce({ affected: 0 });
 
     await service.process({ workspaceId, enrollmentId });
 
+    expect(reserveUtcDailySend).toHaveBeenCalledTimes(1);
+    expect(releaseUtcDailySendReservation).toHaveBeenCalledWith({
+      workspaceId,
+      mailboxId: 'connected-account-id',
+      usageDate: '2026-08-17',
+    });
     expect(send).not.toHaveBeenCalled();
     expect(setLastSendAt).not.toHaveBeenCalled();
   });
 
+  it('conservatively keeps the reservation when the provider fails after the claim', async () => {
+    const {
+      service,
+      enrollmentRepository,
+      send,
+      reserveUtcDailySend,
+      releaseUtcDailySendReservation,
+    } = setup();
+
+    send.mockRejectedValueOnce(new Error('provider rejected the message'));
+
+    await service.process({ workspaceId, enrollmentId });
+
+    expect(reserveUtcDailySend).toHaveBeenCalledTimes(1);
+    expect(releaseUtcDailySendReservation).not.toHaveBeenCalled();
+    expect(enrollmentRepository.update).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: enrollmentId }),
+      expect.objectContaining({
+        status: SEQUENCE_ENROLLMENT_STATUSES.FAILED,
+        errorMessage: 'provider rejected the message',
+      }),
+    );
+  });
+
   it('reschedules against the actual mailbox send floor', async () => {
     const lastSendAt = new Date();
-    const { service, enrollmentRepository, send, getLastSendAt } = setup({
+    const {
+      service,
+      enrollmentRepository,
+      send,
+      getLastSendAt,
+      reserveUtcDailySend,
+    } = setup({
       currentSequence: {
         ...sequence,
         settings: {
@@ -441,6 +603,7 @@ describe('SequenceExecutorService', () => {
     await service.process({ workspaceId, enrollmentId });
 
     expect(send).not.toHaveBeenCalled();
+    expect(reserveUtcDailySend).not.toHaveBeenCalled();
     expect(enrollmentRepository.update).toHaveBeenCalledWith(
       expect.objectContaining({
         id: enrollmentId,
@@ -491,6 +654,67 @@ describe('SequenceExecutorService', () => {
 
     expect(send).not.toHaveBeenCalled();
     expect(enrollmentRepository.update).not.toHaveBeenCalled();
+  });
+
+  it('reschedules a recipient-mode email outside the receiver local window', async () => {
+    const recipientNow = new Date('2024-01-01T16:00:00.000Z');
+
+    jest.useFakeTimers({ now: recipientNow });
+
+    const { service, enrollmentRepository, send, acquireSendLock } = setup({
+      currentSequence: {
+        ...sequence,
+        settings: {
+          ...sequence.settings,
+          activeDays: [1],
+          windowStart: '09:00',
+          windowEnd: '17:00',
+          timezone: 'Europe/Helsinki',
+          sendWindowTimezoneMode: SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.RECIPIENT,
+        },
+      },
+      person: buildPerson(false, 'America/Los_Angeles'),
+    });
+
+    await service.process({ workspaceId, enrollmentId });
+
+    expect(send).not.toHaveBeenCalled();
+    expect(acquireSendLock).not.toHaveBeenCalled();
+    expect(enrollmentRepository.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: enrollmentId,
+        waitingOn: SEQUENCE_WAITING_ON.EMAIL_SCHEDULED,
+      }),
+      {
+        nextActionAt: new Date('2024-01-01T17:00:00.000Z'),
+      },
+    );
+  });
+
+  it('uses UTC as the executor fallback when the recipient timezone is unknown', async () => {
+    const recipientNow = new Date('2024-01-01T16:00:00.000Z');
+
+    jest.useFakeTimers({ now: recipientNow });
+
+    const { service, send, reserveUtcDailySend } = setup({
+      currentSequence: {
+        ...sequence,
+        settings: {
+          ...sequence.settings,
+          activeDays: [1],
+          windowStart: '09:00',
+          windowEnd: '17:00',
+          timezone: 'Europe/Helsinki',
+          sendWindowTimezoneMode: SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.RECIPIENT,
+        },
+      },
+      person: buildPerson(false, null),
+    });
+
+    await service.process({ workspaceId, enrollmentId });
+
+    expect(reserveUtcDailySend).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledTimes(1);
   });
 
   it('creates the task and advances the enrollment in one transaction', async () => {
@@ -604,6 +828,37 @@ describe('SequenceExecutorService', () => {
         }),
       }),
     );
+  });
+
+  it('renders spintax before putting a draft into a manual email task', async () => {
+    const manualEmailStep = {
+      ...step,
+      settings: {
+        ...step.settings,
+        subject: '{Hi|Hello} {{firstName}}',
+        bodyHtml: '<p>{Quick|Short} note for {{firstName}}</p>',
+        executionMode: SEQUENCE_ACTION_EXECUTION_MODES.MANUAL,
+        manualTaskTitle: '',
+        manualTaskDescription: '',
+      },
+    } as SequenceStepWorkspaceEntity;
+    const { service, createTask, send } = setup({
+      currentEnrollment: {
+        ...enrollment,
+        waitingOn: SEQUENCE_WAITING_ON.DELAY,
+      },
+      steps: [manualEmailStep],
+    });
+
+    await service.process({ workspaceId, enrollmentId });
+
+    expect(send).not.toHaveBeenCalled();
+    const notesTemplate = createTask.mock.calls[0][0].settings.notesTemplate;
+
+    expect(notesTemplate).toMatch(
+      /^Recipient: \{\{ email \}\}\n\nSubject: (Hi|Hello) \{\{firstName\}\}\n\nDraft:\n<p>(Quick|Short) note for \{\{firstName\}\}<\/p>$/,
+    );
+    expect(notesTemplate).not.toContain('|');
   });
 
   it('does not create a manual email task for an opted-out person', async () => {

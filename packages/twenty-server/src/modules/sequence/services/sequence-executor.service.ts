@@ -25,8 +25,9 @@ import {
   type SequenceSettings,
   type SequenceWithdrawConnectionRequestStepSettings,
 } from 'twenty-shared/types';
-import { isDefined } from 'twenty-shared/utils';
+import { isDefined, renderSpintax } from 'twenty-shared/utils';
 import {
+  Equal,
   ILike,
   In,
   IsNull,
@@ -71,6 +72,7 @@ import { SequenceWorkspaceEntity } from 'src/modules/sequence/standard-objects/s
 import { findNextSequenceStep } from 'src/modules/sequence/utils/find-next-sequence-step.util';
 import { parseSequenceSettings } from 'src/modules/sequence/utils/parse-sequence-settings.util';
 import { renderSequenceTemplate } from 'src/modules/sequence/utils/render-sequence-template.util';
+import { resolveSequenceEmailWindowSettings } from 'src/modules/sequence/utils/resolve-sequence-email-window-settings.util';
 import {
   isWithinSendingWindow,
   nextWindowOpen,
@@ -658,6 +660,10 @@ export class SequenceExecutorService {
       return;
     }
 
+    const spintaxSeed = `${enrollment.id}:${step.id}:control`;
+    const subject = renderSpintax(settings.subject, `${spintaxSeed}:subject`);
+    const bodyHtml = renderSpintax(settings.bodyHtml, `${spintaxSeed}:body`);
+
     await this.processManualActionStep({
       workspaceId,
       enrollmentRepository,
@@ -667,7 +673,7 @@ export class SequenceExecutorService {
       settings,
       taskType: SEQUENCE_TASK_TYPES.EMAIL,
       defaultTitle: 'Send email to {{ fullName }}',
-      defaultNotes: `Recipient: {{ email }}\n\nSubject: ${settings.subject}\n\nDraft:\n${settings.bodyHtml}`,
+      defaultNotes: `Recipient: {{ email }}\n\nSubject: ${subject}\n\nDraft:\n${bodyHtml}`,
     });
   }
 
@@ -2087,6 +2093,15 @@ export class SequenceExecutorService {
     steps: SequenceStepWorkspaceEntity[];
     settings: SequenceEmailStepSettings;
   }): Promise<void> {
+    const effectiveSequenceSettings = resolveSequenceEmailWindowSettings({
+      settings: sequenceSettings,
+      recipientTimeZone: person.timeZone,
+    });
+
+    if (effectiveSequenceSettings.activeDays.length === 0) {
+      return;
+    }
+
     if (person.emailOptOut) {
       await this.failEnrollment({
         enrollmentRepository,
@@ -2164,7 +2179,7 @@ export class SequenceExecutorService {
     const windowEligibleAt = this.getNextEligibleSendAt({
       now,
       lastSendAt: null,
-      settings: sequenceSettings,
+      settings: effectiveSequenceSettings,
     });
 
     if (windowEligibleAt.getTime() > now.getTime()) {
@@ -2189,6 +2204,21 @@ export class SequenceExecutorService {
     }
 
     try {
+      if (!isDefined(enrollment.senderConnectedAccountId)) {
+        const senderAssignmentResult = await enrollmentRepository.update(
+          {
+            id: enrollment.id,
+            status: SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
+            senderConnectedAccountId: IsNull(),
+          },
+          { senderConnectedAccountId: connectedAccountId },
+        );
+
+        if (senderAssignmentResult.affected !== 1) {
+          return;
+        }
+      }
+
       const lastSendAt =
         await this.sequenceMailboxThrottleService.getLastSendAt({
           workspaceId,
@@ -2198,7 +2228,7 @@ export class SequenceExecutorService {
       const sendAt = this.getNextEligibleSendAt({
         now,
         lastSendAt,
-        settings: sequenceSettings,
+        settings: effectiveSequenceSettings,
       });
 
       if (sendAt.getTime() > now.getTime()) {
@@ -2212,7 +2242,29 @@ export class SequenceExecutorService {
         return;
       }
 
-      const attemptedAt = now.toISOString();
+      const sendAttemptAt = new Date();
+      const dailySendReservation =
+        await this.sequenceMailboxThrottleService.reserveUtcDailySend({
+          workspaceId,
+          mailboxId: connectedAccountId,
+          now: sendAttemptAt,
+        });
+
+      if (!isDefined(dailySendReservation)) {
+        await this.rescheduleEmail({
+          enrollmentRepository,
+          enrollment,
+          nextActionAt: this.getNextUtcDailyLimitResetAt({
+            now: sendAttemptAt,
+            settings: effectiveSequenceSettings,
+          }),
+          now: sendAttemptAt,
+        });
+
+        return;
+      }
+
+      const attemptedAt = sendAttemptAt.toISOString();
       const claimResult = await enrollmentRepository.update(
         {
           id: enrollment.id,
@@ -2222,13 +2274,13 @@ export class SequenceExecutorService {
             ? enrollment.currentStepId
             : IsNull(),
           waitingOn: SEQUENCE_WAITING_ON.EMAIL_SCHEDULED,
-          nextActionAt: LessThanOrEqual(now),
+          nextActionAt: LessThanOrEqual(sendAttemptAt),
         },
         {
           currentStepId: step.id,
           waitingOn: SEQUENCE_WAITING_ON.EMAIL_SCHEDULED,
           nextActionAt: new Date(
-            now.getTime() + SEQUENCE_SEND_ATTEMPT_LEASE_MILLISECONDS,
+            sendAttemptAt.getTime() + SEQUENCE_SEND_ATTEMPT_LEASE_MILLISECONDS,
           ),
           stopOnReply: settings.stopOnReply ?? sequenceSettings.stopOnReply,
           lastSendAttempt: {
@@ -2239,13 +2291,21 @@ export class SequenceExecutorService {
       );
 
       if (claimResult.affected !== 1) {
+        await this.sequenceMailboxThrottleService.releaseUtcDailySendReservation(
+          {
+            workspaceId,
+            mailboxId: connectedAccountId,
+            usageDate: dailySendReservation.usageDate,
+          },
+        );
+
         return;
       }
 
       await this.sequenceMailboxThrottleService.setLastSendAt({
         workspaceId,
         mailboxId: connectedAccountId,
-        date: now,
+        date: sendAttemptAt,
       });
 
       try {
@@ -2259,32 +2319,20 @@ export class SequenceExecutorService {
           connectedAccountId,
         });
         const sentAt = new Date().toISOString();
-        const updatedSentEmailsByStepId: Record<
-          string,
-          SequenceSentEmailMetadata
-        > = {
-          ...sentEmailsByStepId,
-          [step.id]: {
+        await this.persistSuccessfulEmailSend({
+          enrollmentRepository,
+          enrollment,
+          step,
+          initialSentEmailsByStepId: sentEmailsByStepId,
+          sentEmailMetadata: {
             headerMessageId: sendResult.headerMessageId,
             threadExternalId: sendResult.threadExternalId,
             sentAt,
+            variantId: sendResult.variantId,
+            variantName: sendResult.variantName,
+            connectedAccountId,
           },
-        };
-
-        await enrollmentRepository.update(
-          {
-            id: enrollment.id,
-            status: SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
-            currentStepPosition: enrollment.currentStepPosition,
-            currentStepId: step.id,
-          },
-          {
-            currentStepPosition: step.position,
-            sentEmailsByStepId: updatedSentEmailsByStepId,
-            waitingOn: SEQUENCE_WAITING_ON.DELAY,
-            nextActionAt: new Date(),
-          },
-        );
+        });
       } catch (error) {
         const errorMessage = this.toErrorMessage(error);
 
@@ -2341,6 +2389,89 @@ export class SequenceExecutorService {
     );
   }
 
+  private async persistSuccessfulEmailSend({
+    enrollmentRepository,
+    enrollment,
+    step,
+    initialSentEmailsByStepId,
+    sentEmailMetadata,
+  }: {
+    enrollmentRepository: WorkspaceRepository<SequenceEnrollmentWorkspaceEntity>;
+    enrollment: SequenceEnrollmentWorkspaceEntity;
+    step: SequenceStepWorkspaceEntity;
+    initialSentEmailsByStepId: Record<string, SequenceSentEmailMetadata>;
+    sentEmailMetadata: SequenceSentEmailMetadata;
+  }): Promise<void> {
+    let expectedSentEmailsByStepId = initialSentEmailsByStepId;
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const nextSentEmailsByStepId = {
+        ...expectedSentEmailsByStepId,
+        [step.id]: sentEmailMetadata,
+      };
+      const advanceResult = await enrollmentRepository.update(
+        {
+          id: enrollment.id,
+          status: SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
+          currentStepPosition: enrollment.currentStepPosition,
+          currentStepId: step.id,
+          sentEmailsByStepId: Equal(expectedSentEmailsByStepId),
+        },
+        {
+          currentStepPosition: step.position,
+          sentEmailsByStepId: nextSentEmailsByStepId,
+          waitingOn: SEQUENCE_WAITING_ON.DELAY,
+          nextActionAt: new Date(),
+        },
+      );
+
+      if (advanceResult.affected === 1) {
+        return;
+      }
+
+      const currentEnrollment = await enrollmentRepository.findOne({
+        where: { id: enrollment.id },
+        select: {
+          id: true,
+          status: true,
+          currentStepId: true,
+          currentStepPosition: true,
+          sentEmailsByStepId: true,
+        },
+      });
+
+      if (!isDefined(currentEnrollment)) {
+        throw new Error('Sequence enrollment disappeared after email send');
+      }
+
+      if (isDefined(currentEnrollment.sentEmailsByStepId?.[step.id])) {
+        return;
+      }
+
+      expectedSentEmailsByStepId = currentEnrollment.sentEmailsByStepId ?? {};
+
+      if (currentEnrollment.status !== SEQUENCE_ENROLLMENT_STATUSES.ACTIVE) {
+        const nextMetadataOnlySentEmailsByStepId = {
+          ...expectedSentEmailsByStepId,
+          [step.id]: sentEmailMetadata,
+        };
+        const metadataOnlyResult = await enrollmentRepository.update(
+          {
+            id: enrollment.id,
+            sentEmailsByStepId: Equal(expectedSentEmailsByStepId),
+          },
+          { sentEmailsByStepId: nextMetadataOnlySentEmailsByStepId },
+        );
+
+        if (metadataOnlyResult.affected === 1) {
+          return;
+        }
+      }
+    }
+
+    throw new Error('Could not persist sequence email send attribution');
+  }
+
   private getNextEligibleSendAt({
     now,
     lastSendAt,
@@ -2362,6 +2493,22 @@ export class SequenceExecutorService {
     return isWithinSendingWindow(candidate, settings)
       ? candidate
       : nextWindowOpen(candidate, settings);
+  }
+
+  private getNextUtcDailyLimitResetAt({
+    now,
+    settings,
+  }: {
+    now: Date;
+    settings: SequenceSettings;
+  }): Date {
+    const resetAt = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1),
+    );
+
+    return isWithinSendingWindow(resetAt, settings)
+      ? resetAt
+      : nextWindowOpen(resetAt, settings);
   }
 
   private isManualExecution(
