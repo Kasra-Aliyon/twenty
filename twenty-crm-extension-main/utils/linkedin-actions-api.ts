@@ -244,7 +244,6 @@ export const reportAction = async (
     status: Extract<LinkedInActionStatus, 'COMPLETED' | 'SKIPPED' | 'FAILED'>;
     connectionState: LinkedInConnectionState;
     errorMessage?: string | null;
-    executedAt?: string;
   },
 ): Promise<TwentyLinkedInAction | null> => {
   const result = await client.metadataRequest<{
@@ -257,7 +256,6 @@ export const reportAction = async (
       status: report.status,
       connectionState: report.connectionState,
       errorMessage: report.errorMessage ?? null,
-      executedAt: report.executedAt ?? new Date().toISOString(),
     },
   });
   const action = result.data?.reportSequenceLinkedinAction;

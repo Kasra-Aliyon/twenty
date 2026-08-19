@@ -19,6 +19,8 @@ import {
 } from 'src/modules/sequence/sequence.constants';
 import { type SequenceEnrollmentWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence-enrollment.workspace-entity';
 
+const SEQUENCE_MAILBOX_PACING_HISTORY_FALLBACK_LIMIT = 100;
+
 @Injectable()
 export class SequenceMailboxThrottleService {
   constructor(
@@ -97,11 +99,25 @@ export class SequenceMailboxThrottleService {
     });
     const durableTimestamp =
       connectedAccount?.sequenceEmailLastSendAt?.getTime() ?? 0;
+    const authoritativeTimestamp = Math.max(
+      Number.isNaN(cachedTimestamp) ? 0 : cachedTimestamp,
+      durableTimestamp,
+    );
 
-    const enrollments = await enrollmentRepository.find({
-      where: { senderConnectedAccountId: mailboxId },
-      select: { lastSendAttempt: true, sentEmailsByStepId: true },
-    });
+    // Current claims and provider starts update the connected-account
+    // watermark under its row lock. Enrollment history is only a bounded
+    // compatibility fallback for accounts created before that watermark
+    // existed; scanning every historical JSON payload made this hot path grow
+    // without bound.
+    const enrollments =
+      authoritativeTimestamp === 0
+        ? await enrollmentRepository.find({
+            where: { senderConnectedAccountId: mailboxId },
+            select: { lastSendAttempt: true, sentEmailsByStepId: true },
+            order: { updatedAt: 'DESC' },
+            take: SEQUENCE_MAILBOX_PACING_HISTORY_FALLBACK_LIMIT,
+          })
+        : [];
     const mostRecentTimestamp = enrollments.reduce(
       (latestTimestamp, enrollment) => {
         const enrollmentLatestTimestamp = Object.values(
@@ -126,10 +142,7 @@ export class SequenceMailboxThrottleService {
           Number.isNaN(sendAttemptTimestamp) ? 0 : sendAttemptTimestamp,
         );
       },
-      Math.max(
-        Number.isNaN(cachedTimestamp) ? 0 : cachedTimestamp,
-        durableTimestamp,
-      ),
+      authoritativeTimestamp,
     );
 
     if (mostRecentTimestamp === 0) {
@@ -289,6 +302,29 @@ export class SequenceMailboxThrottleService {
          AND "workspaceId" = $2
          AND "sequenceDailyEmailUsageDate" = $3::date
          AND "sequenceDailyEmailUsageCount" > 0
+         AND "sequenceDailyEmailReservationTokens" ? $4::text`,
+      [mailboxId, workspaceId, usageDate, reservationToken],
+    );
+  }
+
+  async consumeUtcDailySendReservation({
+    workspaceId,
+    mailboxId,
+    reservationToken,
+    usageDate,
+  }: {
+    workspaceId: string;
+    mailboxId: string;
+    reservationToken: string;
+    usageDate: string;
+  }): Promise<void> {
+    await this.connectedAccountRepository.query(
+      `UPDATE "core"."connectedAccount"
+       SET "sequenceDailyEmailReservationTokens" = "sequenceDailyEmailReservationTokens" - $4::text,
+           "updatedAt" = NOW()
+       WHERE "id" = $1
+         AND "workspaceId" = $2
+         AND "sequenceDailyEmailUsageDate" = $3::date
          AND "sequenceDailyEmailReservationTokens" ? $4::text`,
       [mailboxId, workspaceId, usageDate, reservationToken],
     );

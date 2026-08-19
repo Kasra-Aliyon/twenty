@@ -16,6 +16,11 @@ export class SequenceLinkedinActionReportInput {
   @Field(() => String, { nullable: true })
   errorMessage?: string | null;
 
-  @Field(() => GraphQLISODateTime, { nullable: true })
+  // Retained for compatibility with older runner versions. Provider start is
+  // established only by startSequenceLinkedinAction and this value is ignored.
+  @Field(() => GraphQLISODateTime, {
+    nullable: true,
+    deprecationReason: 'Provider start time is recorded by the server.',
+  })
   executedAt?: Date;
 }

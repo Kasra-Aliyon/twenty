@@ -3,6 +3,9 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { SettingsOutreachMailboxLimits } from '@/settings/outreach/components/SettingsOutreachMailboxLimits';
 
 const mockUpdateSettings = jest.fn();
+const mockIsSequenceEmailSenderAccountReady = jest.fn(
+  (_account: unknown) => true,
+);
 
 jest.mock('@/settings/accounts/hooks/useMyConnectedAccounts', () => {
   const accounts = [
@@ -20,7 +23,8 @@ jest.mock('@/settings/accounts/hooks/useMyConnectedAccounts', () => {
 });
 
 jest.mock('@/sequence/utils/isSequenceSenderAccount', () => ({
-  isSequenceSenderAccount: () => true,
+  isSequenceEmailSenderAccountReady: (account: unknown) =>
+    mockIsSequenceEmailSenderAccountReady(account),
 }));
 
 jest.mock('@apollo/client/react', () => ({
@@ -88,6 +92,7 @@ describe('SettingsOutreachMailboxLimits', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockUpdateSettings.mockResolvedValue({});
+    mockIsSequenceEmailSenderAccountReady.mockReturnValue(true);
   });
 
   it('saves the enabled state and validated mailbox limit', async () => {
@@ -112,5 +117,15 @@ describe('SettingsOutreachMailboxLimits', () => {
         },
       });
     });
+  });
+
+  it('does not offer limits for a mailbox that cannot currently send', () => {
+    mockIsSequenceEmailSenderAccountReady.mockReturnValue(false);
+
+    render(<SettingsOutreachMailboxLimits />);
+
+    expect(
+      screen.queryByTestId('mailbox-limit-toggle'),
+    ).not.toBeInTheDocument();
   });
 });

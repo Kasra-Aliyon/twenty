@@ -9,6 +9,10 @@ import { CommonQueryNames } from 'src/engine/api/common/types/common-query-args.
 import { type WorkspaceQueryHookKey } from 'src/engine/api/graphql/workspace-query-runner/workspace-query-hook/decorators/workspace-query-hook.decorator';
 import { WorkspaceQueryHookStorage } from 'src/engine/api/graphql/workspace-query-runner/workspace-query-hook/storage/workspace-query-hook.storage';
 import { type WorkspacePreQueryHookPayload } from 'src/engine/api/graphql/workspace-query-runner/workspace-query-hook/types/workspace-query-hook.type';
+import {
+  markWorkspaceQueryForTransaction,
+  shouldRunWorkspaceQueryInTransaction,
+} from 'src/engine/api/graphql/workspace-query-runner/workspace-query-hook/utils/workspace-query-hook-transaction.util';
 import { WorkspaceQueryHookExplorer } from 'src/engine/api/graphql/workspace-query-runner/workspace-query-hook/workspace-query-hook.explorer';
 import { type WorkspaceAuthContext } from 'src/engine/core-modules/auth/types/workspace-auth-context.type';
 import { type WorkspaceEntityManager } from 'src/engine/twenty-orm/entity-manager/workspace-entity-manager';
@@ -49,6 +53,13 @@ export class WorkspaceQueryHookService {
 
       // TODO: Is it really a good idea ?
       payload = merge(payload, hookPayload);
+
+      // Symbols are intentionally not copied by lodash.merge. Propagate the
+      // transaction marker explicitly when a hook returns a fresh payload so
+      // its transactional recheck cannot be silently skipped.
+      if (shouldRunWorkspaceQueryInTransaction(hookPayload)) {
+        markWorkspaceQueryForTransaction(payload);
+      }
     }
 
     return payload;

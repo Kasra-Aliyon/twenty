@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { Injectable } from '@nestjs/common';
 
 import {
@@ -115,9 +117,9 @@ export class SequenceLinkedinThrottleService {
       );
     }
 
-    const lockAcquired = await this.acquireLock(lockKey);
+    const lockToken = await this.acquireLock(lockKey);
 
-    if (!lockAcquired) {
+    if (!isDefined(lockToken)) {
       throw new Error('Could not acquire the LinkedIn sequence throttle lock');
     }
 
@@ -163,15 +165,17 @@ export class SequenceLinkedinThrottleService {
             withDeleted: true,
           })
         : null;
-      const usableCachedLastActionTimestamp =
+      const isCachedActionUsable =
         isDefined(cachedAction) &&
-        cachedAction.status !== LINKEDIN_ACTION_STATUSES.CANCELLED
-          ? cachedLastActionTimestamp
-          : Number.NaN;
+        cachedAction.status !== LINKEDIN_ACTION_STATUSES.CANCELLED;
+      const usableCachedLastActionTimestamp = isCachedActionUsable
+        ? cachedLastActionTimestamp
+        : Number.NaN;
       const persistedActionAtOrBeforeNowTimestamp =
         latestPersistedActionAtOrBeforeNow?.scheduledAt?.getTime() ??
         Number.NaN;
       const patternIndex =
+        isCachedActionUsable &&
         typeof patternIndexValue === 'number' &&
         Number.isInteger(patternIndexValue) &&
         patternIndexValue >= 0
@@ -296,7 +300,7 @@ export class SequenceLinkedinThrottleService {
 
       return candidate;
     } finally {
-      await this.cacheStorageService.releaseLock(lockKey);
+      await this.cacheStorageService.releaseLockWithToken(lockKey, lockToken);
     }
   }
 
@@ -540,19 +544,22 @@ export class SequenceLinkedinThrottleService {
     });
   }
 
-  private async acquireLock(lockKey: string): Promise<boolean> {
+  private async acquireLock(lockKey: string): Promise<string | null> {
+    const lockToken = randomUUID();
+
     for (
       let attempt = 0;
       attempt < LINKEDIN_THROTTLE_LOCK_RETRY_COUNT;
       attempt += 1
     ) {
       if (
-        await this.cacheStorageService.acquireLock(
+        await this.cacheStorageService.acquireLockWithToken(
           lockKey,
+          lockToken,
           SEQUENCE_LINKEDIN_ACTION_LOCK_TTL,
         )
       ) {
-        return true;
+        return lockToken;
       }
 
       await new Promise((resolve) =>
@@ -560,7 +567,7 @@ export class SequenceLinkedinThrottleService {
       );
     }
 
-    return false;
+    return null;
   }
 
   // Cycling the pattern keeps the long-run average equal to the configured

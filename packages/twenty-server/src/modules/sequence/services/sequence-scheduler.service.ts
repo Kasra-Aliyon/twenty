@@ -52,6 +52,7 @@ import { SequenceEnrollmentWorkspaceEntity } from 'src/modules/sequence/standard
 import { SequenceStepWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence-step.workspace-entity';
 import { SequenceWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence.workspace-entity';
 import { TaskWorkspaceEntity } from 'src/modules/task/standard-objects/task.workspace-entity';
+import { dateAtMillisecondPrecisionFindOperator } from 'src/modules/sequence/utils/date-at-millisecond-precision-find-operator.util';
 import { findNextSequenceStep } from 'src/modules/sequence/utils/find-next-sequence-step.util';
 import { parseSequenceSettings } from 'src/modules/sequence/utils/parse-sequence-settings.util';
 import {
@@ -293,7 +294,9 @@ export class SequenceSchedulerService {
                   currentStepId: isDefined(enrollment.currentStepId)
                     ? enrollment.currentStepId
                     : IsNull(),
-                  updatedAt: enrollment.updatedAt,
+                  updatedAt: dateAtMillisecondPrecisionFindOperator(
+                    enrollment.updatedAt,
+                  ),
                   waitingOn: enrollment.waitingOn,
                   nextActionAt: LessThanOrEqual(now),
                 },
@@ -1119,7 +1122,7 @@ export class SequenceSchedulerService {
         currentStepId: isDefined(enrollment.currentStepId)
           ? enrollment.currentStepId
           : IsNull(),
-        updatedAt: enrollment.updatedAt,
+        updatedAt: dateAtMillisecondPrecisionFindOperator(enrollment.updatedAt),
       };
       const enrollmentActions = actionsByEnrollmentId.get(enrollment.id) ?? [];
       const stepActions = isDefined(enrollment.currentStepId)
@@ -1272,7 +1275,9 @@ export class SequenceSchedulerService {
               SEQUENCE_WAITING_ON.TASK_DONE,
               SEQUENCE_WAITING_ON.TASK_DEADLINE,
             ]),
-            updatedAt: enrollment.updatedAt,
+            updatedAt: dateAtMillisecondPrecisionFindOperator(
+              enrollment.updatedAt,
+            ),
           },
           {
             status: SEQUENCE_ENROLLMENT_STATUSES.FAILED,
@@ -1316,7 +1321,9 @@ export class SequenceSchedulerService {
               SEQUENCE_WAITING_ON.TASK_DONE,
               SEQUENCE_WAITING_ON.TASK_DEADLINE,
             ]),
-            updatedAt: enrollment.updatedAt,
+            updatedAt: dateAtMillisecondPrecisionFindOperator(
+              enrollment.updatedAt,
+            ),
           },
           {
             status: SEQUENCE_ENROLLMENT_STATUSES.FAILED,
@@ -1342,7 +1349,9 @@ export class SequenceSchedulerService {
             SEQUENCE_WAITING_ON.TASK_DONE,
             SEQUENCE_WAITING_ON.TASK_DEADLINE,
           ]),
-          updatedAt: enrollment.updatedAt,
+          updatedAt: dateAtMillisecondPrecisionFindOperator(
+            enrollment.updatedAt,
+          ),
         },
         { updatedAt: now.toISOString() },
       );

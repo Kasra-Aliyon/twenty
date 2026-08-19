@@ -14,6 +14,7 @@ import { SequenceLinkedinThrottleService } from 'src/modules/sequence/services/s
 import {
   DEFAULT_SEQUENCE_SETTINGS,
   SEQUENCE_LINKEDIN_LAST_ACTION_AT_CACHE_KEY_PREFIX,
+  SEQUENCE_LINKEDIN_PATTERN_INDEX_CACHE_KEY_PREFIX,
   SEQUENCE_EXECUTION_ERROR,
 } from 'src/modules/sequence/sequence.constants';
 import { isWithinSendingWindow } from 'src/modules/sequence/utils/sequence-window.util';
@@ -28,8 +29,8 @@ describe('SequenceLinkedinThrottleService', () => {
   }: { isTransactionActive?: boolean } = {}) => {
     const values = new Map<string, unknown>();
     const cacheStorageService = {
-      acquireLock: jest.fn().mockResolvedValue(true),
-      releaseLock: jest.fn(),
+      acquireLockWithToken: jest.fn().mockResolvedValue(true),
+      releaseLockWithToken: jest.fn().mockResolvedValue(true),
       get: jest.fn(async (key: string) => values.get(key)),
       set: jest.fn(
         async (key: string, value: unknown) => void values.set(key, value),
@@ -253,6 +254,29 @@ describe('SequenceLinkedinThrottleService', () => {
 
   afterEach(() => {
     jest.restoreAllMocks();
+  });
+
+  it('releases only the exact Redis lock token it acquired', async () => {
+    const { cacheStorageService, service, transactionManager } = buildService();
+
+    await service.reserveSlot({
+      workspaceId,
+      ownerWorkspaceMemberId,
+      settings: buildSettings(),
+      now: new Date('2026-07-20T09:00:00.000Z'),
+      transactionManager,
+    });
+
+    const acquireLockWithToken = jest.mocked(
+      cacheStorageService.acquireLockWithToken,
+    );
+    const releaseLockWithToken = jest.mocked(
+      cacheStorageService.releaseLockWithToken,
+    );
+    const [lockKey, lockToken] = acquireLockWithToken.mock.calls[0];
+
+    expect(lockToken).toEqual(expect.any(String));
+    expect(releaseLockWithToken).toHaveBeenCalledWith(lockKey, lockToken);
   });
 
   it('keeps consecutive delays when only the daily cap is disabled', async () => {
@@ -1365,15 +1389,19 @@ describe('SequenceLinkedinThrottleService', () => {
     const cachedLastActionKey =
       `${SEQUENCE_LINKEDIN_LAST_ACTION_AT_CACHE_KEY_PREFIX}:` +
       `${workspaceId}:${ownerWorkspaceMemberId}`;
+    const cachedPatternIndexKey =
+      `${SEQUENCE_LINKEDIN_PATTERN_INDEX_CACHE_KEY_PREFIX}:` +
+      `${workspaceId}:${ownerWorkspaceMemberId}`;
 
     values.set(cachedLastActionKey, '2026-07-27T09:15:00.000Z');
+    values.set(cachedPatternIndexKey, 1);
     linkedinActionRepository.findOne.mockResolvedValue(null);
 
     const slot = await service.reserveSlot({
       workspaceId,
       ownerWorkspaceMemberId,
       settings: buildSettings({
-        linkedinDelayPatternMinutes: [15],
+        linkedinDelayPatternMinutes: [15, 30],
       }),
       now: new Date('2026-07-20T09:00:00.000Z'),
       transactionManager,

@@ -295,6 +295,7 @@ describe('SequenceExecutorService', () => {
         : null,
     );
     const releaseUtcDailySendReservation = jest.fn();
+    const consumeUtcDailySendReservation = jest.fn();
     const sequenceMailboxThrottleService = {
       acquireSendLock,
       renewSendLock,
@@ -304,6 +305,7 @@ describe('SequenceExecutorService', () => {
       recordEmailSendClaimWatermark,
       reserveUtcDailySend,
       releaseUtcDailySendReservation,
+      consumeUtcDailySendReservation,
     } as unknown as SequenceMailboxThrottleService;
     const reserveSlot = jest.fn().mockResolvedValue(new Date());
     const sequenceLinkedinThrottleService = {
@@ -395,6 +397,7 @@ describe('SequenceExecutorService', () => {
       recordEmailSendClaimWatermark,
       reserveUtcDailySend,
       releaseUtcDailySendReservation,
+      consumeUtcDailySendReservation,
       linkedinActionRepository,
       linkedinConnectionRepository,
       linkedinMessageRepository,
@@ -423,6 +426,7 @@ describe('SequenceExecutorService', () => {
       sequenceRepository,
       send,
       reserveUtcDailySend,
+      consumeUtcDailySendReservation,
       recordEmailSendClaimWatermark,
       transactionManager,
     } = setup();
@@ -472,6 +476,12 @@ describe('SequenceExecutorService', () => {
       workspaceId,
       mailboxId: 'connected-account-id',
       date: expect.any(Date),
+    });
+    expect(consumeUtcDailySendReservation).toHaveBeenCalledWith({
+      workspaceId,
+      mailboxId: 'connected-account-id',
+      reservationToken: 'daily-reservation-token',
+      usageDate: expect.any(String),
     });
     expect(
       enrollmentRepository.update.mock.invocationCallOrder[1],
@@ -1244,6 +1254,26 @@ describe('SequenceExecutorService', () => {
         }),
       }),
     );
+  });
+
+  it('continues a provider-started email when reservation token cleanup fails', async () => {
+    const cleanupError = new Error('reservation token cleanup unavailable');
+    const {
+      service,
+      consumeUtcDailySendReservation,
+      releaseUtcDailySendReservation,
+      send,
+    } = setup();
+
+    consumeUtcDailySendReservation.mockRejectedValueOnce(cleanupError);
+
+    await expect(
+      service.process({ workspaceId, enrollmentId }),
+    ).resolves.toBeUndefined();
+
+    expect(consumeUtcDailySendReservation).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(releaseUtcDailySendReservation).not.toHaveBeenCalled();
   });
 
   it('immediately restores an unstarted email claim when the outer core transaction rejects after the workspace commit', async () => {

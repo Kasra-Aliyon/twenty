@@ -70,8 +70,7 @@ describe('SequenceMailboxThrottleService', () => {
     );
   });
 
-  it('uses an in-flight database send attempt over an older cache watermark', async () => {
-    cacheGet.mockResolvedValueOnce('2026-08-17T09:00:00.000Z');
+  it('uses bounded enrollment history when no durable pacing watermark exists', async () => {
     const enrollmentRepository = {
       find: jest.fn().mockResolvedValueOnce([
         {
@@ -95,11 +94,30 @@ describe('SequenceMailboxThrottleService', () => {
     expect(enrollmentRepository.find).toHaveBeenCalledWith({
       where: { senderConnectedAccountId: 'mailbox-id' },
       select: { lastSendAttempt: true, sentEmailsByStepId: true },
+      order: { updatedAt: 'DESC' },
+      take: 100,
     });
   });
 
+  it('does not scan enrollment history on the durable pacing hot path', async () => {
+    const durableWatermark = new Date('2026-08-17T09:07:00.000Z');
+    connectedAccountFindOne.mockResolvedValueOnce({
+      sequenceEmailLastSendAt: durableWatermark,
+    });
+    const enrollmentRepository = { find: jest.fn() };
+
+    await expect(
+      service.getLastSendAt({
+        workspaceId: 'workspace-id',
+        mailboxId: 'mailbox-id',
+        enrollmentRepository: enrollmentRepository as never,
+      }),
+    ).resolves.toEqual(durableWatermark);
+
+    expect(enrollmentRepository.find).not.toHaveBeenCalled();
+  });
+
   it('does not pace healthy sends from compensated pre-provider attempts', async () => {
-    cacheGet.mockResolvedValueOnce('2026-08-17T09:00:00.000Z');
     const enrollmentRepository = {
       find: jest.fn().mockResolvedValueOnce([
         {
@@ -122,6 +140,14 @@ describe('SequenceMailboxThrottleService', () => {
           },
           sentEmailsByStepId: {},
         },
+        {
+          lastSendAttempt: null,
+          sentEmailsByStepId: {
+            'legacy-step-id': {
+              sentAt: '2026-08-17T09:00:00.000Z',
+            },
+          },
+        },
       ]),
     };
 
@@ -139,9 +165,7 @@ describe('SequenceMailboxThrottleService', () => {
     connectedAccountFindOne.mockResolvedValueOnce({
       sequenceEmailLastSendAt: durableWatermark,
     });
-    const enrollmentRepository = {
-      find: jest.fn().mockResolvedValueOnce([]),
-    };
+    const enrollmentRepository = { find: jest.fn() };
 
     await expect(
       service.getLastSendAt({
@@ -160,6 +184,7 @@ describe('SequenceMailboxThrottleService', () => {
       durableWatermark.toISOString(),
       expect.any(Number),
     );
+    expect(enrollmentRepository.find).not.toHaveBeenCalled();
   });
 
   it('records a monotonic pacing watermark through the account-lock transaction', async () => {
@@ -238,6 +263,30 @@ describe('SequenceMailboxThrottleService', () => {
     expect(sql).toContain('END < "sequenceDailyEmailLimit"');
     expect(sql).toContain('"sequenceDailyEmailReservationTokens"');
     expect(sql).toContain('jsonb_build_array($4::text)');
+  });
+
+  it('removes a consumed reservation token without decrementing daily usage', async () => {
+    query.mockResolvedValueOnce([]);
+
+    await service.consumeUtcDailySendReservation({
+      workspaceId: 'workspace-id',
+      mailboxId: 'mailbox-id',
+      reservationToken: 'reservation-token',
+      usageDate: '2026-08-17',
+    });
+
+    const [sql, parameters] = query.mock.calls[0] as [string, unknown[]];
+
+    expect(parameters).toEqual([
+      'mailbox-id',
+      'workspace-id',
+      '2026-08-17',
+      'reservation-token',
+    ]);
+    expect(sql).toContain(
+      '"sequenceDailyEmailReservationTokens" = "sequenceDailyEmailReservationTokens" - $4::text',
+    );
+    expect(sql).not.toContain('"sequenceDailyEmailUsageCount" =');
   });
 
   it('returns no reservation when the atomic database predicate rejects the send', async () => {

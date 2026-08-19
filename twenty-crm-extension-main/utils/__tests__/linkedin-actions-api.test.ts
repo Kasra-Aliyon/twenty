@@ -290,7 +290,6 @@ describe('LinkedIn action reporting', () => {
         {
           status: 'COMPLETED',
           connectionState: 'PENDING',
-          executedAt: '2026-07-22T12:01:30.000Z',
         },
       ),
     ).resolves.toEqual(completedAction);
@@ -300,9 +299,11 @@ describe('LinkedIn action reporting', () => {
         actionId: 'action-id',
         claimedAt: '2026-07-22T12:01:00.000Z',
         claimedBy: 'extension-tab-42',
-        data: expect.objectContaining({
-          executedAt: '2026-07-22T12:01:30.000Z',
-        }),
+        data: {
+          status: 'COMPLETED',
+          connectionState: 'PENDING',
+          errorMessage: null,
+        },
       },
     );
     expect(graphqlRequest).not.toHaveBeenCalled();

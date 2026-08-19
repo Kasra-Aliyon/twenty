@@ -3806,6 +3806,28 @@ export class SequenceExecutorService {
             );
           }
 
+          const dailyReservation = claimedSend.sendAttempt.dailyReservation;
+
+          if (isDefined(dailyReservation)) {
+            try {
+              await this.sequenceMailboxThrottleService.consumeUtcDailySendReservation(
+                {
+                  workspaceId,
+                  mailboxId: connectedAccountId,
+                  reservationToken: dailyReservation.token,
+                  usageDate: dailyReservation.usageDate,
+                },
+              );
+            } catch (error) {
+              // The usage count is already durable. Removing its recovery
+              // token only bounds the per-day JSON list after the provider
+              // returns; a cleanup outage must not change send outcome.
+              this.logger.warn(
+                `Could not consume the daily reservation token for sequence enrollment ${enrollment.id}: ${this.toErrorMessage(error)}`,
+              );
+            }
+          }
+
           const sentEmailMetadata: SequenceSentEmailMetadata = {
             headerMessageId: sendResult.headerMessageId,
             threadExternalId: sendResult.threadExternalId,

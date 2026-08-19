@@ -1,7 +1,7 @@
 import { useMyConnectedAccounts } from '@/settings/accounts/hooks/useMyConnectedAccounts';
 import { SettingsCounter } from '@/settings/components/SettingsCounter';
 import { UPDATE_CONNECTED_ACCOUNT_SEQUENCE_EMAIL_SETTINGS } from '@/settings/accounts/graphql/mutations/updateConnectedAccountSequenceEmailSettings';
-import { isSequenceSenderAccount } from '@/sequence/utils/isSequenceSenderAccount';
+import { isSequenceEmailSenderAccountReady } from '@/sequence/utils/isSequenceSenderAccount';
 import { useSnackBar } from '@/ui/feedback/snack-bar-manager/hooks/useSnackBar';
 import { useMutation } from '@apollo/client/react';
 import { styled } from '@linaria/react';
@@ -46,7 +46,7 @@ export const SettingsOutreachMailboxLimits = () => {
   >({});
   const [isSaving, setIsSaving] = useState(false);
   const senderAccounts = useMemo(
-    () => accounts.filter(isSequenceSenderAccount),
+    () => accounts.filter(isSequenceEmailSenderAccountReady),
     [accounts],
   );
 

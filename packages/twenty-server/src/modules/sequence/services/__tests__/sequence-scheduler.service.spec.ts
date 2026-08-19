@@ -39,6 +39,13 @@ import { TaskWorkspaceEntity } from 'src/modules/task/standard-objects/task.work
 describe('SequenceSchedulerService', () => {
   const workspaceId = 'workspace-id';
   const now = new Date('2024-01-01T10:00:00.000Z');
+  const expectMillisecondPrecisionDateCondition = (date: Date | string) =>
+    expect.objectContaining({
+      _type: 'raw',
+      _objectLiteralParameters: {
+        snapshotUpdatedAt: new Date(date).toISOString(),
+      },
+    });
   const sequence = {
     id: 'sequence-id',
     status: SEQUENCE_STATUSES.ACTIVE,
@@ -1890,7 +1897,9 @@ describe('SequenceSchedulerService', () => {
         status: SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
         currentStepPosition: dueEnrollment.currentStepPosition,
         currentStepId: IsNull(),
-        updatedAt: dueEnrollment.updatedAt,
+        updatedAt: expectMillisecondPrecisionDateCondition(
+          dueEnrollment.updatedAt,
+        ),
         waitingOn: dueEnrollment.waitingOn,
         nextActionAt: expect.anything(),
       }),
@@ -1996,7 +2005,9 @@ describe('SequenceSchedulerService', () => {
       expect.objectContaining({
         id: 'waiting-id',
         currentStepId: waitingEnrollment.currentStepId,
-        updatedAt: waitingEnrollment.updatedAt,
+        updatedAt: expectMillisecondPrecisionDateCondition(
+          waitingEnrollment.updatedAt,
+        ),
       }),
       expect.objectContaining({
         waitingOn: SEQUENCE_WAITING_ON.DELAY,
@@ -2053,7 +2064,9 @@ describe('SequenceSchedulerService', () => {
         status: SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
         waitingOn: SEQUENCE_WAITING_ON.LINKEDIN_ACTION,
         currentStepId: waitingEnrollment.currentStepId,
-        updatedAt: waitingEnrollment.updatedAt,
+        updatedAt: expectMillisecondPrecisionDateCondition(
+          waitingEnrollment.updatedAt,
+        ),
       }),
       expect.objectContaining({
         waitingOn: SEQUENCE_WAITING_ON.DELAY,
@@ -2105,7 +2118,9 @@ describe('SequenceSchedulerService', () => {
       expect.objectContaining({
         id: waitingEnrollment.id,
         currentStepId: waitingEnrollment.currentStepId,
-        updatedAt: waitingEnrollment.updatedAt,
+        updatedAt: expectMillisecondPrecisionDateCondition(
+          waitingEnrollment.updatedAt,
+        ),
       }),
       { updatedAt: now.toISOString() },
     );
@@ -2288,7 +2303,9 @@ describe('SequenceSchedulerService', () => {
         status: SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
         waitingOn: SEQUENCE_WAITING_ON.LINKEDIN_ACTION,
         currentStepId: 'linkedin-step-id',
-        updatedAt: waitingEnrollment.updatedAt,
+        updatedAt: expectMillisecondPrecisionDateCondition(
+          waitingEnrollment.updatedAt,
+        ),
       }),
       { updatedAt: now.toISOString() },
     );
@@ -2506,7 +2523,9 @@ describe('SequenceSchedulerService', () => {
       expect.objectContaining({
         id: waitingEnrollment.id,
         currentStepId: waitingEnrollment.currentStepId,
-        updatedAt: waitingEnrollment.updatedAt,
+        updatedAt: expectMillisecondPrecisionDateCondition(
+          waitingEnrollment.updatedAt,
+        ),
       }),
       expect.objectContaining({
         status: SEQUENCE_ENROLLMENT_STATUSES.FAILED,
@@ -2534,7 +2553,9 @@ describe('SequenceSchedulerService', () => {
       expect.objectContaining({
         id: waitingEnrollment.id,
         currentStepId: IsNull(),
-        updatedAt: waitingEnrollment.updatedAt,
+        updatedAt: expectMillisecondPrecisionDateCondition(
+          waitingEnrollment.updatedAt,
+        ),
       }),
       expect.objectContaining({
         status: SEQUENCE_ENROLLMENT_STATUSES.FAILED,

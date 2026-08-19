@@ -706,7 +706,6 @@ export default defineContentScript({
           claimedAt: action.claimedAt,
           status: 'FAILED',
           connectionState: 'UNKNOWN',
-          executedAt: new Date().toISOString(),
           errorMessage:
             'The action did not contain a valid LinkedIn profile URL',
         });
@@ -736,7 +735,6 @@ export default defineContentScript({
           claimedAt: action.claimedAt,
           status: 'FAILED',
           connectionState: 'UNKNOWN',
-          executedAt: new Date(runnerState.activeActionStartedAt).toISOString(),
           errorMessage:
             'The runner tab reloaded or stopped after this action began, so its outcome is unknown.',
         });
@@ -949,10 +947,6 @@ export default defineContentScript({
             : action.claimedAt,
         status: result.status,
         connectionState: result.connectionState,
-        executedAt: new Date(
-          runnerState.activeActionStartedAt ??
-            (action.claimedAt ? Date.parse(action.claimedAt) : Date.now()),
-        ).toISOString(),
         errorMessage: result.status === 'FAILED' ? result.errorMessage : null,
       });
 

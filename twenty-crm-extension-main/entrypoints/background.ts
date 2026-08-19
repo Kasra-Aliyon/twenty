@@ -374,9 +374,6 @@ const handleLinkedinRunnerTabRemovedWithoutLock = async (
           connectionState: 'UNKNOWN',
           errorMessage:
             'The runner tab closed after this action began, so its outcome is unknown.',
-          executedAt: new Date(
-            runnerState.activeActionStartedAt ?? Date.now(),
-          ).toISOString(),
         },
       );
     } catch (error) {
@@ -1060,24 +1057,17 @@ async function handleMessage(
       }
 
       case 'REPORT_LINKEDIN_ACTION': {
-        const {
-          id,
-          claimedAt,
-          status,
-          connectionState,
-          errorMessage,
-          executedAt,
-        } = message.payload as {
-          id: string;
-          claimedAt: string;
-          status: Extract<
-            LinkedInActionStatus,
-            'COMPLETED' | 'SKIPPED' | 'FAILED'
-          >;
-          connectionState: LinkedInConnectionState;
-          errorMessage?: string | null;
-          executedAt?: string;
-        };
+        const { id, claimedAt, status, connectionState, errorMessage } =
+          message.payload as {
+            id: string;
+            claimedAt: string;
+            status: Extract<
+              LinkedInActionStatus,
+              'COMPLETED' | 'SKIPPED' | 'FAILED'
+            >;
+            connectionState: LinkedInConnectionState;
+            errorMessage?: string | null;
+          };
         const tabId = sender?.tab?.id;
 
         return await withLinkedinRunnerStateOperation(async () => {
@@ -1108,7 +1098,6 @@ async function handleMessage(
             status,
             connectionState,
             errorMessage,
-            executedAt,
           });
           const reportResolution = resolveRunnerActionReport({
             runnerState,
