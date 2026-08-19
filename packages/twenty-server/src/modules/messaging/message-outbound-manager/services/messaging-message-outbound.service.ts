@@ -25,6 +25,7 @@ export class MessagingMessageOutboundService {
   public async sendMessage(
     sendMessageInput: SendMessageInput,
     connectedAccount: ConnectedAccountEntity,
+    onProviderStart?: () => Promise<void>,
   ): Promise<SendMessageResult> {
     const resolvedSendMessageInput = await this.resolveSendMessageInput(
       sendMessageInput,
@@ -36,21 +37,25 @@ export class MessagingMessageOutboundService {
         return this.gmailMessageOutboundService.sendMessage(
           resolvedSendMessageInput,
           connectedAccount,
+          onProviderStart,
         );
       case ConnectedAccountProvider.MICROSOFT:
         return this.microsoftMessageOutboundService.sendMessage(
           resolvedSendMessageInput,
           connectedAccount,
+          onProviderStart,
         );
       case ConnectedAccountProvider.IMAP_SMTP_CALDAV:
         return this.imapSmtpMessageOutboundService.sendMessage(
           resolvedSendMessageInput,
           connectedAccount,
+          onProviderStart,
         );
       case ConnectedAccountProvider.EMAIL_GROUP:
         return this.emailGroupMessageOutboundService.sendMessage(
           resolvedSendMessageInput,
           connectedAccount,
+          onProviderStart,
         );
       case ConnectedAccountProvider.OIDC:
       case ConnectedAccountProvider.SAML:

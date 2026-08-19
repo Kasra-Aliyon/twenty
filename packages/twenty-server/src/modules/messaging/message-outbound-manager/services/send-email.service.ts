@@ -14,7 +14,10 @@ export class SendEmailService {
     private readonly sentMessagePersistenceService: SentMessagePersistenceService,
   ) {}
 
-  async sendComposedEmail(data: ComposedEmail): Promise<SendMessageResult> {
+  async sendComposedEmail(
+    data: ComposedEmail,
+    onProviderStart?: () => Promise<void>,
+  ): Promise<SendMessageResult> {
     return this.messageOutboundService.sendMessage(
       {
         to: data.recipients.to,
@@ -29,6 +32,7 @@ export class SendEmailService {
         references: data.references,
       },
       data.connectedAccount,
+      onProviderStart,
     );
   }
 

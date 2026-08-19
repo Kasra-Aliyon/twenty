@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 
 import MailComposer from 'nodemailer/lib/mail-composer';
@@ -21,6 +21,8 @@ import { toMailComposerOptions } from 'src/modules/messaging/message-outbound-ma
 
 @Injectable()
 export class ImapSmtpMessageOutboundService implements MessageOutboundDriver {
+  private readonly logger = new Logger(ImapSmtpMessageOutboundService.name);
+
   constructor(
     private readonly smtpClientProvider: SmtpClientProvider,
     private readonly imapClientProvider: ImapClientProvider,
@@ -34,6 +36,7 @@ export class ImapSmtpMessageOutboundService implements MessageOutboundDriver {
   async sendMessage(
     sendMessageInput: SendMessageInput,
     connectedAccount: ConnectedAccountEntity,
+    onProviderStart?: () => Promise<void>,
   ): Promise<SendMessageResult> {
     const { handle, connectionParameters } = connectedAccount;
 
@@ -48,6 +51,10 @@ export class ImapSmtpMessageOutboundService implements MessageOutboundDriver {
       sendMessageInput,
     );
 
+    const sentAt = new Date().toISOString();
+
+    await onProviderStart?.();
+
     await smtpClient.sendMail({
       from: handle,
       to: sendMessageInput.to,
@@ -57,39 +64,51 @@ export class ImapSmtpMessageOutboundService implements MessageOutboundDriver {
     });
 
     if (isDefined(connectionParameters?.IMAP)) {
-      const imapClient = await this.imapClientProvider.getClient(
-        connectedAccount.id,
-      );
+      try {
+        const imapClient = await this.imapClientProvider.getClient(
+          connectedAccount.id,
+        );
 
-      const messageChannel = await this.messageChannelRepository.findOne({
-        where: {
-          connectedAccountId: connectedAccount.id,
-          handle: handle,
-        },
-      });
+        try {
+          const messageChannel = await this.messageChannelRepository.findOne({
+            where: {
+              connectedAccountId: connectedAccount.id,
+              handle: handle,
+            },
+          });
 
-      let sentFolder: MessageFolderEntity | null = null;
+          let sentFolder: MessageFolderEntity | null = null;
 
-      if (isDefined(messageChannel)) {
-        sentFolder = await this.messageFolderRepository.findOne({
-          where: {
-            messageChannelId: messageChannel.id,
-            isSentFolder: true,
-          },
-        });
+          if (isDefined(messageChannel)) {
+            sentFolder = await this.messageFolderRepository.findOne({
+              where: {
+                messageChannelId: messageChannel.id,
+                isSentFolder: true,
+              },
+            });
+          }
+
+          const sentFolderPath = getImapFolderPath(sentFolder?.externalId);
+
+          if (isDefined(sentFolderPath)) {
+            await imapClient.append(sentFolderPath, messageBuffer);
+          }
+        } finally {
+          await this.imapClientProvider.closeClient(imapClient);
+        }
+      } catch (error) {
+        // SMTP already accepted the message. IMAP sent-folder persistence is
+        // recoverable bookkeeping and must not turn a delivered email into a
+        // failed sequence outcome or trigger a duplicate retry.
+        this.logger.warn(
+          `Email was delivered over SMTP but could not be appended to the IMAP sent folder for connected account ${connectedAccount.id}: ${error instanceof Error ? error.message : String(error)}`,
+        );
       }
-
-      const sentFolderPath = getImapFolderPath(sentFolder?.externalId);
-
-      if (isDefined(sentFolderPath)) {
-        await imapClient.append(sentFolderPath, messageBuffer);
-      }
-
-      await this.imapClientProvider.closeClient(imapClient);
     }
 
     return {
       headerMessageId: extractMessageIdFromBuffer(messageBuffer),
+      sentAt,
     };
   }
 

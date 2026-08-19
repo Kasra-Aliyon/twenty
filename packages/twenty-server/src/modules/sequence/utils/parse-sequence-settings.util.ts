@@ -95,10 +95,13 @@ export const parseSequenceSettings = (value: unknown): SequenceSettings => {
       typeof value.dailyStartLimitEnabled === 'boolean'
         ? value.dailyStartLimitEnabled
         : DEFAULT_SEQUENCE_SETTINGS.dailyStartLimitEnabled,
-    dailyStarts: Math.floor(
-      toNonNegativeNumber(
-        value.dailyStarts,
-        DEFAULT_SEQUENCE_SETTINGS.dailyStarts,
+    dailyStarts: Math.max(
+      1,
+      Math.floor(
+        toNonNegativeNumber(
+          value.dailyStarts,
+          DEFAULT_SEQUENCE_SETTINGS.dailyStarts,
+        ),
       ),
     ),
     staggerMinutes: toNonNegativeNumber(

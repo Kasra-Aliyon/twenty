@@ -25,6 +25,7 @@ describe('SequenceLinkedinReplyListener', () => {
   };
   const enrollmentRepository = {
     find: jest.fn(),
+    findOne: jest.fn(),
     update: jest.fn(),
   };
   const globalWorkspaceOrmManager = {
@@ -74,6 +75,7 @@ describe('SequenceLinkedinReplyListener', () => {
     ]);
     actionRepository.find.mockResolvedValue([
       {
+        id: 'action-id',
         personId: 'person-id',
         sequenceEnrollmentId: 'enrollment-id',
         ownerWorkspaceMemberId: 'owner-id',
@@ -83,6 +85,10 @@ describe('SequenceLinkedinReplyListener', () => {
       },
     ]);
     enrollmentRepository.find.mockResolvedValue([{ id: 'enrollment-id' }]);
+    enrollmentRepository.findOne.mockResolvedValue({
+      id: 'enrollment-id',
+      status: 'REPLIED',
+    });
     enrollmentRepository.update.mockResolvedValue({ affected: 1 });
   });
 
@@ -170,6 +176,71 @@ describe('SequenceLinkedinReplyListener', () => {
 
     expect(enrollmentRepository.find).not.toHaveBeenCalled();
     expect(enrollmentRepository.update).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    LINKEDIN_ACTION_TYPES.SEND_MESSAGE,
+    LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST,
+  ])(
+    'reprocesses an inbound message committed before its %s completion report',
+    async (type) => {
+      actionRepository.find.mockResolvedValueOnce([]);
+
+      await listener.handleMessageCreatedEvent(buildMessageCreatedPayload());
+
+      expect(enrollmentRepository.update).not.toHaveBeenCalled();
+
+      // The terminal update event is emitted before its transaction commits,
+      // so the reconciliation read can still see no completed action.
+      actionRepository.find.mockResolvedValue([]);
+
+      await listener.reconcileCompletedOutboundActions({
+        actions: [
+          {
+            id: 'action-id',
+            personId: 'person-id',
+            sequenceEnrollmentId: 'enrollment-id',
+            ownerWorkspaceMemberId: 'owner-id',
+            type,
+            status: LINKEDIN_ACTION_STATUSES.COMPLETED,
+            executedAt: new Date('2026-07-24T11:00:00.000Z'),
+          } as LinkedinActionWorkspaceEntity,
+        ],
+        workspaceId: 'workspace-id',
+      });
+
+      expect(enrollmentRepository.update).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ status: 'REPLIED' }),
+      );
+    },
+  );
+
+  it('replays a committed inbound reply for one enrollment before provider start', async () => {
+    await expect(
+      listener.reconcileEnrollmentBeforeProviderStart({
+        sequenceEnrollmentId: 'enrollment-id',
+        workspaceId: 'workspace-id',
+      }),
+    ).resolves.toBe(true);
+
+    expect(actionRepository.find).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        where: expect.objectContaining({
+          sequenceEnrollmentId: 'enrollment-id',
+          status: LINKEDIN_ACTION_STATUSES.COMPLETED,
+        }),
+      }),
+    );
+    expect(enrollmentRepository.update).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ status: 'REPLIED' }),
+    );
+    expect(enrollmentRepository.findOne).toHaveBeenCalledWith({
+      where: { id: 'enrollment-id' },
+      select: ['id', 'status'],
+    });
   });
 
   const buildMessageCreatedPayload = (): WorkspaceEventBatch<

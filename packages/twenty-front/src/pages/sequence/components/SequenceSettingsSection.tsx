@@ -3,7 +3,10 @@ import { LINKEDIN_DAILY_ACTION_LIMITS } from '@/sequence/constants/linkedin-dail
 import { SequenceMailboxMultiSelect } from '@/sequence/components/SequenceMailboxMultiSelect';
 import { getDefaultSequenceSettings } from '@/sequence/constants/default-sequence-settings';
 import { type SequenceSenderAccount } from '@/sequence/types/SequenceSenderAccount';
-import { isSequenceSenderAccount } from '@/sequence/utils/isSequenceSenderAccount';
+import {
+  isSequenceEmailSenderAccountReady,
+  isSequenceSenderAccount,
+} from '@/sequence/utils/isSequenceSenderAccount';
 import { useMyConnectedAccounts } from '@/settings/accounts/hooks/useMyConnectedAccounts';
 import { useSnackBar } from '@/ui/feedback/snack-bar-manager/hooks/useSnackBar';
 import { Select } from '@/ui/input/components/Select';
@@ -127,7 +130,9 @@ export const SequenceSettingsSection = ({
   const accountOptions: SelectOption<string>[] = accounts
     .filter(isSequenceSenderAccount)
     .map((account: SequenceSenderAccount) => ({
-      label: account.handle,
+      label: isSequenceEmailSenderAccountReady(account)
+        ? account.handle
+        : t`${account.handle} (LinkedIn only - email sending not ready)`,
       value: account.id,
     }));
   const unavailableSelectedAccountOptions: SelectOption<string>[] =
@@ -137,7 +142,7 @@ export const SequenceSettingsSection = ({
           !accountOptions.some((option) => option.value === accountId),
       )
       .map((accountId) => ({
-        label: t`Unavailable mailbox (${accountId.slice(0, 8)})`,
+        label: t`Unavailable sender account (${accountId.slice(0, 8)})`,
         value: accountId,
       }));
   const mailboxOptions = [
@@ -356,7 +361,7 @@ export const SequenceSettingsSection = ({
         </StyledField>
         {mailboxOptions.length > 0 && (
           <StyledField>
-            <span>{t`Sender mailbox pool`}</span>
+            <span>{t`Sender account pool`}</span>
             <SequenceMailboxMultiSelect
               dropdownId={`sequence-settings-sender-pool-${sequence.id}`}
               options={mailboxOptions}
@@ -377,14 +382,14 @@ export const SequenceSettingsSection = ({
 
       {mailboxOptions.length === 0 && (
         <StyledField>
-          <span>{t`Sender mailbox pool`}</span>
-          <span>{t`Connect an email account and wait for inbox sync to finish before activating this sequence.`}</span>
+          <span>{t`Sender account pool`}</span>
+          <span>{t`Connect an email account before activating this sequence.`}</span>
         </StyledField>
       )}
 
       {mailboxOptions.length > 0 && (
         <StyledHelperText>
-          {t`Choose up to 20 mailboxes. Each contact is assigned one mailbox for the full sequence so replies and follow-ups stay in the same thread.`}
+          {t`Choose up to 20 sender accounts. Each contact keeps one sender for the full sequence so replies and follow-ups stay in the same thread. LinkedIn-only sequences do not require mailbox authentication or inbox sync; automated email steps require every selected account to be authenticated and have active inbox sync before activation.`}
         </StyledHelperText>
       )}
 

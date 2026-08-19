@@ -96,6 +96,16 @@ describe('parseSequenceSettings', () => {
     ).toBe(1);
   });
 
+  it('clamps a zero daily-start limit so an active sequence can admit work', () => {
+    expect(
+      parseSequenceSettings({
+        ...DEFAULT_SEQUENCE_SETTINGS,
+        dailyStartLimitEnabled: true,
+        dailyStarts: 0,
+      }).dailyStarts,
+    ).toBe(1);
+  });
+
   it('caps the configurable LinkedIn daily limit at 40', () => {
     expect(
       parseSequenceSettings({ linkedinDailyActions: 50 }).linkedinDailyActions,

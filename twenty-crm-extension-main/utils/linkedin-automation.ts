@@ -639,6 +639,26 @@ export type LinkedInAutomationResult =
       connectionState: LinkedInConnectionState;
     };
 
+export type LinkedInProviderOperationAuthorizer = (
+  providerOperation: () => void,
+) => Promise<boolean>;
+
+const runProviderOperation = async ({
+  authorizeProviderOperation,
+  providerOperation,
+}: {
+  authorizeProviderOperation?: LinkedInProviderOperationAuthorizer;
+  providerOperation: () => void;
+}): Promise<boolean> => {
+  if (authorizeProviderOperation) {
+    return authorizeProviderOperation(providerOperation);
+  }
+
+  providerOperation();
+
+  return true;
+};
+
 const parseDegreeToken = (value: string): ConnectionDegree => {
   // The badge must be exactly a degree token. Substring matching against a
   // whole section is what previously reported unrelated people as 1st-degree.
@@ -686,12 +706,12 @@ const setTextareaValue = (
   value: string,
 ): void => {
   const textareaWindow = textarea.ownerDocument.defaultView;
-  const valueSetter = Object.getOwnPropertyDescriptor(
+  const valueDescriptor = Object.getOwnPropertyDescriptor(
     Object.getPrototypeOf(textarea) as object,
     'value',
-  )?.set;
+  );
 
-  valueSetter?.call(textarea, value);
+  valueDescriptor?.set?.call(textarea, value);
   textarea.dispatchEvent(
     new (textareaWindow?.Event ?? Event)('input', { bubbles: true }),
   );
@@ -825,6 +845,7 @@ const confirmInvitationSent = async (
 
 export const sendConnectionRequest = async (
   noteText: string,
+  authorizeProviderOperation?: LinkedInProviderOperationAuthorizer,
 ): Promise<LinkedInAutomationResult> => {
   const blockReason = getLinkedInAutomationBlockReason();
 
@@ -954,7 +975,14 @@ export const sendConnectionRequest = async (
       };
     }
 
-    sendButton.click();
+    if (
+      !(await runProviderOperation({
+        authorizeProviderOperation,
+        providerOperation: () => sendButton.click(),
+      }))
+    ) {
+      return { status: 'NAVIGATING', connectionState: 'NOT_CONNECTED' };
+    }
   } else {
     const sendButton = await waitForElement(() => {
       currentDialog = findInvitationDialog() ?? currentDialog;
@@ -974,7 +1002,14 @@ export const sendConnectionRequest = async (
       };
     }
 
-    sendButton.click();
+    if (
+      !(await runProviderOperation({
+        authorizeProviderOperation,
+        providerOperation: () => sendButton.click(),
+      }))
+    ) {
+      return { status: 'NAVIGATING', connectionState: 'NOT_CONNECTED' };
+    }
   }
 
   const { confirmed, reason } = await confirmInvitationSent(
@@ -995,6 +1030,7 @@ export const sendConnectionRequest = async (
 
 export const sendDirectMessage = async (
   rawMessageText: string,
+  authorizeProviderOperation?: LinkedInProviderOperationAuthorizer,
 ): Promise<LinkedInAutomationResult> => {
   const blockReason = getLinkedInAutomationBlockReason();
 
@@ -1104,7 +1140,14 @@ export const sendDirectMessage = async (
     };
   }
 
-  sendButton.click();
+  if (
+    !(await runProviderOperation({
+      authorizeProviderOperation,
+      providerOperation: () => sendButton.click(),
+    }))
+  ) {
+    return { status: 'NAVIGATING', connectionState: 'CONNECTED' };
+  }
   const sendConfirmationDeadline =
     Date.now() + SEND_CONFIRMATION_TIMEOUT_MILLISECONDS;
 
@@ -1165,6 +1208,7 @@ const getProfileHandle = (profileUrl: string): string | null => {
 
 export const withdrawConnectionRequest = async (
   profileUrl: string,
+  authorizeProviderOperation?: LinkedInProviderOperationAuthorizer,
 ): Promise<LinkedInAutomationResult> => {
   const blockReason = getLinkedInAutomationBlockReason();
 
@@ -1271,7 +1315,14 @@ export const withdrawConnectionRequest = async (
     };
   }
 
-  confirmButton.click();
+  if (
+    !(await runProviderOperation({
+      authorizeProviderOperation,
+      providerOperation: () => confirmButton.click(),
+    }))
+  ) {
+    return { status: 'NAVIGATING', connectionState: 'PENDING' };
+  }
 
   const confirmationDeadline =
     Date.now() + SEND_CONFIRMATION_TIMEOUT_MILLISECONDS;

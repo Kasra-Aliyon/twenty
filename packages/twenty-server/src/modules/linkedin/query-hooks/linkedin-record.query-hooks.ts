@@ -1,7 +1,10 @@
 import { Injectable } from '@nestjs/common';
 
-import { type WorkspacePreQueryHookInstance } from 'src/engine/api/graphql/workspace-query-runner/workspace-query-hook/interfaces/workspace-query-hook.interface';
+import { LINKEDIN_ACTION_STATUSES } from 'twenty-shared/types';
+
 import { WorkspaceQueryHook } from 'src/engine/api/graphql/workspace-query-runner/workspace-query-hook/decorators/workspace-query-hook.decorator';
+import { type WorkspacePreQueryHookInstance } from 'src/engine/api/graphql/workspace-query-runner/workspace-query-hook/interfaces/workspace-query-hook.interface';
+import { markWorkspaceQueryForTransaction } from 'src/engine/api/graphql/workspace-query-runner/workspace-query-hook/utils/workspace-query-hook-transaction.util';
 import {
   type CreateManyResolverArgs,
   type CreateOneResolverArgs,
@@ -21,6 +24,7 @@ import {
 } from 'src/engine/api/graphql/workspace-resolver-builder/interfaces/workspace-resolvers-builder.interface';
 import { type ObjectRecordFilter } from 'src/engine/api/graphql/workspace-query-builder/interfaces/object-record.interface';
 import { type WorkspaceAuthContext } from 'src/engine/core-modules/auth/types/workspace-auth-context.type';
+import { type WorkspaceEntityManager } from 'src/engine/twenty-orm/entity-manager/workspace-entity-manager';
 import {
   type LinkedinOwnedRecordData,
   LinkedinRecordAccessService,
@@ -29,6 +33,176 @@ import {
 const isThreadChildObject = (objectName: string): boolean =>
   objectName === 'linkedinMessage' ||
   objectName === 'linkedinThreadParticipant';
+
+const SEQUENCE_LINKEDIN_ACTION_RELATION_FIELDS = [
+  'sequenceEnrollmentId',
+  'sequenceStepId',
+] as const;
+
+const SEQUENCE_LINKEDIN_ACTION_ENGINE_FIELDS = [
+  'id',
+  'createdAt',
+  'updatedAt',
+  'deletedAt',
+  'createdBy',
+  'updatedBy',
+  'type',
+  'status',
+  'scheduledAt',
+  'claimedAt',
+  'claimedBy',
+  'executedAt',
+  'attemptCount',
+  'errorMessage',
+  'ownerWorkspaceMemberId',
+  'linkedinUrl',
+  'noteText',
+  'connectionState',
+  'person',
+  'personId',
+  'position',
+  'searchVector',
+  ...SEQUENCE_LINKEDIN_ACTION_RELATION_FIELDS,
+] as const;
+
+const CAP_COUNTED_LINKEDIN_ACTION_STATUSES = [
+  LINKEDIN_ACTION_STATUSES.SCHEDULED,
+  LINKEDIN_ACTION_STATUSES.CLAIMED,
+  LINKEDIN_ACTION_STATUSES.COMPLETED,
+  LINKEDIN_ACTION_STATUSES.SKIPPED,
+  LINKEDIN_ACTION_STATUSES.FAILED,
+] as const;
+
+const hasOwnField = (
+  data: LinkedinOwnedRecordData,
+  fieldName: string,
+): boolean => Object.prototype.hasOwnProperty.call(data, fieldName);
+
+const hasSequenceActionEngineMutation = ({
+  data,
+  objectName,
+}: {
+  data: LinkedinOwnedRecordData;
+  objectName: string;
+}): boolean =>
+  objectName === 'linkedinAction' &&
+  SEQUENCE_LINKEDIN_ACTION_ENGINE_FIELDS.some((fieldName) =>
+    hasOwnField(data, fieldName),
+  );
+
+const assertActionCreationIsNotSequenceLinked = ({
+  accessService,
+  data,
+  objectName,
+}: {
+  accessService: LinkedinRecordAccessService;
+  data: LinkedinOwnedRecordData;
+  objectName: string;
+}): void => {
+  if (objectName !== 'linkedinAction') {
+    return;
+  }
+
+  if (
+    SEQUENCE_LINKEDIN_ACTION_RELATION_FIELDS.some(
+      (fieldName) => data[fieldName] !== undefined && data[fieldName] !== null,
+    )
+  ) {
+    accessService.throwUnsupportedOperation(
+      'Creating a sequence-linked LinkedIn action directly',
+    );
+  }
+};
+
+const assertActionSequenceRelationsAreNotUpdated = ({
+  accessService,
+  data,
+  objectName,
+}: {
+  accessService: LinkedinRecordAccessService;
+  data: LinkedinOwnedRecordData;
+  objectName: string;
+}): void => {
+  if (
+    objectName === 'linkedinAction' &&
+    SEQUENCE_LINKEDIN_ACTION_RELATION_FIELDS.some((fieldName) =>
+      hasOwnField(data, fieldName),
+    )
+  ) {
+    accessService.throwUnsupportedOperation(
+      'Changing sequence LinkedIn action relations directly',
+    );
+  }
+};
+
+const addSequenceActionDeletionSafetyFilter = ({
+  filter,
+  objectName,
+}: {
+  filter: ObjectRecordFilter;
+  objectName: string;
+}): ObjectRecordFilter =>
+  objectName === 'linkedinAction'
+    ? {
+        and: [
+          filter,
+          {
+            not: {
+              or: [
+                { sequenceEnrollmentId: { is: 'NOT_NULL' } },
+                { sequenceStepId: { is: 'NOT_NULL' } },
+                { status: { in: CAP_COUNTED_LINKEDIN_ACTION_STATUSES } },
+              ],
+            },
+          },
+        ],
+      }
+    : filter;
+
+const addSequenceActionUpdateSafetyFilter = ({
+  data,
+  filter,
+  objectName,
+}: {
+  data: LinkedinOwnedRecordData;
+  filter: ObjectRecordFilter;
+  objectName: string;
+}): ObjectRecordFilter =>
+  hasSequenceActionEngineMutation({ data, objectName })
+    ? {
+        and: [
+          filter,
+          {
+            not: {
+              or: [
+                { sequenceEnrollmentId: { is: 'NOT_NULL' } },
+                { sequenceStepId: { is: 'NOT_NULL' } },
+                { status: { in: CAP_COUNTED_LINKEDIN_ACTION_STATUSES } },
+              ],
+            },
+          },
+        ],
+      }
+    : filter;
+
+const assertActionClaimUsesClaimMutation = ({
+  accessService,
+  objectName,
+  data,
+}: {
+  accessService: LinkedinRecordAccessService;
+  objectName: string;
+  data: LinkedinOwnedRecordData;
+}): void => {
+  if (
+    objectName === 'linkedinAction' &&
+    (data as { status?: string }).status === LINKEDIN_ACTION_STATUSES.CLAIMED
+  ) {
+    accessService.throwUnsupportedOperation(
+      'Direct LinkedIn action claiming; use claimSequenceLinkedinAction',
+    );
+  }
+};
 
 const validateCreatedThreadRelations = async ({
   accessService,
@@ -224,6 +398,23 @@ export class LinkedinRecordCreateOnePreQueryHook implements WorkspacePreQueryHoo
     const userAuthContext =
       this.accessService.requireUserAuthContext(authContext);
 
+    assertActionCreationIsNotSequenceLinked({
+      accessService: this.accessService,
+      objectName,
+      data: payload.data,
+    });
+    assertActionClaimUsesClaimMutation({
+      accessService: this.accessService,
+      objectName,
+      data: payload.data,
+    });
+
+    if (objectName === 'linkedinAction' && payload.upsert === true) {
+      return this.accessService.throwUnsupportedOperation(
+        'Upserting LinkedIn actions',
+      );
+    }
+
     await Promise.all([
       validateCreatedThreadRelations({
         accessService: this.accessService,
@@ -273,6 +464,25 @@ export class LinkedinRecordCreateManyPreQueryHook implements WorkspacePreQueryHo
     const userAuthContext =
       this.accessService.requireUserAuthContext(authContext);
 
+    for (const data of payload.data) {
+      assertActionCreationIsNotSequenceLinked({
+        accessService: this.accessService,
+        objectName,
+        data,
+      });
+      assertActionClaimUsesClaimMutation({
+        accessService: this.accessService,
+        objectName,
+        data,
+      });
+    }
+
+    if (objectName === 'linkedinAction' && payload.upsert === true) {
+      return this.accessService.throwUnsupportedOperation(
+        'Upserting LinkedIn actions',
+      );
+    }
+
     await Promise.all([
       validateCreatedThreadRelations({
         accessService: this.accessService,
@@ -321,6 +531,17 @@ export class LinkedinRecordUpdateOnePreQueryHook implements WorkspacePreQueryHoo
     const userAuthContext =
       this.accessService.requireUserAuthContext(authContext);
 
+    assertActionClaimUsesClaimMutation({
+      accessService: this.accessService,
+      objectName,
+      data: payload.data,
+    });
+    assertActionSequenceRelationsAreNotUpdated({
+      accessService: this.accessService,
+      objectName,
+      data: payload.data,
+    });
+
     await Promise.all([
       this.accessService.assertRecordIdsOwnedByUser({
         objectName,
@@ -333,15 +554,57 @@ export class LinkedinRecordUpdateOnePreQueryHook implements WorkspacePreQueryHoo
         objectName,
         data: payload.data,
       }),
+      hasSequenceActionEngineMutation({
+        objectName,
+        data: payload.data,
+      })
+        ? this.accessService.assertLinkedinActionIdsAreNotExecutionManaged({
+            actionIds: [payload.id],
+            authContext: userAuthContext,
+            operationName:
+              'Changing sequence LinkedIn action execution fields directly',
+          })
+        : Promise.resolve(),
     ]);
 
-    return {
+    const result = {
       ...payload,
       data: this.accessService.forceOwner(
         payload.data,
         userAuthContext.workspaceMemberId,
       ),
     };
+
+    return hasSequenceActionEngineMutation({
+      objectName,
+      data: payload.data,
+    })
+      ? markWorkspaceQueryForTransaction(result)
+      : result;
+  }
+
+  async executeInTransaction(
+    authContext: WorkspaceAuthContext,
+    objectName: string,
+    payload: UpdateOneResolverArgs<LinkedinOwnedRecordData>,
+    workspaceEntityManager: WorkspaceEntityManager,
+  ): Promise<UpdateOneResolverArgs<LinkedinOwnedRecordData>> {
+    if (objectName !== 'linkedinAction') {
+      return payload;
+    }
+
+    const userAuthContext =
+      this.accessService.requireUserAuthContext(authContext);
+
+    await this.accessService.lockLinkedinActionIdsAndAssertNotExecutionManaged({
+      actionIds: [payload.id],
+      authContext: userAuthContext,
+      operationName:
+        'Changing sequence LinkedIn action execution fields directly',
+      workspaceEntityManager,
+    });
+
+    return payload;
   }
 }
 
@@ -373,6 +636,17 @@ export class LinkedinRecordUpdateManyPreQueryHook implements WorkspacePreQueryHo
     const userAuthContext =
       this.accessService.requireUserAuthContext(authContext);
 
+    assertActionClaimUsesClaimMutation({
+      accessService: this.accessService,
+      objectName,
+      data: payload.data,
+    });
+    assertActionSequenceRelationsAreNotUpdated({
+      accessService: this.accessService,
+      objectName,
+      data: payload.data,
+    });
+
     await validateUpdatedThreadRelation({
       accessService: this.accessService,
       authContext: userAuthContext,
@@ -380,12 +654,18 @@ export class LinkedinRecordUpdateManyPreQueryHook implements WorkspacePreQueryHo
       data: payload.data,
     });
 
+    const ownerScopedFilter = this.accessService.addOwnerFilter(
+      payload.filter,
+      userAuthContext.workspaceMemberId,
+    );
+
     return {
       ...payload,
-      filter: this.accessService.addOwnerFilter(
-        payload.filter,
-        userAuthContext.workspaceMemberId,
-      ),
+      filter: addSequenceActionUpdateSafetyFilter({
+        data: payload.data,
+        filter: ownerScopedFilter,
+        objectName,
+      }),
       data: this.accessService.forceOwner(
         payload.data,
         userAuthContext.workspaceMemberId,
@@ -423,6 +703,38 @@ export class LinkedinRecordDeleteOnePreQueryHook implements WorkspacePreQueryHoo
       authContext: userAuthContext,
     });
 
+    if (objectName === 'linkedinAction') {
+      await this.accessService.assertLinkedinActionsCanBeDeleted({
+        actionIds: [payload.id],
+        authContext: userAuthContext,
+      });
+    }
+
+    return objectName === 'linkedinAction'
+      ? markWorkspaceQueryForTransaction(payload)
+      : payload;
+  }
+
+  async executeInTransaction(
+    authContext: WorkspaceAuthContext,
+    objectName: string,
+    payload: DeleteOneResolverArgs,
+    workspaceEntityManager: WorkspaceEntityManager,
+  ): Promise<DeleteOneResolverArgs> {
+    if (objectName !== 'linkedinAction') {
+      return payload;
+    }
+
+    const userAuthContext =
+      this.accessService.requireUserAuthContext(authContext);
+
+    await this.accessService.lockLinkedinActionIdsAndAssertNotExecutionManaged({
+      actionIds: [payload.id],
+      authContext: userAuthContext,
+      operationName: 'Deleting LinkedIn action execution or quota history',
+      workspaceEntityManager,
+    });
+
     return payload;
   }
 }
@@ -450,12 +762,17 @@ export class LinkedinRecordDeleteManyPreQueryHook implements WorkspacePreQueryHo
     const userAuthContext =
       this.accessService.requireUserAuthContext(authContext);
 
+    const ownerScopedFilter = this.accessService.addOwnerFilter(
+      payload.filter,
+      userAuthContext.workspaceMemberId,
+    );
+
     return {
       ...payload,
-      filter: this.accessService.addOwnerFilter(
-        payload.filter,
-        userAuthContext.workspaceMemberId,
-      ),
+      filter: addSequenceActionDeletionSafetyFilter({
+        filter: ownerScopedFilter,
+        objectName,
+      }),
     };
   }
 }
@@ -489,6 +806,38 @@ export class LinkedinRecordDestroyOnePreQueryHook implements WorkspacePreQueryHo
       authContext: userAuthContext,
     });
 
+    if (objectName === 'linkedinAction') {
+      await this.accessService.assertLinkedinActionsCanBeDeleted({
+        actionIds: [payload.id],
+        authContext: userAuthContext,
+      });
+    }
+
+    return objectName === 'linkedinAction'
+      ? markWorkspaceQueryForTransaction(payload)
+      : payload;
+  }
+
+  async executeInTransaction(
+    authContext: WorkspaceAuthContext,
+    objectName: string,
+    payload: DestroyOneResolverArgs,
+    workspaceEntityManager: WorkspaceEntityManager,
+  ): Promise<DestroyOneResolverArgs> {
+    if (objectName !== 'linkedinAction') {
+      return payload;
+    }
+
+    const userAuthContext =
+      this.accessService.requireUserAuthContext(authContext);
+
+    await this.accessService.lockLinkedinActionIdsAndAssertNotExecutionManaged({
+      actionIds: [payload.id],
+      authContext: userAuthContext,
+      operationName: 'Deleting LinkedIn action execution or quota history',
+      workspaceEntityManager,
+    });
+
     return payload;
   }
 }
@@ -516,12 +865,17 @@ export class LinkedinRecordDestroyManyPreQueryHook implements WorkspacePreQueryH
     const userAuthContext =
       this.accessService.requireUserAuthContext(authContext);
 
+    const ownerScopedFilter = this.accessService.addOwnerFilter(
+      payload.filter,
+      userAuthContext.workspaceMemberId,
+    );
+
     return {
       ...payload,
-      filter: this.accessService.addOwnerFilter(
-        payload.filter,
-        userAuthContext.workspaceMemberId,
-      ),
+      filter: addSequenceActionDeletionSafetyFilter({
+        filter: ownerScopedFilter,
+        objectName,
+      }),
     };
   }
 }

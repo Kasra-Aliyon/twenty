@@ -90,8 +90,11 @@ export type LinkedInConnectionState =
 export type TwentyLinkedInAction = {
   id: string;
   type: LinkedInActionType;
+  status: LinkedInActionStatus;
   scheduledAt: string;
   claimedAt: string | null;
+  claimedBy: string | null;
+  executedAt: string | null;
   linkedinUrl: string;
   noteText: string;
 };
@@ -101,6 +104,8 @@ export type LinkedInRunnerSessionState = {
   tabId: number | null;
   activeAction: TwentyLinkedInAction | null;
   activeActionStartedAt: number | null;
+  activeActionNeedsRelease: boolean;
+  activeActionNeedsReconciliation: boolean;
   lastExecutedAt: number | null;
   completedCount: number;
   failedCount: number;
@@ -290,6 +295,7 @@ export type MessageType =
   | 'CLAIM_LINKEDIN_ACTION'
   | 'REPORT_LINKEDIN_ACTION'
   | 'MARK_LINKEDIN_ACTION_EXECUTING'
+  | 'ABORT_LINKEDIN_ACTION_BEFORE_PROVIDER_START'
   | 'GET_LINKEDIN_RUNNER_STATE'
   | 'SET_LINKEDIN_RUNNER_STATE'
   | 'RUN_LINKEDIN_POLL'

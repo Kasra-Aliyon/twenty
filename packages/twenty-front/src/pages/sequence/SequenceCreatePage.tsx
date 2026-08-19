@@ -4,7 +4,10 @@ import { useCreateOneRecord } from '@/object-record/hooks/useCreateOneRecord';
 import { useObjectPermissionsForObject } from '@/object-record/hooks/useObjectPermissionsForObject';
 import { getDefaultSequenceSettings } from '@/sequence/constants/default-sequence-settings';
 import { type SequenceSenderAccount } from '@/sequence/types/SequenceSenderAccount';
-import { isSequenceSenderAccount } from '@/sequence/utils/isSequenceSenderAccount';
+import {
+  isSequenceEmailSenderAccountReady,
+  isSequenceSenderAccount,
+} from '@/sequence/utils/isSequenceSenderAccount';
 import { useMyConnectedAccounts } from '@/settings/accounts/hooks/useMyConnectedAccounts';
 import { useSnackBar } from '@/ui/feedback/snack-bar-manager/hooks/useSnackBar';
 import { Select } from '@/ui/input/components/Select';
@@ -67,7 +70,9 @@ const SequenceCreatePageContent = () => {
   const accountOptions: SelectOption<string>[] = accounts
     .filter(isSequenceSenderAccount)
     .map((account: SequenceSenderAccount) => ({
-      label: account.handle,
+      label: isSequenceEmailSenderAccountReady(account)
+        ? account.handle
+        : t`${account.handle} (LinkedIn only - email sending not ready)`,
       value: account.id,
     }));
   const senderConnectedAccountId =
@@ -130,7 +135,7 @@ const SequenceCreatePageContent = () => {
             {accountOptions.length > 0 ? (
               <Select
                 dropdownId="new-sequence-sender-account"
-                label={t`Sender mailbox`}
+                label={t`Sender account`}
                 fullWidth
                 value={senderConnectedAccountId}
                 options={accountOptions}
@@ -138,7 +143,12 @@ const SequenceCreatePageContent = () => {
               />
             ) : (
               <StyledMailboxHint>
-                {t`Connect an email account and wait for inbox sync to finish before creating a sequence.`}
+                {t`Connect an email account before creating a sequence.`}
+              </StyledMailboxHint>
+            )}
+            {accountOptions.length > 0 && (
+              <StyledMailboxHint>
+                {t`LinkedIn-only sequences do not require mailbox authentication or inbox sync. Automated email steps require every selected sender account to be authenticated and have active inbox sync before activation.`}
               </StyledMailboxHint>
             )}
           </StyledSection>

@@ -40,6 +40,7 @@ describe('SequenceTaskListener', () => {
       workspaceId: 'workspace-id',
       enrollmentId: 'enrollment-id',
       stepId: 'step-id',
+      taskId: 'task-id',
     });
   });
 

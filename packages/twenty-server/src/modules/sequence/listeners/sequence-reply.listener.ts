@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
 
 import {
   FeatureFlagKey,
@@ -6,10 +7,11 @@ import {
   SEQUENCE_ENROLLMENT_STATUSES,
 } from 'twenty-shared/types';
 import { isDefined } from 'twenty-shared/utils';
-import { Equal, In, Not } from 'typeorm';
+import { Equal, In, Not, type Repository } from 'typeorm';
 
 import { OnCustomBatchEvent } from 'src/engine/api/graphql/graphql-query-runner/decorators/on-custom-batch-event.decorator';
 import { FeatureFlagService } from 'src/engine/core-modules/feature-flag/services/feature-flag.service';
+import { MessageChannelEntity } from 'src/engine/metadata-modules/message-channel/entities/message-channel.entity';
 import { GlobalWorkspaceOrmManager } from 'src/engine/twenty-orm/global-workspace-datasource/global-workspace-orm.manager';
 import { type WorkspaceRepository } from 'src/engine/twenty-orm/repository/workspace.repository';
 import { buildSystemAuthContext } from 'src/engine/twenty-orm/utils/build-system-auth-context.util';
@@ -17,6 +19,7 @@ import { type CustomWorkspaceEventBatch } from 'src/engine/workspace-event-emitt
 import { MessageDirection } from 'src/modules/messaging/common/enums/message-direction.enum';
 import { MessageChannelMessageAssociationWorkspaceEntity } from 'src/modules/messaging/common/standard-objects/message-channel-message-association.workspace-entity';
 import { type MessageParticipantWorkspaceEntity } from 'src/modules/messaging/common/standard-objects/message-participant.workspace-entity';
+import { MessageWorkspaceEntity } from 'src/modules/messaging/common/standard-objects/message.workspace-entity';
 import {
   SequenceEnrollmentWorkspaceEntity,
   type SequenceSentEmailMetadata,
@@ -27,6 +30,12 @@ type MessageParticipantMatchedEvent = {
   participants: MessageParticipantWorkspaceEntity[];
 };
 
+type IncomingMailboxMessage = {
+  connectedAccountId: string;
+  receivedAt: Date | null;
+  threadExternalId: string | null;
+};
+
 const REPLY_ATTRIBUTION_MAX_ATTEMPTS = 3;
 
 @Injectable()
@@ -34,6 +43,8 @@ export class SequenceReplyListener {
   constructor(
     private readonly featureFlagService: FeatureFlagService,
     private readonly globalWorkspaceOrmManager: GlobalWorkspaceOrmManager,
+    @InjectRepository(MessageChannelEntity)
+    private readonly messageChannelRepository: Repository<MessageChannelEntity>,
   ) {}
 
   @OnCustomBatchEvent('messageParticipant_matched')
@@ -44,7 +55,23 @@ export class SequenceReplyListener {
       return;
     }
 
-    const workspaceId = batchEvent.workspaceId;
+    await this.reconcileMessageParticipants({
+      workspaceId: batchEvent.workspaceId,
+      participants: batchEvent.events.flatMap(
+        (event) => event.participants ?? [],
+      ),
+    });
+  }
+
+  async reconcileMessageParticipants({
+    workspaceId,
+    participants,
+    sequenceEnrollmentId,
+  }: {
+    workspaceId: string;
+    participants: MessageParticipantWorkspaceEntity[];
+    sequenceEnrollmentId?: string;
+  }): Promise<void> {
     const isEnabled = await this.featureFlagService.isFeatureEnabled(
       FeatureFlagKey.IS_OUTREACH_SEQUENCES_ENABLED,
       workspaceId,
@@ -54,12 +81,10 @@ export class SequenceReplyListener {
       return;
     }
 
-    const fromParticipants = batchEvent.events.flatMap((event) =>
-      (event.participants ?? []).filter(
-        (participant) =>
-          participant.role === MessageParticipantRole.FROM &&
-          isDefined(participant.personId),
-      ),
+    const fromParticipants = participants.filter(
+      (participant) =>
+        participant.role === MessageParticipantRole.FROM &&
+        isDefined(participant.personId),
     );
 
     if (fromParticipants.length === 0) {
@@ -83,20 +108,14 @@ export class SequenceReplyListener {
         select: {
           messageId: true,
           messageThreadExternalId: true,
+          messageChannelId: true,
         },
       });
-      const incomingThreadExternalIdByMessageId = new Map(
-        incomingAssociations
-          .filter(({ messageThreadExternalId }) =>
-            isDefined(messageThreadExternalId),
-          )
-          .map(({ messageId, messageThreadExternalId }) => [
-            messageId,
-            messageThreadExternalId as string,
-          ]),
+      const incomingMessageIds = new Set(
+        incomingAssociations.map(({ messageId }) => messageId),
       );
       const incomingParticipants = fromParticipants.filter(({ messageId }) =>
-        incomingThreadExternalIdByMessageId.has(messageId),
+        incomingMessageIds.has(messageId),
       );
       const personIds = [
         ...new Set(incomingParticipants.map(({ personId }) => personId)),
@@ -106,6 +125,19 @@ export class SequenceReplyListener {
         return;
       }
 
+      const messageRepository =
+        await this.globalWorkspaceOrmManager.getRepository(
+          workspaceId,
+          MessageWorkspaceEntity,
+          { shouldBypassPermissionChecks: true },
+        );
+      const incomingMessages = await messageRepository.find({
+        where: { id: In([...incomingMessageIds]) },
+        select: ['id', 'receivedAt'],
+      });
+      const receivedAtByMessageId = new Map(
+        incomingMessages.map(({ id, receivedAt }) => [id, receivedAt]),
+      );
       const enrollmentRepository =
         await this.globalWorkspaceOrmManager.getRepository(
           workspaceId,
@@ -115,61 +147,134 @@ export class SequenceReplyListener {
 
       const enrollments = await enrollmentRepository.find({
         where: {
+          ...(isDefined(sequenceEnrollmentId)
+            ? { id: sequenceEnrollmentId }
+            : {}),
           personId: In(personIds),
           status: Not(SEQUENCE_ENROLLMENT_STATUSES.REMOVED),
         },
         select: [
           'id',
           'personId',
+          'senderConnectedAccountId',
           'status',
           'stopOnReply',
           'sentEmailsByStepId',
         ],
       });
+      const messageChannelIds = [
+        ...new Set(
+          incomingAssociations.map(({ messageChannelId }) => messageChannelId),
+        ),
+      ];
+      const messageChannels =
+        messageChannelIds.length > 0
+          ? await this.messageChannelRepository.find({
+              where: { id: In(messageChannelIds), workspaceId },
+              select: { id: true, connectedAccountId: true },
+            })
+          : [];
+      const connectedAccountIdByMessageChannelId = new Map(
+        messageChannels.map(({ connectedAccountId, id }) => [
+          id,
+          connectedAccountId,
+        ]),
+      );
+      const associationsByMessageId = new Map<
+        string,
+        typeof incomingAssociations
+      >();
+
+      for (const association of incomingAssociations) {
+        const messageAssociations =
+          associationsByMessageId.get(association.messageId) ?? [];
+
+        messageAssociations.push(association);
+        associationsByMessageId.set(association.messageId, messageAssociations);
+      }
+
+      const incomingMailboxMessagesByPersonId = new Map<
+        string,
+        IncomingMailboxMessage[]
+      >();
+
+      for (const participant of incomingParticipants) {
+        if (!isDefined(participant.personId)) {
+          continue;
+        }
+
+        const personMailboxMessages =
+          incomingMailboxMessagesByPersonId.get(participant.personId) ?? [];
+
+        for (const association of associationsByMessageId.get(
+          participant.messageId,
+        ) ?? []) {
+          const connectedAccountId = connectedAccountIdByMessageChannelId.get(
+            association.messageChannelId,
+          );
+
+          if (!isDefined(connectedAccountId)) {
+            continue;
+          }
+
+          personMailboxMessages.push({
+            connectedAccountId,
+            receivedAt:
+              receivedAtByMessageId.get(participant.messageId) ?? null,
+            threadExternalId: association.messageThreadExternalId,
+          });
+        }
+
+        incomingMailboxMessagesByPersonId.set(
+          participant.personId,
+          personMailboxMessages,
+        );
+      }
+
       const repliedAt = new Date();
-      const attributedEnrollments: SequenceEnrollmentWorkspaceEntity[] = [];
+      const enrollmentIdsToStop = new Set<string>();
 
       for (const enrollment of enrollments) {
-        const incomingThreadExternalIds = new Set(
-          incomingParticipants
-            .filter(({ personId }) => personId === enrollment.personId)
-            .map(({ messageId }) =>
-              incomingThreadExternalIdByMessageId.get(messageId),
-            )
-            .filter(isDefined),
-        );
         const attributedEnrollment = await this.attributeReplyWithRetry({
           enrollment,
           enrollmentRepository,
-          incomingThreadExternalIds,
-          repliedAt,
+          incomingMailboxMessages:
+            incomingMailboxMessagesByPersonId.get(enrollment.personId) ?? [],
         });
 
         if (isDefined(attributedEnrollment)) {
-          attributedEnrollments.push(attributedEnrollment);
+          if (
+            attributedEnrollment.stopOnReply &&
+            (attributedEnrollment.status ===
+              SEQUENCE_ENROLLMENT_STATUSES.PENDING ||
+              attributedEnrollment.status ===
+                SEQUENCE_ENROLLMENT_STATUSES.ACTIVE)
+          ) {
+            enrollmentIdsToStop.add(attributedEnrollment.id);
+          }
+        }
+
+        if (
+          enrollment.stopOnReply &&
+          (enrollment.status === SEQUENCE_ENROLLMENT_STATUSES.PENDING ||
+            enrollment.status === SEQUENCE_ENROLLMENT_STATUSES.ACTIVE) &&
+          this.hasReplyToEnrollmentSender({
+            incomingMailboxMessages:
+              incomingMailboxMessagesByPersonId.get(enrollment.personId) ?? [],
+            enrollment,
+          })
+        ) {
+          enrollmentIdsToStop.add(enrollment.id);
         }
       }
 
-      if (attributedEnrollments.length === 0) {
-        return;
-      }
-
-      const enrollmentIdsToStop = attributedEnrollments
-        .filter(
-          (enrollment) =>
-            enrollment.stopOnReply &&
-            (enrollment.status === SEQUENCE_ENROLLMENT_STATUSES.PENDING ||
-              enrollment.status === SEQUENCE_ENROLLMENT_STATUSES.ACTIVE),
-        )
-        .map((enrollment) => enrollment.id);
-
-      if (enrollmentIdsToStop.length === 0) {
+      if (enrollmentIdsToStop.size === 0) {
         return;
       }
 
       await enrollmentRepository.update(
         {
-          id: In(enrollmentIdsToStop),
+          id: In([...enrollmentIdsToStop]),
           status: In([
             SEQUENCE_ENROLLMENT_STATUSES.PENDING,
             SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
@@ -186,16 +291,51 @@ export class SequenceReplyListener {
     }, buildSystemAuthContext(workspaceId));
   }
 
+  private hasReplyToEnrollmentSender({
+    incomingMailboxMessages,
+    enrollment,
+  }: {
+    incomingMailboxMessages: IncomingMailboxMessage[];
+    enrollment: SequenceEnrollmentWorkspaceEntity;
+  }): boolean {
+    const sentEmails = Object.values(enrollment.sentEmailsByStepId ?? {});
+
+    if (incomingMailboxMessages.length === 0 || sentEmails.length === 0) {
+      return false;
+    }
+
+    return incomingMailboxMessages.some(
+      ({ connectedAccountId, receivedAt }) => {
+        if (!isDefined(receivedAt)) {
+          return false;
+        }
+
+        return sentEmails.some((sentEmail) => {
+          // Successful-send metadata is the durable proof that this enrollment
+          // actually contacted the person. For legacy rows, the enrollment's
+          // pinned sender is still exact; an unassigned sender pool is not.
+          const sentThroughConnectedAccountId =
+            sentEmail.connectedAccountId ?? enrollment.senderConnectedAccountId;
+          const sentAt = Date.parse(sentEmail.sentAt);
+
+          return (
+            sentThroughConnectedAccountId === connectedAccountId &&
+            !Number.isNaN(sentAt) &&
+            sentAt <= receivedAt.getTime()
+          );
+        });
+      },
+    );
+  }
+
   private async attributeReplyWithRetry({
     enrollment: initialEnrollment,
     enrollmentRepository,
-    incomingThreadExternalIds,
-    repliedAt,
+    incomingMailboxMessages,
   }: {
     enrollment: SequenceEnrollmentWorkspaceEntity;
     enrollmentRepository: WorkspaceRepository<SequenceEnrollmentWorkspaceEntity>;
-    incomingThreadExternalIds: Set<string>;
-    repliedAt: Date;
+    incomingMailboxMessages: IncomingMailboxMessage[];
   }): Promise<SequenceEnrollmentWorkspaceEntity | null> {
     let enrollment = initialEnrollment;
 
@@ -210,8 +350,8 @@ export class SequenceReplyListener {
 
       const sentEmailsByStepId = enrollment.sentEmailsByStepId ?? {};
       const updatedSentEmailsByStepId = this.buildReplyAttribution({
-        incomingThreadExternalIds,
-        repliedAt,
+        incomingMailboxMessages,
+        senderConnectedAccountId: enrollment.senderConnectedAccountId,
         sentEmailsByStepId,
       });
 
@@ -239,6 +379,7 @@ export class SequenceReplyListener {
         select: [
           'id',
           'personId',
+          'senderConnectedAccountId',
           'status',
           'stopOnReply',
           'sentEmailsByStepId',
@@ -256,36 +397,72 @@ export class SequenceReplyListener {
   }
 
   private buildReplyAttribution({
-    incomingThreadExternalIds,
-    repliedAt,
+    incomingMailboxMessages,
+    senderConnectedAccountId,
     sentEmailsByStepId,
   }: {
-    incomingThreadExternalIds: Set<string>;
-    repliedAt: Date;
+    incomingMailboxMessages: IncomingMailboxMessage[];
+    senderConnectedAccountId: string | null;
     sentEmailsByStepId: Record<string, SequenceSentEmailMetadata>;
   }): Record<string, SequenceSentEmailMetadata> | null {
     const updatedSentEmailsByStepId = { ...sentEmailsByStepId };
     let hasAttribution = false;
+    const latestIncomingByMailboxThread = new Map<
+      string,
+      IncomingMailboxMessage
+    >();
 
-    for (const threadExternalId of incomingThreadExternalIds) {
+    for (const incomingMessage of incomingMailboxMessages) {
+      if (
+        !isDefined(incomingMessage.receivedAt) ||
+        !isDefined(incomingMessage.threadExternalId)
+      ) {
+        continue;
+      }
+
+      const key = `${incomingMessage.connectedAccountId}\u0000${incomingMessage.threadExternalId}`;
+      const existingMessage = latestIncomingByMailboxThread.get(key);
+
+      if (
+        !isDefined(existingMessage?.receivedAt) ||
+        incomingMessage.receivedAt > existingMessage.receivedAt
+      ) {
+        latestIncomingByMailboxThread.set(key, incomingMessage);
+      }
+    }
+
+    for (const {
+      connectedAccountId,
+      receivedAt,
+      threadExternalId,
+    } of latestIncomingByMailboxThread.values()) {
       const latestMatchingEntry = Object.entries(sentEmailsByStepId)
         .filter(
-          ([, sentEmail]) => sentEmail.threadExternalId === threadExternalId,
+          ([, sentEmail]) =>
+            sentEmail.threadExternalId === threadExternalId &&
+            (sentEmail.connectedAccountId ?? senderConnectedAccountId) ===
+              connectedAccountId &&
+            // Contact matching may happen long after a historical message was
+            // imported. It is a reply only if it arrived after this enrollment
+            // actually sent into the thread.
+            isDefined(receivedAt) &&
+            receivedAt.getTime() >= this.toTimestamp(sentEmail.sentAt),
         )
-        .reduce<
-          [string, SequenceSentEmailMetadata] | undefined
-        >((latestEntry, currentEntry) => {
-          if (!isDefined(latestEntry)) {
-            return currentEntry;
-          }
+        .reduce<[string, SequenceSentEmailMetadata] | undefined>(
+          (latestEntry, currentEntry) => {
+            if (!isDefined(latestEntry)) {
+              return currentEntry;
+            }
 
-          return this.toTimestamp(currentEntry[1].sentAt) >
-            this.toTimestamp(latestEntry[1].sentAt)
-            ? currentEntry
-            : latestEntry;
-        }, undefined);
+            return this.toTimestamp(currentEntry[1].sentAt) >
+              this.toTimestamp(latestEntry[1].sentAt)
+              ? currentEntry
+              : latestEntry;
+          },
+          undefined,
+        );
 
-      if (!isDefined(latestMatchingEntry)) {
+      if (!isDefined(receivedAt) || !isDefined(latestMatchingEntry)) {
         continue;
       }
 
@@ -293,7 +470,7 @@ export class SequenceReplyListener {
 
       updatedSentEmailsByStepId[stepId] = {
         ...sentEmail,
-        repliedAt: sentEmail.repliedAt ?? repliedAt.toISOString(),
+        repliedAt: sentEmail.repliedAt ?? receivedAt.toISOString(),
       };
       hasAttribution = true;
     }

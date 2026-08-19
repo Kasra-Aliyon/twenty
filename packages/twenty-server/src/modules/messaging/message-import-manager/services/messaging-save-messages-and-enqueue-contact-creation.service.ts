@@ -52,7 +52,7 @@ export class MessagingSaveMessagesAndEnqueueContactCreationService {
     const handleAliases = connectedAccount.handleAliases || [];
     const authContext = buildSystemAuthContext(workspaceId);
 
-    const participantsWithMessageId =
+    const transactionResult =
       await this.globalWorkspaceOrmManager.executeInWorkspaceContext(
         async () => {
           const workspaceDataSource =
@@ -115,11 +115,12 @@ export class MessagingSaveMessagesAndEnqueueContactCreationService {
                   : [];
               });
 
-              await this.messageParticipantService.saveMessageParticipants(
-                participantsWithMessageId,
-                workspaceId,
-                transactionManager,
-              );
+              const matchedParticipants =
+                await this.messageParticipantService.saveMessageParticipants(
+                  participantsWithMessageId,
+                  workspaceId,
+                  transactionManager,
+                );
 
               const folderAssociations: MessageChannelMessageAssociationFolderAssociation[] =
                 messagesToSave.flatMap((message) => {
@@ -152,13 +153,28 @@ export class MessagingSaveMessagesAndEnqueueContactCreationService {
                 transactionManager,
               );
 
-              return participantsWithMessageId;
+              return { matchedParticipants, participantsWithMessageId };
             },
           );
         },
         authContext,
         { lite: true },
       );
+
+    if (!isDefined(transactionResult)) {
+      return;
+    }
+
+    const { matchedParticipants, participantsWithMessageId } =
+      transactionResult;
+
+    // Match events used to fire inside the transaction, so reply listeners
+    // could permanently miss messages and associations that were not visible
+    // yet. Reaching this point means the transaction committed successfully.
+    this.messageParticipantService.emitMessageParticipantsMatched(
+      matchedParticipants,
+      workspaceId,
+    );
 
     if (
       messageChannel.isContactAutoCreationEnabled &&

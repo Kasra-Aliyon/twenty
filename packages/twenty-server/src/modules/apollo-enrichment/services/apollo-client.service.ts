@@ -44,6 +44,7 @@ export class ApolloClientService {
       revealPersonalEmails: false,
       revealPhoneNumber: false,
     },
+    onProviderStart?: () => Promise<void>,
   ): Promise<ApolloPersonMatchResponse> {
     if (options.revealPhoneNumber && !options.webhookUrl) {
       throw new ApolloEnrichmentError(
@@ -65,7 +66,11 @@ export class ApolloClientService {
       ...(options.webhookUrl ? { webhook_url: options.webhookUrl } : {}),
     };
 
-    const response = await this.getHttpClient().post<ApolloPersonMatchResponse>(
+    const httpClient = this.getHttpClient();
+
+    await onProviderStart?.();
+
+    const response = await httpClient.post<ApolloPersonMatchResponse>(
       '/people/match',
       undefined,
       {

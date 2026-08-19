@@ -555,6 +555,12 @@ describe('sendConnectionRequest', () => {
     const connectButton =
       document.querySelector<HTMLButtonElement>('#connect')!;
     let submittedNote = '';
+    const authorizeProviderOperation = vi.fn(
+      async (providerOperation: () => void) => {
+        providerOperation();
+        return true;
+      },
+    );
 
     connectButton.addEventListener('click', () => {
       document.querySelector<HTMLElement>('#modal-host')!.innerHTML = `
@@ -591,10 +597,13 @@ describe('sendConnectionRequest', () => {
         });
     });
 
-    expect(await sendConnectionRequest('  Hello Ada  ')).toEqual({
+    expect(
+      await sendConnectionRequest('  Hello Ada  ', authorizeProviderOperation),
+    ).toEqual({
       status: 'COMPLETED',
       connectionState: 'PENDING',
     });
+    expect(authorizeProviderOperation).toHaveBeenCalledTimes(1);
     expect(submittedNote).toBe('Hello Ada');
   });
 
@@ -887,6 +896,71 @@ describe('LinkedIn message and withdrawal automation', () => {
     expect(didClickSend).toBe(true);
   });
 
+  it('keeps a tab close during composer preflight before the provider-start boundary', async () => {
+    vi.useFakeTimers();
+    renderProfile(`
+      <main>
+        <section class="pv-top-card">
+          <h1>Ada Lovelace</h1>
+          <span class="dist-value">1st</span>
+          <button id="message" aria-label="Message Ada">Message</button>
+        </section>
+      </main>
+      <div id="composer-host"></div>
+    `);
+    let tabWasClosed = false;
+    let didClickSend = false;
+    const authorizeProviderOperation = vi.fn(
+      async (providerOperation: () => void) => {
+        if (tabWasClosed) {
+          return false;
+        }
+
+        providerOperation();
+        return true;
+      },
+    );
+
+    document
+      .querySelector<HTMLButtonElement>('#message')!
+      .addEventListener('click', () => {
+        document.querySelector<HTMLElement>('#composer-host')!.innerHTML = `
+          <form class="msg-form">
+            <textarea name="message"></textarea>
+            <button type="submit">Send</button>
+          </form>
+        `;
+        document
+          .querySelector<HTMLFormElement>('.msg-form')!
+          .addEventListener('submit', (event) => {
+            event.preventDefault();
+            didClickSend = true;
+          });
+      });
+
+    const resultPromise = sendDirectMessage(
+      'Hello Ada',
+      authorizeProviderOperation,
+    );
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Opening and filling the composer is reversible preflight. The durable
+    // start marker must not be requested until the final Send click is ready.
+    expect(authorizeProviderOperation).not.toHaveBeenCalled();
+
+    tabWasClosed = true;
+    await vi.runAllTimersAsync();
+
+    await expect(resultPromise).resolves.toEqual({
+      status: 'NAVIGATING',
+      connectionState: 'CONNECTED',
+    });
+    expect(authorizeProviderOperation).toHaveBeenCalledTimes(1);
+    expect(didClickSend).toBe(false);
+  });
+
   it('withdraws from the target profile and waits for the pending state to clear', async () => {
     renderProfile(`
       <main>
@@ -901,6 +975,12 @@ describe('LinkedIn message and withdrawal automation', () => {
     const pendingButton =
       document.querySelector<HTMLButtonElement>('#pending')!;
     const overlayHost = document.querySelector<HTMLElement>('#overlay-host')!;
+    const authorizeProviderOperation = vi.fn(
+      async (providerOperation: () => void) => {
+        providerOperation();
+        return true;
+      },
+    );
 
     pendingButton.addEventListener('click', () => {
       overlayHost.innerHTML = `
@@ -925,11 +1005,13 @@ describe('LinkedIn message and withdrawal automation', () => {
     expect(
       await withdrawConnectionRequest(
         'https://www.linkedin.com/in/ada-lovelace/',
+        authorizeProviderOperation,
       ),
     ).toEqual({
       status: 'COMPLETED',
       connectionState: 'WITHDRAWN',
     });
+    expect(authorizeProviderOperation).toHaveBeenCalledTimes(1);
   });
 
   it('skips withdrawal when the profile proves no invitation is pending', async () => {

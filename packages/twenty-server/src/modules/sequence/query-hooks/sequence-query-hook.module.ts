@@ -5,8 +5,15 @@ import { UserWorkspaceEntity } from 'src/engine/core-modules/user-workspace/user
 import { ConnectedAccountEntity } from 'src/engine/metadata-modules/connected-account/entities/connected-account.entity';
 import { MessageChannelEntity } from 'src/engine/metadata-modules/message-channel/entities/message-channel.entity';
 import { WorkspaceDataSourceModule } from 'src/engine/workspace-datasource/workspace-datasource.module';
+import { PersonSequenceHistoryDestroyGuardService } from 'src/modules/sequence/query-hooks/person-sequence-history-destroy-guard.service';
+import {
+  PersonSequenceHistoryDestroyManyPreQueryHook,
+  PersonSequenceHistoryDestroyOnePreQueryHook,
+  PersonSequenceHistoryMergeManyPreQueryHook,
+} from 'src/modules/sequence/query-hooks/person-sequence-history-destroy.query-hooks';
 import { SequenceInvariantService } from 'src/modules/sequence/query-hooks/sequence-invariant.service';
 import { SequenceLifecycleService } from 'src/modules/sequence/query-hooks/sequence-lifecycle.service';
+import { SequenceMutationSerializationService } from 'src/modules/sequence/query-hooks/sequence-mutation-serialization.service';
 import { SequenceMetricsService } from 'src/modules/sequence/services/sequence-metrics.service';
 import { SequenceSenderService } from 'src/modules/sequence/services/sequence-sender.service';
 import {
@@ -34,8 +41,13 @@ import {
     WorkspaceDataSourceModule,
   ],
   providers: [
+    PersonSequenceHistoryDestroyGuardService,
+    PersonSequenceHistoryDestroyOnePreQueryHook,
+    PersonSequenceHistoryDestroyManyPreQueryHook,
+    PersonSequenceHistoryMergeManyPreQueryHook,
     SequenceInvariantService,
     SequenceLifecycleService,
+    SequenceMutationSerializationService,
     SequenceMetricsService,
     SequenceSenderService,
     SequenceCreateOnePreQueryHook,

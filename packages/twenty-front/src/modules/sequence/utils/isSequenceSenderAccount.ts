@@ -15,8 +15,13 @@ export const isSequenceSenderAccount = (
   account: SequenceSenderAccount,
 ): boolean =>
   account.archivedAt === null &&
+  SEQUENCE_SENDER_PROVIDERS.has(account.provider);
+
+export const isSequenceEmailSenderAccountReady = (
+  account: SequenceSenderAccount,
+): boolean =>
+  isSequenceSenderAccount(account) &&
   account.authFailedAt === null &&
-  SEQUENCE_SENDER_PROVIDERS.has(account.provider) &&
   account.messageChannels.some(
     (messageChannel) =>
       messageChannel.handle === account.handle &&

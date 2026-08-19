@@ -16,16 +16,31 @@ jest.mock('@/object-record/hooks/useUpdateOneRecord', () => ({
 
 jest.mock('@/settings/accounts/hooks/useMyConnectedAccounts', () => ({
   useMyConnectedAccounts: () => ({
-    accounts: [{ id: 'sender-id', handle: 'sender@example.com' }],
+    accounts: [
+      { id: 'sender-id', handle: 'sender@example.com' },
+      { id: 'linkedin-only-id', handle: 'linkedin@example.com' },
+    ],
   }),
 }));
 
 jest.mock('@/sequence/utils/isSequenceSenderAccount', () => ({
   isSequenceSenderAccount: () => true,
+  isSequenceEmailSenderAccountReady: ({ id }: { id: string }) =>
+    id === 'sender-id',
 }));
 
 jest.mock('@/sequence/components/SequenceMailboxMultiSelect', () => ({
-  SequenceMailboxMultiSelect: () => <div>Sender mailbox selector</div>,
+  SequenceMailboxMultiSelect: ({
+    options,
+  }: {
+    options: Array<{ label: string; value: string }>;
+  }) => (
+    <div>
+      {options.map((option) => (
+        <span key={option.value}>{option.label}</span>
+      ))}
+    </div>
+  ),
 }));
 
 jest.mock('@/ui/feedback/snack-bar-manager/hooks/useSnackBar', () => ({
@@ -144,5 +159,21 @@ describe('SequenceSettingsSection', () => {
         }),
       );
     });
+  });
+
+  it('keeps accounts without inbox sync available for LinkedIn-only sequences', () => {
+    render(<SequenceSettingsSection sequence={sequence} canUpdate />);
+
+    expect(screen.getByText('sender@example.com')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'linkedin@example.com (LinkedIn only - email sending not ready)',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /LinkedIn-only sequences do not require mailbox authentication or inbox sync; automated email steps require every selected account to be authenticated and have active inbox sync before activation/,
+      ),
+    ).toBeInTheDocument();
   });
 });

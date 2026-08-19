@@ -111,6 +111,53 @@ describe('ApolloClientService', () => {
     expect(httpClient.get).not.toHaveBeenCalled();
   });
 
+  it('does not call Apollo when the durable provider-start callback rejects', async () => {
+    const startError = new Error('sequence was paused');
+    const onProviderStart = jest.fn().mockRejectedValue(startError);
+
+    await expect(
+      service.enrichPerson(
+        { linkedinUrl: 'https://www.linkedin.com/in/jane' },
+        {
+          revealPersonalEmails: false,
+          revealPhoneNumber: true,
+          webhookUrl:
+            'https://twenty.example.com/webhooks/apollo/enrichment/token',
+        },
+        onProviderStart,
+      ),
+    ).rejects.toBe(startError);
+
+    expect(onProviderStart).toHaveBeenCalledTimes(1);
+    expect(httpClient.post).not.toHaveBeenCalled();
+  });
+
+  it('runs the durable provider-start callback immediately before Apollo HTTP', async () => {
+    const events: string[] = [];
+    const onProviderStart = jest.fn(async () => {
+      events.push('provider-start');
+    });
+
+    httpClient.post.mockImplementation(async () => {
+      events.push('http-post');
+
+      return { data: { person: null } };
+    });
+
+    await service.enrichPerson(
+      { linkedinUrl: 'https://www.linkedin.com/in/jane' },
+      {
+        revealPersonalEmails: false,
+        revealPhoneNumber: true,
+        webhookUrl:
+          'https://twenty.example.com/webhooks/apollo/enrichment/token',
+      },
+      onProviderStart,
+    );
+
+    expect(events).toEqual(['provider-start', 'http-post']);
+  });
+
   it('preserves signed 64-bit Apollo request IDs while parsing responses', async () => {
     httpClient.post.mockResolvedValue({
       data: {

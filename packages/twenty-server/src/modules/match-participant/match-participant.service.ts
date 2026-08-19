@@ -48,6 +48,7 @@ type MatchParticipantsArgs<
   participants: ParticipantWorkspaceEntity[];
   objectMetadataName: ObjectMetadataName;
   transactionManager?: WorkspaceEntityManager;
+  shouldEmitMatchedEvent?: boolean;
   matchWith: 'workspaceMemberOnly' | 'personOnly' | 'workspaceMemberAndPerson';
   workspaceId: string;
 };
@@ -84,11 +85,14 @@ export class MatchParticipantService<
     participants,
     objectMetadataName,
     transactionManager,
+    shouldEmitMatchedEvent = true,
     matchWith = 'workspaceMemberAndPerson',
     workspaceId,
-  }: MatchParticipantsArgs<ParticipantWorkspaceEntity>) {
+  }: MatchParticipantsArgs<ParticipantWorkspaceEntity>): Promise<
+    ParticipantWorkspaceEntity[]
+  > {
     if (participants.length === 0) {
-      return;
+      return [];
     }
 
     const personRepository =
@@ -112,6 +116,7 @@ export class MatchParticipantService<
 
     const chunkSize = 200;
     const chunkedParticipants = chunk(participants, chunkSize);
+    const matchedParticipants: ParticipantWorkspaceEntity[] = [];
 
     for (const participants of chunkedParticipants) {
       const uniqueParticipantsHandles = [
@@ -191,19 +196,43 @@ export class MatchParticipantService<
             workspaceMemberId: participant.workspaceMemberId,
           },
         })),
+        transactionManager,
       );
 
-      this.workspaceEventEmitter.emitCustomBatchEvent(
-        `${objectMetadataName}_matched`,
-        [
-          {
-            workspaceMemberId: null,
-            participants: partipantsToBeUpdated,
-          },
-        ],
-        workspaceId,
+      matchedParticipants.push(
+        ...(partipantsToBeUpdated as ParticipantWorkspaceEntity[]),
       );
+
+      if (shouldEmitMatchedEvent) {
+        this.emitParticipantsMatched({
+          participants: partipantsToBeUpdated,
+          objectMetadataName,
+          workspaceId,
+        });
+      }
     }
+
+    return matchedParticipants;
+  }
+
+  public emitParticipantsMatched({
+    participants,
+    objectMetadataName,
+    workspaceId,
+  }: {
+    participants: ParticipantWorkspaceEntity[];
+    objectMetadataName: ObjectMetadataName;
+    workspaceId: string;
+  }): void {
+    if (participants.length === 0) {
+      return;
+    }
+
+    this.workspaceEventEmitter.emitCustomBatchEvent(
+      `${objectMetadataName}_matched`,
+      [{ workspaceMemberId: null, participants }],
+      workspaceId,
+    );
   }
 
   public async matchParticipantsForWorkspaceMembers({

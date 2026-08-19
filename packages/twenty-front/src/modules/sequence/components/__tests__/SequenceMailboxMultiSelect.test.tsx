@@ -52,7 +52,7 @@ jest.mock('twenty-ui/navigation', () => ({
 }));
 
 describe('SequenceMailboxMultiSelect', () => {
-  it('adds a mailbox while preserving the existing pool order', () => {
+  it('adds a sender account while preserving the existing pool order', () => {
     const onChange = jest.fn();
 
     render(
@@ -73,7 +73,7 @@ describe('SequenceMailboxMultiSelect', () => {
     expect(onChange).toHaveBeenCalledWith(['first-id', 'second-id']);
   });
 
-  it('blocks additions at 20 mailboxes while still allowing removal', () => {
+  it('blocks additions at 20 sender accounts while still allowing removal', () => {
     const onChange = jest.fn();
     const options = Array.from({ length: 21 }, (_, index) => ({
       label: `sender-${index + 1}@example.com`,
@@ -92,7 +92,9 @@ describe('SequenceMailboxMultiSelect', () => {
       />,
     );
 
-    expect(screen.getByText('20 mailboxes selected (maximum)')).toBeVisible();
+    expect(
+      screen.getByText('20 sender accounts selected (maximum)'),
+    ).toBeVisible();
 
     const unavailableOption = screen.getByRole('button', {
       name: 'sender-21@example.com',

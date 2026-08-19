@@ -15,6 +15,7 @@ import {
   sendDirectMessage,
   withdrawConnectionRequest,
   type LinkedInAutomationResult,
+  type LinkedInProviderOperationAuthorizer,
 } from '../utils/linkedin-automation';
 import {
   assertLinkedInIdempotentRecoveryAllowed,
@@ -30,7 +31,12 @@ import {
   LINKEDIN_READ_REQUESTS_PER_DAY,
   LINKEDIN_READ_REQUESTS_PER_HOUR,
 } from '../utils/linkedin-safety-policy';
-import { canRecoverLinkedInActionAfterInterruption } from '../utils/linkedin-runner-state';
+import {
+  canStartClaimedLinkedinAction,
+  canRecoverLinkedInActionAfterInterruption,
+  claimFirstAvailableLinkedinAction,
+  invokeLinkedinProviderOperationAfterStart,
+} from '../utils/linkedin-runner-state';
 import { syncLinkedInConnectionsAndInvitations } from '../utils/linkedin-sync-connections';
 import { syncLinkedInMessages } from '../utils/linkedin-sync-messages';
 import {
@@ -238,6 +244,8 @@ const defaultRunnerState = (): LinkedInRunnerSessionState => ({
   tabId: null,
   activeAction: null,
   activeActionStartedAt: null,
+  activeActionNeedsRelease: false,
+  activeActionNeedsReconciliation: false,
   lastExecutedAt: null,
   completedCount: 0,
   failedCount: 0,
@@ -291,6 +299,7 @@ export default defineContentScript({
 
   main(ctx) {
     let runnerState = defaultRunnerState();
+    let isRunnerPauseRequested = false;
     let queue: TwentyLinkedInAction[] = [];
     let isPanelOpen = false;
     let isPolling = false;
@@ -680,12 +689,24 @@ export default defineContentScript({
     };
 
     const executeAction = async (action: TwentyLinkedInAction) => {
+      if (
+        !canStartClaimedLinkedinAction(
+          runnerState,
+          action,
+          isRunnerPauseRequested,
+        ) &&
+        runnerState.activeActionStartedAt === null
+      ) {
+        return;
+      }
+
       if (!getProfileHandle(action.linkedinUrl)) {
         const reportResponse = await sendMessage('REPORT_LINKEDIN_ACTION', {
           id: action.id,
           claimedAt: action.claimedAt,
           status: 'FAILED',
           connectionState: 'UNKNOWN',
+          executedAt: new Date().toISOString(),
           errorMessage:
             'The action did not contain a valid LinkedIn profile URL',
         });
@@ -715,6 +736,7 @@ export default defineContentScript({
           claimedAt: action.claimedAt,
           status: 'FAILED',
           connectionState: 'UNKNOWN',
+          executedAt: new Date(runnerState.activeActionStartedAt).toISOString(),
           errorMessage:
             'The runner tab reloaded or stopped after this action began, so its outcome is unknown.',
         });
@@ -777,37 +799,124 @@ export default defineContentScript({
         statusIsError = false;
         render();
       } else {
-        const markResponse = await sendMessage<LinkedInRunnerSessionState>(
-          'MARK_LINKEDIN_ACTION_EXECUTING',
-          { id: action.id },
-        );
-
-        if (!markResponse.success) {
-          throw new Error(
-            markResponse.error || 'Could not mark the action as executing',
-          );
+        if (isRunnerPauseRequested) {
+          return;
         }
 
-        runnerState = markResponse.data ?? runnerState;
-        await recordLinkedInOutboundAttempt(action.id);
         await refreshSafetySnapshot();
-        statusMessage = `Running ${action.type.replaceAll('_', ' ').toLowerCase()}…`;
+        statusMessage = `Preparing ${action.type.replaceAll('_', ' ').toLowerCase()}…`;
         statusIsError = false;
         render();
+
+        // Keep the deliberate human-like delay on the unstarted side of the
+        // lease boundary. The automation helper performs its remaining DOM
+        // preflight before asking to mark and execute the final outbound click.
         await wait(1_200);
       }
 
+      if (isRunnerPauseRequested) {
+        return;
+      }
+
       let result: LinkedInAutomationResult;
+      let providerWasAuthorized = false;
+      let providerStartRecordPromise: Promise<void> = Promise.resolve();
+      const authorizeProviderOperation: LinkedInProviderOperationAuthorizer =
+        async (providerOperation) => {
+          if (isRunnerPauseRequested) {
+            return false;
+          }
+
+          const activeClaim =
+            runnerState.activeAction?.id === action.id
+              ? runnerState.activeAction
+              : action;
+
+          const markResponse = await sendMessage<LinkedInRunnerSessionState>(
+            'MARK_LINKEDIN_ACTION_EXECUTING',
+            { id: action.id, claimedAt: activeClaim.claimedAt },
+          );
+
+          if (!markResponse.success) {
+            throw new Error(
+              markResponse.error || 'Could not mark the action as executing',
+            );
+          }
+
+          runnerState = markResponse.data ?? runnerState;
+
+          if (
+            runnerState.activeAction?.id !== action.id ||
+            runnerState.activeActionStartedAt === null
+          ) {
+            statusMessage =
+              'The action was safely rescheduled after its provider-start checks.';
+            statusIsError = false;
+            await refreshQueue();
+            render();
+            schedulePoll(RUNNER_POLL_INTERVAL_MILLISECONDS);
+            return false;
+          }
+
+          // Do not run even synchronous UI work between the accepted durable
+          // start and the provider click. A cross-context crash can still make
+          // the outcome ambiguous, but this keeps the controllable content-side
+          // window as small as possible.
+          providerWasAuthorized = invokeLinkedinProviderOperationAfterStart({
+            runnerState,
+            action,
+            providerOperation,
+          });
+
+          if (!providerWasAuthorized) {
+            throw new Error(
+              'The accepted LinkedIn provider start no longer matches the active runner claim',
+            );
+          }
+
+          statusMessage = `Running ${action.type.replaceAll('_', ' ').toLowerCase()}…`;
+          statusIsError = false;
+          render();
+
+          providerStartRecordPromise = isRecoveringAction
+            ? Promise.resolve()
+            : recordLinkedInOutboundAttempt(action.id).catch((error) =>
+                console.error(
+                  '[Twenty] Could not persist the LinkedIn provider-start marker:',
+                  error,
+                ),
+              );
+
+          return true;
+        };
 
       try {
+        let providerResultPromise: Promise<LinkedInAutomationResult>;
+
         if (action.type === 'SEND_CONNECTION_REQUEST') {
-          result = await sendConnectionRequest(action.noteText ?? '');
+          providerResultPromise = sendConnectionRequest(
+            action.noteText ?? '',
+            authorizeProviderOperation,
+          );
         } else if (action.type === 'SEND_MESSAGE') {
-          result = await sendDirectMessage(action.noteText ?? '');
+          providerResultPromise = sendDirectMessage(
+            action.noteText ?? '',
+            authorizeProviderOperation,
+          );
         } else {
-          result = await withdrawConnectionRequest(action.linkedinUrl);
+          providerResultPromise = withdrawConnectionRequest(
+            action.linkedinUrl,
+            authorizeProviderOperation,
+          );
         }
+
+        result = await providerResultPromise;
+        await providerStartRecordPromise;
       } catch (error) {
+        if (!providerWasAuthorized) {
+          throw error;
+        }
+
         result = {
           status: 'FAILED',
           connectionState: 'UNKNOWN',
@@ -834,9 +943,16 @@ export default defineContentScript({
 
       const reportResponse = await sendMessage('REPORT_LINKEDIN_ACTION', {
         id: action.id,
-        claimedAt: action.claimedAt,
+        claimedAt:
+          runnerState.activeAction?.id === action.id
+            ? runnerState.activeAction.claimedAt
+            : action.claimedAt,
         status: result.status,
         connectionState: result.connectionState,
+        executedAt: new Date(
+          runnerState.activeActionStartedAt ??
+            (action.claimedAt ? Date.parse(action.claimedAt) : Date.now()),
+        ).toISOString(),
         errorMessage: result.status === 'FAILED' ? result.errorMessage : null,
       });
 
@@ -897,7 +1013,7 @@ export default defineContentScript({
         const dueResponse = await sendMessage<TwentyLinkedInAction[]>(
           'FETCH_DUE_LINKEDIN_ACTIONS',
         );
-        const dueAction = dueResponse.data?.find(
+        const dueActions = (dueResponse.data ?? []).filter(
           (action) => new Date(action.scheduledAt).getTime() <= Date.now(),
         );
 
@@ -905,7 +1021,7 @@ export default defineContentScript({
           throw new Error(dueResponse.error || 'Could not load due actions');
         }
 
-        if (!dueAction) {
+        if (dueActions.length === 0) {
           await refreshQueue();
           statusMessage =
             queue.length > 0
@@ -921,14 +1037,35 @@ export default defineContentScript({
           return;
         }
 
-        try {
-          const isRecoveringAction =
-            canRecoverLinkedInActionAfterInterruption(dueAction.type) &&
-            (await wasLinkedInOutboundActionAttempted(dueAction.id));
+        let claimedAction: TwentyLinkedInAction | null = null;
 
-          await (isRecoveringAction
-            ? assertLinkedInIdempotentRecoveryAllowed(dueAction.id)
-            : assertLinkedInOutboundAllowed(dueAction.id));
+        try {
+          claimedAction = await claimFirstAvailableLinkedinAction(
+            dueActions,
+            async (dueAction) => {
+              const isRecoveringAction =
+                canRecoverLinkedInActionAfterInterruption(dueAction.type) &&
+                (await wasLinkedInOutboundActionAttempted(dueAction.id));
+
+              await (isRecoveringAction
+                ? assertLinkedInIdempotentRecoveryAllowed(dueAction.id)
+                : assertLinkedInOutboundAllowed(dueAction.id));
+
+              const claimResponse =
+                await sendMessage<TwentyLinkedInAction | null>(
+                  'CLAIM_LINKEDIN_ACTION',
+                  { id: dueAction.id },
+                );
+
+              if (!claimResponse.success) {
+                throw new Error(
+                  claimResponse.error || 'Could not claim the action',
+                );
+              }
+
+              return claimResponse.data ?? null;
+            },
+          );
         } catch (error) {
           if (!(error instanceof LinkedInSafetyLimitError)) {
             throw error;
@@ -942,22 +1079,27 @@ export default defineContentScript({
           return;
         }
 
-        const claimResponse = await sendMessage<TwentyLinkedInAction | null>(
-          'CLAIM_LINKEDIN_ACTION',
-          { id: dueAction.id },
-        );
-
-        if (!claimResponse.success) {
-          throw new Error(claimResponse.error || 'Could not claim the action');
-        }
-
-        if (!claimResponse.data) {
+        if (!claimedAction) {
           schedulePoll(RUNNER_POLL_INTERVAL_MILLISECONDS);
           return;
         }
 
         await refreshRunnerState();
-        await executeAction(claimResponse.data);
+
+        if (
+          !canStartClaimedLinkedinAction(
+            runnerState,
+            claimedAction,
+            isRunnerPauseRequested,
+          )
+        ) {
+          statusMessage = 'Runner is paused.';
+          statusIsError = false;
+          render();
+          return;
+        }
+
+        await executeAction(claimedAction);
       } catch (error) {
         statusMessage = error instanceof Error ? error.message : String(error);
         statusIsError = true;
@@ -969,6 +1111,10 @@ export default defineContentScript({
     }
 
     const setRunnerEnabled = async (enabled: boolean) => {
+      if (!enabled) {
+        isRunnerPauseRequested = true;
+      }
+
       const response = await sendMessage<LinkedInRunnerSessionState>(
         'SET_LINKEDIN_RUNNER_STATE',
         { enabled },
@@ -982,6 +1128,10 @@ export default defineContentScript({
       }
 
       runnerState = response.data;
+
+      if (enabled) {
+        isRunnerPauseRequested = false;
+      }
       statusMessage = enabled
         ? 'Runner started. Keep this LinkedIn tab open.'
         : 'Runner is paused.';

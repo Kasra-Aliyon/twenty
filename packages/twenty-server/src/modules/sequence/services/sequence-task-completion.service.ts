@@ -21,7 +21,10 @@ import { buildSystemAuthContext } from 'src/engine/twenty-orm/utils/build-system
 import { LinkedinActionWorkspaceEntity } from 'src/modules/linkedin/standard-objects/linkedin-action.workspace-entity';
 import { PersonWorkspaceEntity } from 'src/modules/person/standard-objects/person.workspace-entity';
 import { SequenceQueueService } from 'src/modules/sequence/services/sequence-queue.service';
-import { SequenceSenderService } from 'src/modules/sequence/services/sequence-sender.service';
+import {
+  SequenceSenderService,
+  SequenceSenderUnavailableError,
+} from 'src/modules/sequence/services/sequence-sender.service';
 import {
   SEQUENCE_ERROR_MESSAGE_MAX_LENGTH,
   SEQUENCE_EXECUTION_ERROR,
@@ -29,11 +32,14 @@ import {
 import { SequenceEnrollmentWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence-enrollment.workspace-entity';
 import { SequenceStepWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence-step.workspace-entity';
 import { SequenceWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence.workspace-entity';
+import { TaskWorkspaceEntity } from 'src/modules/task/standard-objects/task.workspace-entity';
 
 type ManualLinkedinAction = {
   type: LinkedInActionType;
   connectionState: LinkedInConnectionState;
 };
+
+class SequenceTaskCompletionPermanentError extends Error {}
 
 @Injectable()
 export class SequenceTaskCompletionService {
@@ -49,10 +55,12 @@ export class SequenceTaskCompletionService {
     workspaceId,
     enrollmentId,
     stepId,
+    taskId,
   }: {
     workspaceId: string;
     enrollmentId: string;
     stepId: string;
+    taskId?: string;
   }): Promise<void> {
     let didAdvance = false;
 
@@ -82,6 +90,45 @@ export class SequenceTaskCompletionService {
 
       if (!isDefined(enrollment)) {
         return;
+      }
+
+      let sourceTaskRepository: WorkspaceRepository<TaskWorkspaceEntity> | null =
+        null;
+
+      if (isDefined(taskId)) {
+        sourceTaskRepository =
+          await this.globalWorkspaceOrmManager.getRepository(
+            workspaceId,
+            TaskWorkspaceEntity,
+            { shouldBypassPermissionChecks: true },
+          );
+        const workspaceDataSource =
+          await this.globalWorkspaceOrmManager.getGlobalWorkspaceDataSource();
+        const sourceTaskCommitted = await workspaceDataSource.transaction(
+          async (transactionManager) =>
+            isDefined(
+              await sourceTaskRepository?.findOne(
+                {
+                  where: {
+                    id: taskId,
+                    status: 'DONE',
+                    sequenceEnrollmentId: enrollmentId,
+                    sequenceStepId: stepId,
+                  },
+                  select: ['id'],
+                  lock: { mode: 'pessimistic_write' },
+                },
+                transactionManager as WorkspaceEntityManager,
+              ),
+            ),
+        );
+
+        // Do not perform any terminal validation from an event whose source
+        // task update did not commit. The scheduler can repair a committed
+        // completion if this listener loses a race after this point.
+        if (!sourceTaskCommitted) {
+          return;
+        }
       }
 
       const step = await stepRepository.findOne({
@@ -124,7 +171,9 @@ export class SequenceTaskCompletionService {
             sequence?.senderConnectedAccountId;
 
           if (!isDefined(senderConnectedAccountId)) {
-            throw new Error(SEQUENCE_EXECUTION_ERROR.MISSING_CONNECTED_ACCOUNT);
+            throw new SequenceTaskCompletionPermanentError(
+              SEQUENCE_EXECUTION_ERROR.MISSING_CONNECTED_ACCOUNT,
+            );
           }
 
           const personRepository =
@@ -142,7 +191,9 @@ export class SequenceTaskCompletionService {
           ]);
 
           if (!isDefined(person)) {
-            throw new Error(SEQUENCE_EXECUTION_ERROR.MISSING_PERSON);
+            throw new SequenceTaskCompletionPermanentError(
+              SEQUENCE_EXECUTION_ERROR.MISSING_PERSON,
+            );
           }
 
           actionInput = {
@@ -159,6 +210,27 @@ export class SequenceTaskCompletionService {
           async (transactionManager) => {
             const workspaceTransactionManager =
               transactionManager as WorkspaceEntityManager;
+
+            if (isDefined(taskId)) {
+              const committedTask = await sourceTaskRepository?.findOne(
+                {
+                  where: {
+                    id: taskId,
+                    status: 'DONE',
+                    sequenceEnrollmentId: enrollmentId,
+                    sequenceStepId: stepId,
+                  },
+                  select: ['id'],
+                  lock: { mode: 'pessimistic_write' },
+                },
+                workspaceTransactionManager,
+              );
+
+              if (!isDefined(committedTask)) {
+                return false;
+              }
+            }
+
             const updateResult = await enrollmentRepository.update(
               {
                 id: enrollmentId,
@@ -216,6 +288,13 @@ export class SequenceTaskCompletionService {
           },
         );
       } catch (error) {
+        if (
+          !(error instanceof SequenceTaskCompletionPermanentError) &&
+          !(error instanceof SequenceSenderUnavailableError)
+        ) {
+          throw error;
+        }
+
         const errorMessage =
           error instanceof Error ? error.message : String(error);
 

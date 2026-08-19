@@ -131,6 +131,100 @@ export class WorkspaceQueryHookExplorer implements OnModuleInit {
     }
   }
 
+  async handleTransactionalPreHook(
+    executeParams: Parameters<
+      NonNullable<WorkspacePreQueryHookInstance['executeInTransaction']>
+    >,
+    instance: object,
+    host: Module,
+    isRequestScoped: boolean,
+  ): Promise<
+    ReturnType<
+      NonNullable<WorkspacePreQueryHookInstance['executeInTransaction']>
+    >
+  > {
+    const methodName = 'executeInTransaction';
+    const workspace = executeParams[0].workspace;
+
+    assertIsDefinedOrThrow(workspace, WorkspaceNotFoundDefaultError);
+
+    if (isRequestScoped) {
+      const contextId = createContextId();
+
+      if (this.moduleRef.registerRequestByContextId) {
+        this.moduleRef.registerRequestByContextId(
+          { req: { workspaceId: workspace.id } },
+          contextId,
+        );
+      }
+
+      const contextInstance = await this.injector.loadPerContext(
+        instance,
+        host,
+        host.providers,
+        contextId,
+      );
+
+      // @ts-expect-error legacy noImplicitAny
+      return contextInstance[methodName].call(
+        contextInstance,
+        ...executeParams,
+      );
+    }
+
+    // @ts-expect-error legacy noImplicitAny
+    return instance[methodName].call(instance, ...executeParams);
+  }
+
+  async handleTransactionalPostMutationHook(
+    executeParams: Parameters<
+      NonNullable<
+        WorkspacePreQueryHookInstance['executeAfterMutationInTransaction']
+      >
+    >,
+    instance: object,
+    host: Module,
+    isRequestScoped: boolean,
+  ): Promise<
+    ReturnType<
+      NonNullable<
+        WorkspacePreQueryHookInstance['executeAfterMutationInTransaction']
+      >
+    >
+  > {
+    const methodName = 'executeAfterMutationInTransaction';
+    const workspace = executeParams[0].workspace;
+
+    assertIsDefinedOrThrow(workspace, WorkspaceNotFoundDefaultError);
+
+    if (isRequestScoped) {
+      const contextId = createContextId();
+
+      if (this.moduleRef.registerRequestByContextId) {
+        this.moduleRef.registerRequestByContextId(
+          { req: { workspaceId: workspace.id } },
+          contextId,
+        );
+      }
+
+      const contextInstance = await this.injector.loadPerContext(
+        instance,
+        host,
+        host.providers,
+        contextId,
+      );
+
+      // @ts-expect-error legacy noImplicitAny
+      return contextInstance[methodName].call(
+        contextInstance,
+        ...executeParams,
+      );
+    }
+
+    // @ts-expect-error legacy noImplicitAny
+    return instance[methodName].call(instance, ...executeParams);
+  }
+
   private transformPayload(payload: QueryResultFieldValue): ObjectRecord[] {
     if (isQueryResultFieldValueAConnection(payload)) {
       return payload.edges.map((edge) => edge.node);

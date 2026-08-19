@@ -26,16 +26,17 @@ export const SequenceMailboxMultiSelect = ({
 }: SequenceMailboxMultiSelectProps) => {
   const optionById = new Map(options.map((option) => [option.value, option]));
   const selectedLabels = selectedAccountIds.map(
-    (accountId) => optionById.get(accountId)?.label ?? t`Unavailable mailbox`,
+    (accountId) =>
+      optionById.get(accountId)?.label ?? t`Unavailable sender account`,
   );
   const displayLabel =
     selectedLabels.length === 0
-      ? t`Choose mailboxes`
+      ? t`Choose sender accounts`
       : selectedLabels.length === 1
         ? selectedLabels[0]
         : selectedLabels.length >= MAXIMUM_SENDER_POOL_SIZE
-          ? t`${selectedLabels.length} mailboxes selected (maximum)`
-          : t`${selectedLabels.length} mailboxes selected`;
+          ? t`${selectedLabels.length} sender accounts selected (maximum)`
+          : t`${selectedLabels.length} sender accounts selected`;
   const hasReachedMaximumPoolSize =
     selectedAccountIds.length >= MAXIMUM_SENDER_POOL_SIZE;
 

@@ -48,6 +48,7 @@ export class SequenceTaskListener {
         workspaceId: payload.workspaceId,
         enrollmentId: task.sequenceEnrollmentId,
         stepId: task.sequenceStepId,
+        taskId: task.id,
       });
     }
   }

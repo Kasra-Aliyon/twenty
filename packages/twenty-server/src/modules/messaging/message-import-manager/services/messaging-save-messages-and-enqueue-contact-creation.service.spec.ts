@@ -16,6 +16,7 @@ import { GlobalWorkspaceOrmManager } from 'src/engine/twenty-orm/global-workspac
 import { type ConnectedAccountEntity } from 'src/engine/metadata-modules/connected-account/entities/connected-account.entity';
 import { CreateCompanyAndContactJob } from 'src/modules/contact-creation-manager/jobs/create-company-and-contact.job';
 import { MessageDirection } from 'src/modules/messaging/common/enums/message-direction.enum';
+import { type MessageParticipantWorkspaceEntity } from 'src/modules/messaging/common/standard-objects/message-participant.workspace-entity';
 import { MessagingMessageFolderAssociationService } from 'src/modules/messaging/message-import-manager/services/messaging-message-folder-association.service';
 import { MessagingMessageService } from 'src/modules/messaging/message-import-manager/services/messaging-message.service';
 import { MessagingSaveMessagesAndEnqueueContactCreationService } from 'src/modules/messaging/message-import-manager/services/messaging-save-messages-and-enqueue-contact-creation.service';
@@ -150,7 +151,8 @@ describe('MessagingSaveMessagesAndEnqueueContactCreationService', () => {
         {
           provide: MessagingMessageParticipantService,
           useValue: {
-            saveMessageParticipants: jest.fn().mockResolvedValue(undefined),
+            emitMessageParticipantsMatched: jest.fn(),
+            saveMessageParticipants: jest.fn().mockResolvedValue([]),
           },
         },
         {
@@ -208,6 +210,47 @@ describe('MessagingSaveMessagesAndEnqueueContactCreationService', () => {
       messageParticipantService.saveMessageParticipants,
     ).toHaveBeenCalled();
     expect(messageQueueService.add).toHaveBeenCalled();
+  });
+
+  it('emits participant matches only after the message transaction commits', async () => {
+    const callOrder: string[] = [];
+    const matchedParticipant = {
+      id: 'matched-participant-id',
+      messageId: 'db-message-id-2',
+      personId: 'person-id',
+      role: MessageParticipantRole.FROM,
+    } as MessageParticipantWorkspaceEntity;
+
+    datasourceInstance.transaction.mockImplementationOnce(async (callback) => {
+      const result = await callback({});
+
+      callOrder.push('transaction-committed');
+
+      return result;
+    });
+    jest
+      .mocked(messageParticipantService.saveMessageParticipants)
+      .mockResolvedValueOnce([matchedParticipant]);
+    jest
+      .mocked(messageParticipantService.emitMessageParticipantsMatched)
+      .mockImplementationOnce(() => {
+        callOrder.push('matched-event-emitted');
+      });
+
+    await service.saveMessagesAndEnqueueContactCreation(
+      mockMessages,
+      mockMessageChannel,
+      mockConnectedAccount,
+      workspaceId,
+    );
+
+    expect(callOrder).toEqual([
+      'transaction-committed',
+      'matched-event-emitted',
+    ]);
+    expect(
+      messageParticipantService.emitMessageParticipantsMatched,
+    ).toHaveBeenCalledWith([matchedParticipant], workspaceId);
   });
 
   it('should not enqueue contact creation when it is disabled', async () => {

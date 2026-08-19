@@ -50,6 +50,7 @@ describe('MessagingMessageOutboundService', () => {
     expect(sendMessage).toHaveBeenCalledWith(
       { ...sendMessageInput, isPlainTextOnly: true },
       connectedAccount,
+      undefined,
     );
     expect(createDraft).toHaveBeenCalledWith(
       { ...sendMessageInput, isPlainTextOnly: true },
@@ -65,6 +66,24 @@ describe('MessagingMessageOutboundService', () => {
     expect(sendMessage).toHaveBeenCalledWith(
       sendMessageInput,
       connectedAccount,
+      undefined,
+    );
+  });
+
+  it('passes the provider-start callback through after shared preflight', async () => {
+    getWorkspace.mockResolvedValue({ isPlainTextEmailEnabled: false });
+    const onProviderStart = jest.fn();
+
+    await service.sendMessage(
+      sendMessageInput,
+      connectedAccount,
+      onProviderStart,
+    );
+
+    expect(sendMessage).toHaveBeenCalledWith(
+      sendMessageInput,
+      connectedAccount,
+      onProviderStart,
     );
   });
 });

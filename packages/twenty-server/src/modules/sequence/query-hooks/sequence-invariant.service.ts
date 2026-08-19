@@ -13,6 +13,7 @@ import {
   TASK_PRIORITIES,
   type SequenceConditionType,
   type SequenceEnrollmentStatus,
+  type SequenceStatus,
 } from 'twenty-shared/types';
 import { validateSpintax } from 'twenty-shared/utils';
 import { In } from 'typeorm';
@@ -42,6 +43,25 @@ const SEQUENCE_ENGINE_FIELDS = new Set([
   'failedCount',
   'repliedCount',
 ]);
+
+const ALLOWED_SEQUENCE_STATUS_TRANSITIONS: Record<
+  SequenceStatus,
+  ReadonlySet<SequenceStatus>
+> = {
+  [SEQUENCE_STATUSES.DRAFT]: new Set([
+    SEQUENCE_STATUSES.DRAFT,
+    SEQUENCE_STATUSES.ACTIVE,
+  ]),
+  [SEQUENCE_STATUSES.ACTIVE]: new Set([
+    SEQUENCE_STATUSES.ACTIVE,
+    SEQUENCE_STATUSES.PAUSED,
+  ]),
+  [SEQUENCE_STATUSES.PAUSED]: new Set([
+    SEQUENCE_STATUSES.PAUSED,
+    SEQUENCE_STATUSES.ACTIVE,
+    SEQUENCE_STATUSES.DRAFT,
+  ]),
+};
 
 const TERMINAL_USER_STATUSES: ReadonlySet<SequenceEnrollmentStatus> = new Set([
   SEQUENCE_ENROLLMENT_STATUSES.REPLIED,
@@ -104,6 +124,19 @@ export class SequenceInvariantService {
       completedCount: 0,
       repliedCount: 0,
       failedCount: 0,
+    };
+  }
+
+  normalizeSequenceUpdate(
+    data: Partial<SequenceWorkspaceEntity>,
+  ): Partial<SequenceWorkspaceEntity> {
+    if (data.settings === undefined) {
+      return data;
+    }
+
+    return {
+      ...data,
+      settings: parseSequenceSettings(data.settings),
     };
   }
 
@@ -325,6 +358,18 @@ export class SequenceInvariantService {
 
     this.assertSenderPoolSize(data.settings);
 
+    if (
+      data.status !== undefined &&
+      !ALLOWED_SEQUENCE_STATUS_TRANSITIONS[sequence.status].has(data.status)
+    ) {
+      this.throwBadRequest(
+        sequence.status === SEQUENCE_STATUSES.ACTIVE &&
+          data.status === SEQUENCE_STATUSES.DRAFT
+          ? 'Pause the sequence before moving it back to draft'
+          : `Cannot move a sequence from ${sequence.status} to ${data.status}`,
+      );
+    }
+
     if (fieldNames.some((fieldName) => SEQUENCE_ENGINE_FIELDS.has(fieldName))) {
       this.throwBadRequest(
         'Sequence counters are managed by the sequence engine',
@@ -391,6 +436,15 @@ export class SequenceInvariantService {
         this.throwBadRequest('Add a step before activating the sequence');
       }
 
+      // Every scheduling path is gated on the sending window. With no active
+      // day the window never opens, so the sequence would sit ACTIVE and never
+      // advance a single enrollment.
+      if (nextSettings.activeDays.length === 0) {
+        this.throwBadRequest(
+          'Choose at least one sending day before activating the sequence',
+        );
+      }
+
       this.assertSequenceStepsValid(steps);
 
       const hasAutomatedEmailStep = steps.some(
@@ -409,25 +463,38 @@ export class SequenceInvariantService {
           settings.type === SEQUENCE_STEP_TYPES.CONDITION &&
           SENDER_DEPENDENT_CONDITIONS.has(settings.condition),
       );
-      const requiresReadySender =
+      const requiresSender =
         hasAutomatedEmailStep ||
         hasLinkedinActionStep ||
         hasSenderDependentCondition;
 
-      if (requiresReadySender && senderConnectedAccountIds.length === 0) {
+      if (requiresSender && senderConnectedAccountIds.length === 0) {
         this.throwBadRequest('Choose a sender before activating the sequence');
       }
 
-      if (requiresReadySender) {
+      if (requiresSender) {
         for (const connectedAccountId of senderConnectedAccountIds) {
           try {
-            await this.sequenceSenderService.getReadySenderOrThrow({
-              connectedAccountId,
-              expectedUserWorkspaceId: isUserAuthContext(authContext)
-                ? authContext.userWorkspaceId
-                : undefined,
-              workspaceId: authContext.workspace.id,
-            });
+            const expectedUserWorkspaceId = isUserAuthContext(authContext)
+              ? authContext.userWorkspaceId
+              : undefined;
+
+            // Only automated email actually sends through the mailbox.
+            // LinkedIn steps and LinkedIn conditions merely identify the owning
+            // workspace member, so a syncing inbox must not block them.
+            if (hasAutomatedEmailStep) {
+              await this.sequenceSenderService.getReadySenderOrThrow({
+                connectedAccountId,
+                expectedUserWorkspaceId,
+                workspaceId: authContext.workspace.id,
+              });
+            } else {
+              await this.sequenceSenderService.getSenderAccountOrThrow({
+                connectedAccountId,
+                expectedUserWorkspaceId,
+                workspaceId: authContext.workspace.id,
+              });
+            }
           } catch (error) {
             this.throwBadRequest(
               error instanceof Error
@@ -485,6 +552,7 @@ export class SequenceInvariantService {
           if (
             typeof settings.titleTemplate !== 'string' ||
             settings.titleTemplate.trim().length === 0 ||
+            typeof settings.notesTemplate !== 'string' ||
             !KNOWN_TASK_TYPES.has(settings.taskType) ||
             !KNOWN_TASK_PRIORITIES.has(settings.priority) ||
             !KNOWN_TASK_CONTINUE_MODES.has(settings.continueMode) ||
@@ -745,6 +813,10 @@ export class SequenceInvariantService {
 
     if (sequences.length !== uniqueSequenceIds.length) {
       this.throwBadRequest('One or more sequences were not found');
+    }
+
+    if (sequences.some(({ deletedAt }) => deletedAt !== null)) {
+      this.throwBadRequest('Archived sequences are read-only');
     }
 
     if (

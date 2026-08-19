@@ -1,5 +1,8 @@
 import { type ObjectRecordUpdateEvent } from 'twenty-shared/database-events';
-import { SEQUENCE_ENROLLMENT_STATUSES } from 'twenty-shared/types';
+import {
+  LINKEDIN_ACTION_STATUSES,
+  SEQUENCE_ENROLLMENT_STATUSES,
+} from 'twenty-shared/types';
 
 import { type FlatObjectMetadata } from 'src/engine/metadata-modules/flat-object-metadata/types/flat-object-metadata.type';
 import { type GlobalWorkspaceOrmManager } from 'src/engine/twenty-orm/global-workspace-datasource/global-workspace-orm.manager';
@@ -56,23 +59,85 @@ describe('SequenceEnrollmentListener', () => {
     expect(recomputeForSequence).toHaveBeenCalledWith({
       workspaceId: 'workspace-id',
       sequenceId: 'sequence-id',
+      enrollmentIdsToLock: ['enrollment-id'],
     });
     expect(completeOpenTasks).toHaveBeenCalledWith({
       workspaceId: 'workspace-id',
       enrollmentId: 'enrollment-id',
     });
     expect(updateLinkedinActions).toHaveBeenCalledWith(
-      expect.objectContaining({
+      {
         sequenceEnrollmentId: 'enrollment-id',
-        status: expect.anything(),
-      }),
+        status: LINKEDIN_ACTION_STATUSES.SCHEDULED,
+      },
       expect.objectContaining({
-        status: 'CANCELLED',
+        status: LINKEDIN_ACTION_STATUSES.CANCELLED,
         claimedAt: null,
         claimedBy: null,
         errorMessage: expect.stringContaining('REPLIED'),
       }),
     );
+  });
+
+  it('preserves a runner-owned claimed action when the enrollment replies', async () => {
+    let actionStatus: string = LINKEDIN_ACTION_STATUSES.CLAIMED;
+    const updateLinkedinActions = jest.fn(
+      async (criteria: { status: string }, values: { status: string }) => {
+        if (criteria.status !== actionStatus) {
+          return { affected: 0 };
+        }
+
+        actionStatus = values.status;
+
+        return { affected: 1 };
+      },
+    );
+    const globalWorkspaceOrmManager = {
+      executeInWorkspaceContext: jest.fn(async (callback) => callback()),
+      getRepository: jest.fn(async (_workspaceId, entity) =>
+        entity === LinkedinActionWorkspaceEntity
+          ? { update: updateLinkedinActions }
+          : {},
+      ),
+    } as unknown as GlobalWorkspaceOrmManager;
+    const listener = new SequenceEnrollmentListener(
+      globalWorkspaceOrmManager,
+      {
+        recomputeForSequence: jest.fn(),
+      } as unknown as SequenceMetricsService,
+      { completeOpenTasks: jest.fn() } as unknown as SequenceTaskCreatorService,
+    );
+    const before = {
+      id: 'enrollment-id',
+      sequenceId: 'sequence-id',
+      status: SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
+    } as SequenceEnrollmentWorkspaceEntity;
+
+    await listener.handleUpdatedEvent({
+      name: 'sequenceEnrollment',
+      workspaceId: 'workspace-id',
+      objectMetadata: {} as FlatObjectMetadata,
+      events: [
+        {
+          recordId: before.id,
+          properties: {
+            before,
+            after: {
+              ...before,
+              status: SEQUENCE_ENROLLMENT_STATUSES.REPLIED,
+            },
+          },
+        } as ObjectRecordUpdateEvent<SequenceEnrollmentWorkspaceEntity>,
+      ],
+    });
+
+    expect(updateLinkedinActions).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: LINKEDIN_ACTION_STATUSES.SCHEDULED,
+      }),
+      expect.anything(),
+    );
+    expect(actionStatus).toBe(LINKEDIN_ACTION_STATUSES.CLAIMED);
   });
 
   it('ignores updates that do not change status', async () => {

@@ -11,6 +11,7 @@ import { WorkspaceQueryHookStorage } from 'src/engine/api/graphql/workspace-quer
 import { type WorkspacePreQueryHookPayload } from 'src/engine/api/graphql/workspace-query-runner/workspace-query-hook/types/workspace-query-hook.type';
 import { WorkspaceQueryHookExplorer } from 'src/engine/api/graphql/workspace-query-runner/workspace-query-hook/workspace-query-hook.explorer';
 import { type WorkspaceAuthContext } from 'src/engine/core-modules/auth/types/workspace-auth-context.type';
+import { type WorkspaceEntityManager } from 'src/engine/twenty-orm/entity-manager/workspace-entity-manager';
 
 @Injectable()
 export class WorkspaceQueryHookService {
@@ -48,6 +49,77 @@ export class WorkspaceQueryHookService {
 
       // TODO: Is it really a good idea ?
       payload = merge(payload, hookPayload);
+    }
+
+    return payload;
+  }
+
+  public async executeTransactionalPostMutationHooks<
+    T extends WorkspaceResolverBuilderMethodNames | CommonQueryNames,
+  >(
+    authContext: WorkspaceAuthContext,
+    objectName: string,
+    methodName: T,
+    payload: WorkspacePreQueryHookPayload<T>,
+    result: QueryResultFieldValue,
+    workspaceEntityManager: WorkspaceEntityManager,
+  ): Promise<void> {
+    const key: WorkspaceQueryHookKey = `${objectName}.${methodName}`;
+    const preHookInstances =
+      this.workspaceQueryHookStorage.getWorkspaceQueryPreHookInstances(key);
+
+    if (!preHookInstances) {
+      return;
+    }
+
+    for (const preHookInstance of preHookInstances) {
+      if (!preHookInstance.instance.executeAfterMutationInTransaction) {
+        continue;
+      }
+
+      await this.workspaceQueryHookExplorer.handleTransactionalPostMutationHook(
+        [authContext, objectName, payload, result, workspaceEntityManager],
+        preHookInstance.instance,
+        preHookInstance.host,
+        preHookInstance.isRequestScoped,
+      );
+    }
+  }
+
+  public async executeTransactionalPreQueryHooks<
+    T extends WorkspaceResolverBuilderMethodNames | CommonQueryNames,
+  >(
+    authContext: WorkspaceAuthContext,
+    objectName: string,
+    methodName: T,
+    payload: WorkspacePreQueryHookPayload<T>,
+    workspaceEntityManager: WorkspaceEntityManager,
+  ): Promise<WorkspacePreQueryHookPayload<T>> {
+    const key: WorkspaceQueryHookKey = `${objectName}.${methodName}`;
+    const preHookInstances =
+      this.workspaceQueryHookStorage.getWorkspaceQueryPreHookInstances(key);
+
+    if (!preHookInstances) {
+      return payload;
+    }
+
+    for (const preHookInstance of preHookInstances) {
+      if (!preHookInstance.instance.executeInTransaction) {
+        continue;
+      }
+
+      const hookPayload =
+        await this.workspaceQueryHookExplorer.handleTransactionalPreHook(
+          [authContext, objectName, payload, workspaceEntityManager],
+          preHookInstance.instance,
+          preHookInstance.host,
+          preHookInstance.isRequestScoped,
+        );
+
+      // Transactional hooks receive and return the complete resolver payload.
+      // Replacing it keeps normalized nested values authoritative; a deep
+      // merge would retain caller-supplied keys beneath engine-owned objects.
+      payload = hookPayload as WorkspacePreQueryHookPayload<T>;
     }
 
     return payload;

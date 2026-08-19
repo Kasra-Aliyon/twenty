@@ -73,10 +73,137 @@ export class SequenceLinkedinReplyListener {
     });
   }
 
+  async reconcileCompletedOutboundActions({
+    actions,
+    workspaceId,
+  }: {
+    actions: LinkedinActionWorkspaceEntity[];
+    workspaceId: string;
+  }): Promise<void> {
+    const completedOutboundActions = actions.filter(
+      (action) =>
+        (action.type === LINKEDIN_ACTION_TYPES.SEND_MESSAGE ||
+          action.type === LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST) &&
+        action.status === LINKEDIN_ACTION_STATUSES.COMPLETED &&
+        isDefined(action.sequenceEnrollmentId) &&
+        isDefined(action.ownerWorkspaceMemberId) &&
+        isDefined(action.executedAt),
+    );
+    const personIds = [
+      ...new Set(completedOutboundActions.map(({ personId }) => personId)),
+    ];
+
+    if (personIds.length === 0) {
+      return;
+    }
+
+    const threadIds =
+      await this.globalWorkspaceOrmManager.executeInWorkspaceContext(
+        async () => {
+          const participantRepository =
+            await this.globalWorkspaceOrmManager.getRepository<LinkedinThreadParticipantWorkspaceEntity>(
+              workspaceId,
+              'linkedinThreadParticipant',
+              { shouldBypassPermissionChecks: true },
+            );
+          const participants = await participantRepository.find({
+            where: {
+              personId: In(personIds),
+              isSelf: false,
+            },
+            select: ['id', 'threadId'],
+            order: { threadId: 'ASC', id: 'ASC' },
+          });
+
+          return [...new Set(participants.map(({ threadId }) => threadId))];
+        },
+        buildSystemAuthContext(workspaceId),
+      );
+
+    await this.stopEnrollmentsForThreads({
+      additionalCompletedOutboundActions: completedOutboundActions,
+      threadIds,
+      workspaceId,
+    });
+  }
+
+  async reconcileEnrollmentBeforeProviderStart({
+    sequenceEnrollmentId,
+    workspaceId,
+  }: {
+    sequenceEnrollmentId: string;
+    workspaceId: string;
+  }): Promise<boolean> {
+    const completedOutboundActions =
+      await this.globalWorkspaceOrmManager.executeInWorkspaceContext(
+        async () => {
+          const actionRepository =
+            await this.globalWorkspaceOrmManager.getRepository(
+              workspaceId,
+              LinkedinActionWorkspaceEntity,
+              { shouldBypassPermissionChecks: true },
+            );
+
+          return actionRepository.find({
+            where: {
+              sequenceEnrollmentId,
+              type: In([
+                LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST,
+                LINKEDIN_ACTION_TYPES.SEND_MESSAGE,
+              ]),
+              status: LINKEDIN_ACTION_STATUSES.COMPLETED,
+              executedAt: Not(IsNull()),
+              ownerWorkspaceMemberId: Not(IsNull()),
+            },
+            select: [
+              'id',
+              'executedAt',
+              'ownerWorkspaceMemberId',
+              'personId',
+              'sequenceEnrollmentId',
+              'status',
+              'type',
+            ],
+            order: { executedAt: 'ASC', id: 'ASC' },
+          });
+        },
+        buildSystemAuthContext(workspaceId),
+      );
+
+    if (completedOutboundActions.length === 0) {
+      return false;
+    }
+
+    await this.reconcileCompletedOutboundActions({
+      actions: completedOutboundActions,
+      workspaceId,
+    });
+
+    return this.globalWorkspaceOrmManager.executeInWorkspaceContext(
+      async () => {
+        const enrollmentRepository =
+          await this.globalWorkspaceOrmManager.getRepository(
+            workspaceId,
+            SequenceEnrollmentWorkspaceEntity,
+            { shouldBypassPermissionChecks: true },
+          );
+        const enrollment = await enrollmentRepository.findOne({
+          where: { id: sequenceEnrollmentId },
+          select: ['id', 'status'],
+        });
+
+        return enrollment?.status === SEQUENCE_ENROLLMENT_STATUSES.REPLIED;
+      },
+      buildSystemAuthContext(workspaceId),
+    );
+  }
+
   private async stopEnrollmentsForThreads({
+    additionalCompletedOutboundActions = [],
     threadIds,
     workspaceId,
   }: {
+    additionalCompletedOutboundActions?: LinkedinActionWorkspaceEntity[];
     threadIds: string[];
     workspaceId: string;
   }): Promise<void> {
@@ -115,11 +242,13 @@ export class SequenceLinkedinReplyListener {
             direction: 'INBOUND',
           },
           select: [
+            'id',
             'deliveredAt',
             'ownerWorkspaceMemberId',
             'senderLinkedinUrn',
             'threadId',
           ],
+          order: { deliveredAt: 'ASC', id: 'ASC' },
         }),
         participantRepository.find({
           where: {
@@ -127,7 +256,8 @@ export class SequenceLinkedinReplyListener {
             isSelf: false,
             personId: Not(IsNull()),
           },
-          select: ['linkedinUrn', 'personId', 'threadId'],
+          select: ['id', 'linkedinUrn', 'personId', 'threadId'],
+          order: { threadId: 'ASC', id: 'ASC' },
         }),
       ]);
       const personIds = [
@@ -144,7 +274,7 @@ export class SequenceLinkedinReplyListener {
           LinkedinActionWorkspaceEntity,
           { shouldBypassPermissionChecks: true },
         );
-      const completedOutboundActions = await actionRepository.find({
+      const persistedCompletedOutboundActions = await actionRepository.find({
         where: {
           personId: In(personIds),
           type: In([
@@ -157,12 +287,25 @@ export class SequenceLinkedinReplyListener {
           ownerWorkspaceMemberId: Not(IsNull()),
         },
         select: [
+          'id',
           'executedAt',
           'ownerWorkspaceMemberId',
           'personId',
           'sequenceEnrollmentId',
         ],
+        order: { executedAt: 'ASC', id: 'ASC' },
       });
+      // Workspace update events can be dispatched before their source
+      // transaction commits. Keep the terminal action carried by that event
+      // instead of relying on a separate read that can still see CLAIMED.
+      const completedOutboundActions = [
+        ...new Map(
+          [
+            ...persistedCompletedOutboundActions,
+            ...additionalCompletedOutboundActions,
+          ].map((action) => [action.id, action]),
+        ).values(),
+      ];
       const participantsByThreadId = new Map<
         string,
         Array<{

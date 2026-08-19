@@ -38,7 +38,9 @@ describe('MicrosoftMessageOutboundService', () => {
       isPlainTextOnly: true,
     };
 
-    await service.sendMessage(input, connectedAccount);
+    const onProviderStart = jest.fn().mockResolvedValue(undefined);
+
+    await service.sendMessage(input, connectedAccount, onProviderStart);
 
     expect(createMessage).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -47,6 +49,12 @@ describe('MicrosoftMessageOutboundService', () => {
           content: 'Plain text body',
         },
       }),
+    );
+    expect(createMessage.mock.invocationCallOrder[0]).toBeLessThan(
+      onProviderStart.mock.invocationCallOrder[0],
+    );
+    expect(onProviderStart.mock.invocationCallOrder[0]).toBeLessThan(
+      sendMessage.mock.invocationCallOrder[0],
     );
   });
 });

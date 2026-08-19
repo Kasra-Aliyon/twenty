@@ -5,7 +5,9 @@ import {
   SEQUENCE_CONDITION_BRANCHES,
   SEQUENCE_STATUSES,
   SEQUENCE_STEP_TYPES,
+  SEQUENCE_TASK_TYPES,
   SEQUENCE_WAITING_ON,
+  TASK_PRIORITIES,
 } from 'twenty-shared/types';
 
 import { type WorkspaceAuthContext } from 'src/engine/core-modules/auth/types/workspace-auth-context.type';
@@ -44,6 +46,7 @@ describe('SequenceInvariantService', () => {
   let service: SequenceInvariantService;
   const sequenceSenderService = {
     getReadySenderOrThrow: jest.fn(),
+    getSenderAccountOrThrow: jest.fn(),
   } as unknown as SequenceSenderService;
 
   beforeEach(() => {
@@ -197,6 +200,30 @@ describe('SequenceInvariantService', () => {
     ).resolves.toBeUndefined();
   });
 
+  it('requires an active sequence to pause before moving back to draft', async () => {
+    sequenceRepository.find.mockResolvedValueOnce([
+      { ...sequence, status: SEQUENCE_STATUSES.ACTIVE },
+    ]);
+
+    await expect(
+      service.assertSequenceUpdateAllowed({
+        authContext,
+        sequenceId: sequence.id,
+        data: { status: SEQUENCE_STATUSES.DRAFT },
+      }),
+    ).rejects.toThrow('Pause the sequence before moving it back to draft');
+  });
+
+  it('allows a paused sequence to move back to draft', async () => {
+    await expect(
+      service.assertSequenceUpdateAllowed({
+        authContext,
+        sequenceId: sequence.id,
+        data: { status: SEQUENCE_STATUSES.DRAFT },
+      }),
+    ).resolves.toBeUndefined();
+  });
+
   it('rejects sender changes while an enrollment is active', async () => {
     activeEnrollmentCount = 1;
 
@@ -292,6 +319,19 @@ describe('SequenceInvariantService', () => {
     ).rejects.toThrow('Pause the sequence');
   });
 
+  it('rejects step edits on an archived sequence', async () => {
+    sequenceRepository.find.mockResolvedValueOnce([
+      { ...sequence, deletedAt: new Date() },
+    ]);
+
+    await expect(
+      service.assertStepMutationAllowed({
+        authContext,
+        stepId: 'step-id',
+      }),
+    ).rejects.toThrow('Archived sequences are read-only');
+  });
+
   it('requires branch children to be deleted before their condition', async () => {
     const conditionStep = {
       id: 'condition-step-id',
@@ -340,6 +380,75 @@ describe('SequenceInvariantService', () => {
       expectedUserWorkspaceId: undefined,
       workspaceId: authContext.workspace.id,
     });
+  });
+
+  it('activates a LinkedIn-only sequence without requiring inbox sync', async () => {
+    stepRepository.find.mockResolvedValue([
+      {
+        id: 'linkedin-step-id',
+        sequenceId: sequence.id,
+        settings: {
+          type: SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST,
+          noteTemplate: '',
+        },
+      },
+    ]);
+
+    await service.assertSequenceUpdateAllowed({
+      authContext,
+      sequenceId: sequence.id,
+      data: { status: SEQUENCE_STATUSES.ACTIVE },
+    });
+
+    // The browser runner carries its own LinkedIn session, so a mailbox that is
+    // still importing must not block a sequence that never sends email.
+    expect(sequenceSenderService.getReadySenderOrThrow).not.toHaveBeenCalled();
+    expect(sequenceSenderService.getSenderAccountOrThrow).toHaveBeenCalledWith({
+      connectedAccountId: sequence.senderConnectedAccountId,
+      expectedUserWorkspaceId: undefined,
+      workspaceId: authContext.workspace.id,
+    });
+  });
+
+  it('rejects an unsupported sender provider for a LinkedIn-only sequence', async () => {
+    stepRepository.find.mockResolvedValue([
+      {
+        id: 'linkedin-step-id',
+        sequenceId: sequence.id,
+        settings: {
+          type: SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST,
+          noteTemplate: '',
+        },
+      },
+    ]);
+    jest
+      .mocked(sequenceSenderService.getSenderAccountOrThrow)
+      .mockRejectedValueOnce(
+        new Error('The selected account cannot be used as a sequence sender'),
+      );
+
+    await expect(
+      service.assertSequenceUpdateAllowed({
+        authContext,
+        sequenceId: sequence.id,
+        data: { status: SEQUENCE_STATUSES.ACTIVE },
+      }),
+    ).rejects.toThrow('cannot be used as a sequence sender');
+
+    expect(sequenceSenderService.getReadySenderOrThrow).not.toHaveBeenCalled();
+  });
+
+  it('rejects activation of a sequence that has no sending day', async () => {
+    await expect(
+      service.assertSequenceUpdateAllowed({
+        authContext,
+        sequenceId: sequence.id,
+        data: {
+          status: SEQUENCE_STATUSES.ACTIVE,
+          settings: { ...DEFAULT_SEQUENCE_SETTINGS, activeDays: [] },
+        },
+      }),
+    ).rejects.toThrow('at least one sending day');
   });
 
   it('rejects activation when one update explicitly clears the only sender', async () => {
@@ -498,6 +607,32 @@ describe('SequenceInvariantService', () => {
       }),
     ).rejects.toThrow('must contain between 1 and 2000 characters');
     expect(sequenceSenderService.getReadySenderOrThrow).not.toHaveBeenCalled();
+  });
+
+  it('blocks activation when task notes are not a string', async () => {
+    stepRepository.find.mockResolvedValue([
+      {
+        id: 'task-step-id',
+        sequenceId: sequence.id,
+        settings: {
+          type: SEQUENCE_STEP_TYPES.CREATE_TASK,
+          taskType: SEQUENCE_TASK_TYPES.CUSTOM,
+          titleTemplate: 'Follow up',
+          priority: TASK_PRIORITIES.MEDIUM,
+          assigneeWorkspaceMemberId: null,
+          continueMode: 'ON_DONE',
+          deadlineDays: null,
+        },
+      },
+    ]);
+
+    await expect(
+      service.assertSequenceUpdateAllowed({
+        authContext,
+        sequenceId: sequence.id,
+        data: { status: SEQUENCE_STATUSES.ACTIVE },
+      }),
+    ).rejects.toThrow('task task-step-id is not fully configured');
   });
 
   it('blocks activation when an email draft is empty', async () => {

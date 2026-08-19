@@ -1,10 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import { isNonEmptyString } from '@sniptt/guards';
-import {
-  SEQUENCE_STEP_TYPES,
-  type SequenceEmailStepSettings,
-} from 'twenty-shared/types';
+import { type SequenceEmailStepSettings } from 'twenty-shared/types';
 import { isDefined, renderSpintax } from 'twenty-shared/utils';
 
 import { EmailComposerService } from 'src/engine/core-modules/tool/tools/email-tool/email-composer.service';
@@ -22,9 +19,13 @@ import { selectSequenceEmailVariant } from 'src/modules/sequence/utils/select-se
 export type SequenceEmailSendResult = {
   headerMessageId: string;
   threadExternalId: string;
+  sentAt: string;
   variantId?: string;
   variantName?: string;
+  persistSentMessage: () => Promise<void>;
 };
+
+export class SequenceEmailPreparationPermanentError extends Error {}
 
 @Injectable()
 export class SequenceEmailSenderService {
@@ -39,17 +40,17 @@ export class SequenceEmailSenderService {
     enrollment,
     person,
     step,
-    steps,
     settings,
     connectedAccountId,
+    onProviderStart,
   }: {
     workspaceId: string;
     enrollment: SequenceEnrollmentWorkspaceEntity;
     person: PersonWorkspaceEntity;
     step: SequenceStepWorkspaceEntity;
-    steps: SequenceStepWorkspaceEntity[];
     settings: SequenceEmailStepSettings;
     connectedAccountId: string;
+    onProviderStart: () => Promise<void>;
   }): Promise<SequenceEmailSendResult> {
     const variables = await this.sequenceVariableService.buildVariables({
       workspaceId,
@@ -84,8 +85,7 @@ export class SequenceEmailSenderService {
     );
     const inReplyTo = settings.threadAsReplyToPreviousEmail
       ? this.findPreviousEmailHeaderMessageId({
-          currentStep: step,
-          steps,
+          currentStepId: step.id,
           sentEmailsByStepId: enrollment.sentEmailsByStepId ?? {},
         })
       : undefined;
@@ -104,64 +104,77 @@ export class SequenceEmailSenderService {
     );
 
     if (!composeResult.success) {
-      throw new Error(
+      throw new SequenceEmailPreparationPermanentError(
         composeResult.output.error ??
           composeResult.output.message ??
           'Failed to compose sequence email',
       );
     }
 
+    let providerStartedAt: string | undefined;
     const sendResult = await this.sendEmailService.sendComposedEmail(
       composeResult.data,
+      async () => {
+        providerStartedAt = new Date().toISOString();
+        await onProviderStart();
+      },
     );
-
-    if (composeResult.data.shouldPersistMessage) {
-      await this.sendEmailService.persistSentMessage(
-        sendResult,
-        composeResult.data,
-        workspaceId,
-      );
-    }
+    const sentAt =
+      sendResult.sentAt ?? providerStartedAt ?? new Date().toISOString();
 
     return {
       headerMessageId: sendResult.headerMessageId,
       threadExternalId:
         sendResult.threadExternalId ?? sendResult.headerMessageId,
+      sentAt,
       ...(isDefined(selectedVariant)
         ? {
             variantId: selectedVariant.id,
             variantName: selectedVariant.name,
           }
         : {}),
+      persistSentMessage: async () => {
+        if (!composeResult.data.shouldPersistMessage) {
+          return;
+        }
+
+        await this.sendEmailService.persistSentMessage(
+          sendResult,
+          composeResult.data,
+          workspaceId,
+        );
+      },
     };
   }
 
+  // The thread to continue is the last email this enrollment actually sent,
+  // read from its own send history. Step position cannot answer this: a branch
+  // step is positioned after the step it merges into whenever the branch was
+  // filled in after the merge, and a position-ordered search then finds no
+  // previous email at all and silently starts a new thread.
   private findPreviousEmailHeaderMessageId({
-    currentStep,
-    steps,
+    currentStepId,
     sentEmailsByStepId,
   }: {
-    currentStep: SequenceStepWorkspaceEntity;
-    steps: SequenceStepWorkspaceEntity[];
+    currentStepId: string;
     sentEmailsByStepId: Record<string, SequenceSentEmailMetadata>;
   }): string | undefined {
-    const previousEmailSteps = steps
+    return Object.entries(sentEmailsByStepId)
       .filter(
-        (step) =>
-          step.position < currentStep.position &&
-          step.settings.type === SEQUENCE_STEP_TYPES.SEND_EMAIL,
+        ([stepId, sentEmail]) =>
+          stepId !== currentStepId &&
+          isDefined(sentEmail?.headerMessageId) &&
+          isNonEmptyString(sentEmail.headerMessageId),
       )
-      .sort((left, right) => right.position - left.position);
+      .sort(
+        ([, left], [, right]) =>
+          this.toTimestamp(right.sentAt) - this.toTimestamp(left.sentAt),
+      )[0]?.[1].headerMessageId;
+  }
 
-    for (const previousStep of previousEmailSteps) {
-      const headerMessageId =
-        sentEmailsByStepId[previousStep.id]?.headerMessageId;
+  private toTimestamp(value: string | undefined): number {
+    const timestamp = Date.parse(value ?? '');
 
-      if (isDefined(headerMessageId) && isNonEmptyString(headerMessageId)) {
-        return headerMessageId;
-      }
-    }
-
-    return undefined;
+    return Number.isNaN(timestamp) ? 0 : timestamp;
   }
 }

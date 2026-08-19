@@ -18,6 +18,7 @@ import { SequenceTaskCompletionService } from 'src/modules/sequence/services/seq
 import { SequenceEnrollmentWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence-enrollment.workspace-entity';
 import { SequenceStepWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence-step.workspace-entity';
 import { SequenceWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence.workspace-entity';
+import { TaskWorkspaceEntity } from 'src/modules/task/standard-objects/task.workspace-entity';
 
 describe('SequenceTaskCompletionService', () => {
   const workspaceId = 'workspace-id';
@@ -40,9 +41,11 @@ describe('SequenceTaskCompletionService', () => {
   const setup = ({
     step,
     affected = 1,
+    committedTask = { id: 'task-id' },
   }: {
-    step: SequenceStepWorkspaceEntity;
+    step: SequenceStepWorkspaceEntity | null;
     affected?: number;
+    committedTask?: Pick<TaskWorkspaceEntity, 'id'> | null;
   }) => {
     const enrollmentRepository = {
       findOne: jest.fn().mockResolvedValue(enrollment),
@@ -62,12 +65,16 @@ describe('SequenceTaskCompletionService', () => {
         senderConnectedAccountId: 'sequence-sender-id',
       }),
     };
+    const taskRepository = {
+      findOne: jest.fn().mockResolvedValue(committedTask),
+    };
     const repositories = new Map<object, object>([
       [SequenceEnrollmentWorkspaceEntity, enrollmentRepository],
       [SequenceStepWorkspaceEntity, stepRepository],
       [PersonWorkspaceEntity, personRepository],
       [LinkedinActionWorkspaceEntity, linkedinActionRepository],
       [SequenceWorkspaceEntity, sequenceRepository],
+      [TaskWorkspaceEntity, taskRepository],
     ]);
     const transactionManager = {} as WorkspaceEntityManager;
     const globalWorkspaceOrmManager = {
@@ -98,10 +105,12 @@ describe('SequenceTaskCompletionService', () => {
     return {
       service,
       enrollmentRepository,
+      stepRepository,
       linkedinActionRepository,
       transactionManager,
       enqueueProcess,
       getSenderOwnerWorkspaceMemberIdOrThrow,
+      taskRepository,
     };
   };
 
@@ -210,6 +219,107 @@ describe('SequenceTaskCompletionService', () => {
     });
 
     expect(linkedinActionRepository.insert).not.toHaveBeenCalled();
+    expect(enqueueProcess).not.toHaveBeenCalled();
+  });
+
+  it('does not advance when the source task completion was not committed', async () => {
+    const step = {
+      id: 'step-id',
+      sequenceId: enrollment.sequenceId,
+      settings: {
+        type: SEQUENCE_STEP_TYPES.CREATE_TASK,
+        taskType: 'TODO',
+        titleTemplate: 'Review',
+        notesTemplate: '',
+        priority: 'MEDIUM',
+        assigneeWorkspaceMemberId: null,
+        continueMode: 'ON_DONE',
+        deadlineDays: null,
+      },
+    } as SequenceStepWorkspaceEntity;
+    const {
+      service,
+      enrollmentRepository,
+      enqueueProcess,
+      taskRepository,
+      transactionManager,
+    } = setup({ step, committedTask: null });
+
+    await service.completeTaskStep({
+      workspaceId,
+      enrollmentId: enrollment.id,
+      stepId: step.id,
+      taskId: 'task-id',
+    });
+
+    expect(taskRepository.findOne).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          id: 'task-id',
+          status: 'DONE',
+          sequenceEnrollmentId: enrollment.id,
+          sequenceStepId: step.id,
+        }),
+        lock: { mode: 'pessimistic_write' },
+      }),
+      transactionManager,
+    );
+    expect(enrollmentRepository.update).not.toHaveBeenCalled();
+    expect(enqueueProcess).not.toHaveBeenCalled();
+  });
+
+  it('does not terminally validate a missing step from a rolled-back task event', async () => {
+    const { service, enrollmentRepository, stepRepository, enqueueProcess } =
+      setup({ step: null, committedTask: null });
+
+    await service.completeTaskStep({
+      workspaceId,
+      enrollmentId: enrollment.id,
+      stepId: enrollment.currentStepId ?? 'step-id',
+      taskId: 'task-id',
+    });
+
+    expect(stepRepository.findOne).not.toHaveBeenCalled();
+    expect(enrollmentRepository.update).not.toHaveBeenCalled();
+    expect(enqueueProcess).not.toHaveBeenCalled();
+  });
+
+  it('propagates a transient history insert failure for scheduler recovery', async () => {
+    const step = {
+      id: 'step-id',
+      sequenceId: enrollment.sequenceId,
+      settings: {
+        type: SEQUENCE_STEP_TYPES.SEND_LINKEDIN_MESSAGE,
+        executionMode: SEQUENCE_ACTION_EXECUTION_MODES.MANUAL,
+        messageTemplate: 'Hello Ada',
+      },
+    } as SequenceStepWorkspaceEntity;
+    const {
+      service,
+      enrollmentRepository,
+      linkedinActionRepository,
+      enqueueProcess,
+    } = setup({ step });
+    const databaseError = new Error('sequence history database unavailable');
+
+    linkedinActionRepository.insert.mockRejectedValue(databaseError);
+
+    await expect(
+      service.completeTaskStep({
+        workspaceId,
+        enrollmentId: enrollment.id,
+        stepId: step.id,
+      }),
+    ).rejects.toBe(databaseError);
+
+    expect(enrollmentRepository.update.mock.calls).not.toContainEqual(
+      expect.arrayContaining([
+        expect.anything(),
+        expect.objectContaining({
+          status: SEQUENCE_ENROLLMENT_STATUSES.FAILED,
+        }),
+      ]),
+    );
     expect(enqueueProcess).not.toHaveBeenCalled();
   });
 });

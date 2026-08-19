@@ -52,7 +52,7 @@ const sequenceSettingsSchema = z.object({
     ])
     .default(SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.SEQUENCE),
   dailyStartLimitEnabled: z.boolean(),
-  dailyStarts: z.number().int().nonnegative(),
+  dailyStarts: z.number().int().min(1),
   staggerMinutes: z.number().nonnegative(),
   linkedinDailyActionLimitEnabled: z.boolean(),
   linkedinDailyActions: z.number().int().min(1).max(40),
@@ -159,12 +159,17 @@ const SEQUENCE_SENDER_PROVIDERS = new Set([
   'imap_smtp_caldav',
 ]);
 
-const isReadySequenceSenderAccount = (account: ConnectedAccount): boolean =>
+const isSequenceSenderAccount = (account: ConnectedAccount): boolean =>
   account.archivedAt == null &&
-  account.authFailedAt == null &&
   typeof account.handle === 'string' &&
   typeof account.provider === 'string' &&
-  SEQUENCE_SENDER_PROVIDERS.has(account.provider) &&
+  SEQUENCE_SENDER_PROVIDERS.has(account.provider);
+
+const isReadySequenceEmailSenderAccount = (
+  account: ConnectedAccount,
+): boolean =>
+  isSequenceSenderAccount(account) &&
+  account.authFailedAt == null &&
   (account.messageChannels ?? []).some(
     (messageChannel) =>
       messageChannel.handle === account.handle &&
@@ -177,14 +182,19 @@ const filterConnectedAccounts = (
   {
     activeOnly,
     provider,
+    useCase,
   }: {
     activeOnly: boolean;
     provider?: string;
+    useCase: 'SEQUENCE' | 'EMAIL';
   },
 ): ConnectedAccount[] =>
   accounts.filter(
     (account) =>
-      (!activeOnly || isReadySequenceSenderAccount(account)) &&
+      (!activeOnly ||
+        (useCase === 'SEQUENCE'
+          ? isSequenceSenderAccount(account)
+          : isReadySequenceEmailSenderAccount(account))) &&
       (provider === undefined || account.provider === provider),
   );
 
@@ -580,7 +590,8 @@ const SEQUENCE_CAPABILITIES = {
     statuses: SEQUENCE_STATUSES,
     activation_requirements: [
       'At least one step.',
-      'A synchronized sender mailbox for every automated outbound email or LinkedIn step. The sender also determines which workspace member owns LinkedIn actions.',
+      'At least one active sending day.',
+      'A synchronized sender mailbox for automated outbound email. LinkedIn steps and conditions require an active sender account owned by a workspace member, but do not depend on inbox sync.',
       'Explicit confirmation because activation can start external outreach.',
     ],
     editing:
@@ -589,7 +600,7 @@ const SEQUENCE_CAPABILITIES = {
   sequence_settings: {
     defaults: DEFAULT_SEQUENCE_SETTINGS,
     active_days:
-      'Integers 0-6 where 0 is Sunday. Empty means the sequence never opens.',
+      'Integers 0-6 where 0 is Sunday. At least one day is required before activation.',
     sending_window:
       'windowStart/windowEnd are HH:mm. SEQUENCE mode uses settings.timezone. RECIPIENT mode uses the Person timeZone field and falls back to UTC when it is missing or invalid.',
     daily_start_limit:
@@ -599,9 +610,9 @@ const SEQUENCE_CAPABILITIES = {
     stagger_minutes:
       'Minimum spacing used when scheduling automated email starts.',
     sender_pool:
-      'senderConnectedAccountIds is an optional pool of synchronized mailboxes. Each enrollment is assigned one mailbox when admitted and remains pinned to it for threading and sender identity.',
+      'senderConnectedAccountIds is an optional pool of sender accounts. Automated email requires synchronized mailboxes; LinkedIn-only sequences require active accounts owned by workspace members. Each enrollment is assigned one account when admitted and remains pinned to it for threading and sender identity.',
     linkedin_limits:
-      'linkedinDailyActionLimitEnabled controls only the daily action cap, which accepts 1-40 actions per day. The sending window and workspace-wide delay pattern are always enforced.',
+      'linkedinDailyActionLimitEnabled controls only the daily action cap, which accepts 1-40 actions per LinkedIn account per UTC day. The sending window and per-account delay pattern are always enforced.',
     stop_on_reply:
       'Sequence default. Automated email steps may inherit or override it.',
   },
@@ -749,9 +760,10 @@ export const registerSequenceTools = (
     {
       title: 'List connected sender accounts',
       description:
-        'Lists user-owned connected accounts that can be selected as sequence or one-off email senders. With active_only enabled, returns only supported mailboxes whose inbox sync is enabled and ACTIVE. Requires TWENTY_USER_TOKEN.',
+        'Lists user-owned connected accounts for sequences or one-off email. SEQUENCE includes supported, unarchived accounts even when mailbox authentication or inbox sync is not ready, so LinkedIn-only sequences can select them. EMAIL requires valid authentication and an enabled ACTIVE inbox. Each result reports sequenceSenderEligible and sequenceEmailReady. Requires TWENTY_USER_TOKEN.',
       inputSchema: z.object({
         provider: z.string().min(1).optional(),
+        use_case: z.enum(['SEQUENCE', 'EMAIL']).default('SEQUENCE'),
         active_only: z.boolean().default(true),
         response_format: responseFormatSchema,
       }),
@@ -762,7 +774,7 @@ export const registerSequenceTools = (
         openWorldHint: true,
       },
     },
-    async ({ provider, active_only, response_format }) =>
+    async ({ provider, use_case, active_only, response_format }) =>
       runTool(async () => {
         const result = await dependencies.client.graphql<{
           myConnectedAccounts: ConnectedAccount[];
@@ -795,18 +807,31 @@ export const registerSequenceTools = (
         }
 
         const accountsWithMessageChannels = result.myConnectedAccounts.map(
-          (account) => ({
-            ...account,
-            messageChannels:
-              typeof account.id === 'string'
-                ? (messageChannelsByConnectedAccountId.get(account.id) ?? [])
-                : [],
-          }),
+          (account) => {
+            const accountWithMessageChannels = {
+              ...account,
+              messageChannels:
+                typeof account.id === 'string'
+                  ? (messageChannelsByConnectedAccountId.get(account.id) ?? [])
+                  : [],
+            };
+
+            return {
+              ...accountWithMessageChannels,
+              sequenceSenderEligible: isSequenceSenderAccount(
+                accountWithMessageChannels,
+              ),
+              sequenceEmailReady: isReadySequenceEmailSenderAccount(
+                accountWithMessageChannels,
+              ),
+            };
+          },
         );
 
         return filterConnectedAccounts(accountsWithMessageChannels, {
           activeOnly: active_only,
           provider,
+          useCase: use_case,
         });
       }, response_format),
   );
@@ -1042,7 +1067,7 @@ export const registerSequenceTools = (
     {
       title: 'Set outreach sequence status',
       description:
-        'Activates, pauses, or returns a sequence to DRAFT. Activation requires at least one step and a synchronized sender mailbox whenever an automated email or LinkedIn outbound step exists.',
+        'Activates, pauses, or returns a sequence to DRAFT. Activation requires at least one step and one active sending day. Every selected sender account must be active, owned, and supported; automated email additionally requires authentication and active inbox sync for every selected account, while LinkedIn-only outreach does not require inbox sync.',
       inputSchema: z.object({
         sequence_id: recordIdSchema,
         status: z.enum(SEQUENCE_STATUSES),
@@ -1535,7 +1560,8 @@ export const sequencesToolsTesting = {
   findDescendantStepIds,
   filterConnectedAccounts,
   getSequenceStepStorageType,
-  isReadySequenceSenderAccount,
+  isReadySequenceEmailSenderAccount,
+  isSequenceSenderAccount,
   normalizedStepSettings,
   sequenceSettingsSchema,
   stepData,

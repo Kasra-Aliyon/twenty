@@ -67,7 +67,28 @@ describe('EmailComposerService connected account resolution', () => {
     );
     expect(connectedAccountRepository.findOne).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: CONNECTED_ACCOUNT_ID, workspaceId: WORKSPACE_ID },
+        where: {
+          id: CONNECTED_ACCOUNT_ID,
+          workspaceId: WORKSPACE_ID,
+          archivedAt: expect.anything(),
+        },
+      }),
+    );
+  });
+
+  it('does not compose with an archived connected account', async () => {
+    connectedAccountRepository.findOne.mockResolvedValue(null);
+
+    await expect(
+      service.composeEmail(
+        { ...baseParams, connectedAccountId: CONNECTED_ACCOUNT_ID },
+        context,
+      ),
+    ).rejects.toThrow(`No connected account found for id`);
+
+    expect(connectedAccountRepository.findOne).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ archivedAt: expect.anything() }),
       }),
     );
   });

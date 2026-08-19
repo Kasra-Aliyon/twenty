@@ -19,6 +19,7 @@ export class MicrosoftMessageOutboundService implements MessageOutboundDriver {
   async sendMessage(
     sendMessageInput: SendMessageInput,
     connectedAccount: ConnectedAccountEntity,
+    onProviderStart?: () => Promise<void>,
   ): Promise<SendMessageResult> {
     const microsoftClient = await this.microsoftOAuth2ClientProvider.getClient(
       connectedAccount.id,
@@ -30,10 +31,15 @@ export class MicrosoftMessageOutboundService implements MessageOutboundDriver {
       conversationId,
     } = await this.createDraftMessage(microsoftClient, sendMessageInput);
 
+    const sentAt = new Date().toISOString();
+
+    await onProviderStart?.();
+
     await microsoftClient.api(`/me/messages/${messageId}/send`).post({});
 
     return {
       headerMessageId: internetMessageId ?? '',
+      sentAt,
       messageExternalId: messageId,
       threadExternalId: conversationId ?? undefined,
     };

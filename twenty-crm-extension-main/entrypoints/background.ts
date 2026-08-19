@@ -2,8 +2,11 @@ import { TwentyApiClient, extractTokenFromCookie } from '../utils/twenty-api';
 import {
   claimAction,
   fetchDueActions,
+  fetchLinkedinActionById,
   fetchLinkedinActionQueue,
+  releaseActionClaim,
   reportAction,
+  startActionClaim,
 } from '../utils/linkedin-actions-api';
 import {
   getSettings,
@@ -21,12 +24,23 @@ import {
 import {
   getLinkedInSafetySettings,
   getLinkedInSafetySnapshot,
+  recordLinkedInOutboundAttempt,
   setLinkedInSafetySettings,
 } from '../utils/linkedin-safety';
 import { getStoredLinkedInIdentity } from '../utils/linkedin-sync-state';
 import {
   canRecoverLinkedInActionAfterInterruption,
+  createSerializedLinkedinRunnerOperation,
+  getLinkedinRunnerActionOwnershipError,
+  getLinkedinRunnerClaimError,
+  getLinkedinRunnerEnableError,
+  getRunnerStateAfterPause,
   getRunnerStateAfterTabRemoval,
+  reconcileRunnerActionOnEnable,
+  reconcileRunnerReleaseOnEnable,
+  releaseRunnerActionBeforeProviderStart,
+  resolveRunnerActionReport,
+  resolveRunnerProviderStart,
 } from '../utils/linkedin-runner-state';
 import type {
   ExtensionMessage,
@@ -41,6 +55,7 @@ import type {
   LinkedInSafetySettings,
   LinkedInSyncLock,
   LinkedInSyncProgress,
+  TwentyLinkedInAction,
 } from '../types';
 
 const LINKEDIN_RUNNER_ALARM = 'twenty-linkedin-runner-poll';
@@ -50,6 +65,8 @@ const LINKEDIN_SYNC_LOCKS_KEY = 'twentyLinkedinSyncLocks';
 const LINKEDIN_SYNC_LOCK_TTL_MILLISECONDS = 30_000;
 
 let linkedinSyncLockOperation: Promise<void> = Promise.resolve();
+const withLinkedinRunnerStateOperation =
+  createSerializedLinkedinRunnerOperation();
 
 const withLinkedinSyncLockStore = <TResult>(
   operation: () => Promise<TResult>,
@@ -263,6 +280,8 @@ const DEFAULT_LINKEDIN_RUNNER_STATE: LinkedInRunnerSessionState = {
   tabId: null,
   activeAction: null,
   activeActionStartedAt: null,
+  activeActionNeedsRelease: false,
+  activeActionNeedsReconciliation: false,
   lastExecutedAt: null,
   completedCount: 0,
   failedCount: 0,
@@ -288,7 +307,9 @@ const setLinkedinRunnerState = async (
   await browser.storage.session.set({ [LINKEDIN_RUNNER_STATE_KEY]: state });
 };
 
-const handleLinkedinRunnerTabRemoved = async (tabId: number): Promise<void> => {
+const handleLinkedinRunnerTabRemovedWithoutLock = async (
+  tabId: number,
+): Promise<void> => {
   await removeLinkedinSyncLocksForTab(tabId);
   const runnerState = await getLinkedinRunnerState();
 
@@ -299,7 +320,35 @@ const handleLinkedinRunnerTabRemoved = async (tabId: number): Promise<void> => {
   const didStartAction =
     runnerState.activeAction !== null &&
     runnerState.activeActionStartedAt !== null;
-  let didReportInterruptedAction = false;
+  let reportedInterruptedAction: TwentyLinkedInAction | null = null;
+  let unstartedClaimHandled = false;
+
+  if (!didStartAction && runnerState.activeAction) {
+    try {
+      const client = await getApiClient();
+      const { claimedAt, claimedBy, id } = runnerState.activeAction;
+
+      if (!claimedAt || !claimedBy) {
+        throw new Error('The unstarted action did not have a complete claim');
+      }
+
+      // The browser definitively did not begin this action. Return its lease
+      // instead of letting expiry misclassify a direct message as unknown.
+      const releasedAction = await releaseActionClaim(
+        client,
+        id,
+        claimedBy,
+        claimedAt,
+      );
+
+      unstartedClaimHandled = releasedAction !== null;
+    } catch (error) {
+      console.error(
+        '[Twenty] Could not release the unstarted LinkedIn action:',
+        error,
+      );
+    }
+  }
 
   if (
     didStartAction &&
@@ -309,26 +358,27 @@ const handleLinkedinRunnerTabRemoved = async (tabId: number): Promise<void> => {
     try {
       const client = await getApiClient();
       const claimedAt = runnerState.activeAction.claimedAt;
+      const claimedBy = runnerState.activeAction.claimedBy;
 
-      if (!claimedAt) {
-        throw new Error(
-          'The interrupted action did not have a claim timestamp',
-        );
+      if (!claimedAt || !claimedBy) {
+        throw new Error('The interrupted action did not have a complete claim');
       }
 
-      await reportAction(
+      reportedInterruptedAction = await reportAction(
         client,
         runnerState.activeAction.id,
-        `extension-tab-${tabId}`,
+        claimedBy,
         claimedAt,
         {
           status: 'FAILED',
           connectionState: 'UNKNOWN',
           errorMessage:
             'The runner tab closed after this action began, so its outcome is unknown.',
+          executedAt: new Date(
+            runnerState.activeActionStartedAt ?? Date.now(),
+          ).toISOString(),
         },
       );
-      didReportInterruptedAction = true;
     } catch (error) {
       console.error(
         '[Twenty] Could not report the interrupted LinkedIn action:',
@@ -340,10 +390,16 @@ const handleLinkedinRunnerTabRemoved = async (tabId: number): Promise<void> => {
   await setLinkedinRunnerState(
     getRunnerStateAfterTabRemoval({
       runnerState,
-      didReportInterruptedAction,
+      reportedInterruptedAction,
+      unstartedClaimHandled,
     }),
   );
 };
+
+const handleLinkedinRunnerTabRemoved = (tabId: number): Promise<void> =>
+  withLinkedinRunnerStateOperation(() =>
+    handleLinkedinRunnerTabRemovedWithoutLock(tabId),
+  );
 
 // Cache for API client
 let apiClient: TwentyApiClient | null = null;
@@ -972,116 +1028,244 @@ async function handleMessage(
         const { id } = message.payload as { id: string };
         const tabId = sender?.tab?.id;
 
-        if (typeof tabId !== 'number') {
-          return {
-            success: false,
-            error: 'The runner tab could not be identified',
-          };
-        }
+        return await withLinkedinRunnerStateOperation(async () => {
+          const runnerState = await getLinkedinRunnerState();
+          const claimError = getLinkedinRunnerClaimError(runnerState, tabId);
 
-        const client = await getApiClient();
-        const action = await claimAction(client, id, `extension-tab-${tabId}`);
+          if (claimError) {
+            return { success: false, error: claimError };
+          }
 
-        if (!action) {
-          return { success: true, data: null };
-        }
+          const client = await getApiClient();
+          const action = await claimAction(
+            client,
+            id,
+            `extension-tab-${tabId}`,
+          );
 
-        const runnerState = await getLinkedinRunnerState();
+          if (!action) {
+            return { success: true, data: null };
+          }
 
-        await setLinkedinRunnerState({
-          ...runnerState,
-          enabled: true,
-          tabId,
-          activeAction: action,
-          activeActionStartedAt: null,
+          await setLinkedinRunnerState({
+            ...runnerState,
+            activeAction: action,
+            activeActionStartedAt: null,
+            activeActionNeedsRelease: false,
+            activeActionNeedsReconciliation: false,
+          });
+
+          return { success: true, data: action };
         });
-
-        return { success: true, data: action };
       }
 
       case 'REPORT_LINKEDIN_ACTION': {
-        const { id, claimedAt, status, connectionState, errorMessage } =
-          message.payload as {
-            id: string;
-            claimedAt: string;
-            status: Extract<
-              LinkedInActionStatus,
-              'COMPLETED' | 'SKIPPED' | 'FAILED'
-            >;
-            connectionState: LinkedInConnectionState;
-            errorMessage?: string | null;
-          };
-        const tabId = sender?.tab?.id;
-        const runnerState = await getLinkedinRunnerState();
-
-        if (
-          typeof tabId !== 'number' ||
-          runnerState.tabId !== tabId ||
-          runnerState.activeAction?.id !== id ||
-          runnerState.activeAction.claimedAt !== claimedAt
-        ) {
-          return {
-            success: false,
-            error: 'The action is no longer claimed by this runner',
-          };
-        }
-
-        const client = await getApiClient();
-        const action = await reportAction(
-          client,
+        const {
           id,
-          `extension-tab-${tabId}`,
           claimedAt,
-          {
+          status,
+          connectionState,
+          errorMessage,
+          executedAt,
+        } = message.payload as {
+          id: string;
+          claimedAt: string;
+          status: Extract<
+            LinkedInActionStatus,
+            'COMPLETED' | 'SKIPPED' | 'FAILED'
+          >;
+          connectionState: LinkedInConnectionState;
+          errorMessage?: string | null;
+          executedAt?: string;
+        };
+        const tabId = sender?.tab?.id;
+
+        return await withLinkedinRunnerStateOperation(async () => {
+          const runnerState = await getLinkedinRunnerState();
+          const ownershipError = getLinkedinRunnerActionOwnershipError({
+            runnerState,
+            tabId,
+            actionId: id,
+            claimedAt,
+            requireEnabled: false,
+          });
+
+          if (ownershipError) {
+            return { success: false, error: ownershipError };
+          }
+
+          const client = await getApiClient();
+          const claimedBy = runnerState.activeAction?.claimedBy;
+
+          if (!claimedBy) {
+            return {
+              success: false,
+              error: 'The active action did not include its claim owner',
+            };
+          }
+
+          const action = await reportAction(client, id, claimedBy, claimedAt, {
             status,
             connectionState,
             errorMessage,
-          },
-        );
-
-        if (!action) {
-          await setLinkedinRunnerState({
-            ...runnerState,
-            activeAction: null,
-            activeActionStartedAt: null,
-            lastExecutedAt: Date.now(),
+            executedAt,
+          });
+          const reportResolution = resolveRunnerActionReport({
+            runnerState,
+            reportAccepted: action !== null,
+            status,
           });
 
-          return { success: true, data: null };
-        }
+          await setLinkedinRunnerState(reportResolution.runnerState);
 
-        await setLinkedinRunnerState({
-          ...runnerState,
-          activeAction: null,
-          activeActionStartedAt: null,
-          lastExecutedAt: Date.now(),
-          completedCount:
-            runnerState.completedCount + (status === 'FAILED' ? 0 : 1),
-          failedCount: runnerState.failedCount + (status === 'FAILED' ? 1 : 0),
+          if (!action) {
+            return {
+              success: false,
+              error: reportResolution.error ?? undefined,
+            };
+          }
+
+          return { success: true, data: action };
         });
-
-        return { success: true, data: action };
       }
 
       case 'MARK_LINKEDIN_ACTION_EXECUTING': {
-        const { id } = message.payload as { id: string };
-        const runnerState = await getLinkedinRunnerState();
-
-        if (runnerState.activeAction?.id !== id) {
-          return {
-            success: false,
-            error: 'The action is no longer claimed by this runner',
-          };
-        }
-
-        const nextState = {
-          ...runnerState,
-          activeActionStartedAt: Date.now(),
+        const { id, claimedAt } = message.payload as {
+          id: string;
+          claimedAt: string | null;
         };
+        const tabId = sender?.tab?.id;
 
-        await setLinkedinRunnerState(nextState);
+        return await withLinkedinRunnerStateOperation(async () => {
+          const runnerState = await getLinkedinRunnerState();
+          const ownershipError = getLinkedinRunnerActionOwnershipError({
+            runnerState,
+            tabId,
+            actionId: id,
+            claimedAt,
+          });
 
-        return { success: true, data: nextState };
+          if (ownershipError) {
+            return { success: false, error: ownershipError };
+          }
+
+          const claimedBy = runnerState.activeAction?.claimedBy;
+
+          if (!claimedBy || !claimedAt) {
+            return {
+              success: false,
+              error: 'The active action did not include a complete claim',
+            };
+          }
+
+          const client = await getApiClient();
+          const providerStartRequestedAt = Date.now();
+          const startedAction = await startActionClaim(
+            client,
+            id,
+            claimedBy,
+            claimedAt,
+          );
+
+          if (!startedAction) {
+            const reconciliation = await releaseRunnerActionBeforeProviderStart(
+              {
+                runnerState,
+                releaseAction: async (action) => {
+                  if (!action.claimedAt || !action.claimedBy) {
+                    throw new Error(
+                      'The rejected action did not include a complete claim',
+                    );
+                  }
+
+                  return releaseActionClaim(
+                    await getApiClient(),
+                    action.id,
+                    action.claimedBy,
+                    action.claimedAt,
+                  );
+                },
+                fetchAction: async (actionId) =>
+                  fetchLinkedinActionById(await getApiClient(), actionId),
+              },
+            );
+
+            await setLinkedinRunnerState(reconciliation.runnerState);
+
+            return {
+              success: false,
+              error:
+                reconciliation.error ??
+                'The server no longer accepts this LinkedIn action lease. The provider was not started.',
+            };
+          }
+
+          const startResolution = resolveRunnerProviderStart({
+            runnerState,
+            serverAction: startedAction,
+            requestStartedAt: providerStartRequestedAt,
+          });
+          const nextState = startResolution.runnerState;
+
+          await setLinkedinRunnerState(nextState);
+
+          if (startResolution.error) {
+            return { success: false, error: startResolution.error };
+          }
+
+          return { success: true, data: nextState };
+        });
+      }
+
+      case 'ABORT_LINKEDIN_ACTION_BEFORE_PROVIDER_START': {
+        const { id, claimedAt } = message.payload as {
+          id: string;
+          claimedAt: string | null;
+        };
+        const tabId = sender?.tab?.id;
+
+        return await withLinkedinRunnerStateOperation(async () => {
+          const runnerState = await getLinkedinRunnerState();
+          const ownershipError = getLinkedinRunnerActionOwnershipError({
+            runnerState,
+            tabId,
+            actionId: id,
+            claimedAt,
+            requireEnabled: false,
+          });
+
+          if (ownershipError) {
+            return { success: false, error: ownershipError };
+          }
+
+          const reconciliation = await releaseRunnerActionBeforeProviderStart({
+            runnerState,
+            releaseAction: async (action) => {
+              if (!action.claimedAt || !action.claimedBy) {
+                throw new Error(
+                  'The paused action did not include a complete claim',
+                );
+              }
+
+              return releaseActionClaim(
+                await getApiClient(),
+                action.id,
+                action.claimedBy,
+                action.claimedAt,
+              );
+            },
+            fetchAction: async (actionId) =>
+              fetchLinkedinActionById(await getApiClient(), actionId),
+          });
+
+          await setLinkedinRunnerState(reconciliation.runnerState);
+
+          if (reconciliation.error) {
+            return { success: false, error: reconciliation.error };
+          }
+
+          return { success: true, data: reconciliation.runnerState };
+        });
       }
 
       case 'GET_LINKEDIN_CSRF_TOKEN': {
@@ -1250,27 +1434,168 @@ async function handleMessage(
         const { enabled } = message.payload as { enabled: boolean };
         const tabId = sender?.tab?.id;
 
-        if (enabled && typeof tabId !== 'number') {
-          return {
-            success: false,
-            error: 'The runner tab could not be identified',
-          };
-        }
+        return await withLinkedinRunnerStateOperation(async () => {
+          let runnerState = await getLinkedinRunnerState();
 
-        const runnerState = await getLinkedinRunnerState();
-        const nextState = {
-          ...runnerState,
-          enabled,
-          tabId: enabled ? (tabId ?? null) : null,
-        };
+          if (
+            !enabled &&
+            runnerState.enabled &&
+            (typeof tabId !== 'number' || runnerState.tabId !== tabId)
+          ) {
+            return {
+              success: false,
+              error: 'This tab is not the active LinkedIn runner.',
+            };
+          }
 
-        await setLinkedinRunnerState(nextState);
+          if (enabled) {
+            const ownershipError = getLinkedinRunnerEnableError(
+              runnerState,
+              tabId,
+              true,
+            );
 
-        if (!enabled) {
-          await browser.action.setBadgeText({ text: '' });
-        }
+            if (ownershipError) {
+              return { success: false, error: ownershipError };
+            }
 
-        return { success: true, data: nextState };
+            if (runnerState.activeActionNeedsReconciliation) {
+              const reconciliation = await reconcileRunnerActionOnEnable({
+                runnerState,
+                fetchAction: async (id) =>
+                  fetchLinkedinActionById(await getApiClient(), id),
+                recordRecoveryAttempt: recordLinkedInOutboundAttempt,
+              });
+
+              if (reconciliation.error) {
+                return {
+                  success: false,
+                  error: reconciliation.error,
+                };
+              }
+
+              runnerState = reconciliation.runnerState;
+            }
+
+            const enableError = getLinkedinRunnerEnableError(
+              runnerState,
+              tabId,
+            );
+
+            if (enableError) {
+              return { success: false, error: enableError };
+            }
+          }
+
+          if (
+            enabled &&
+            runnerState.activeActionNeedsRelease &&
+            runnerState.activeAction
+          ) {
+            const { claimedAt, claimedBy, id } = runnerState.activeAction;
+
+            if (!claimedAt || !claimedBy) {
+              return {
+                success: false,
+                error: 'The unstarted action did not include a complete claim',
+              };
+            }
+
+            try {
+              const client = await getApiClient();
+
+              // A previous tab could not confirm this safe release. Resolve it
+              // before attaching the action to a replacement tab; never run an
+              // action whose server lease may already have moved elsewhere.
+              const releasedAction = await releaseActionClaim(
+                client,
+                id,
+                claimedBy,
+                claimedAt,
+              );
+
+              if (releasedAction === null) {
+                const reconciliation = await reconcileRunnerReleaseOnEnable({
+                  runnerState,
+                  fetchAction: async (id) =>
+                    fetchLinkedinActionById(await getApiClient(), id),
+                });
+
+                if (reconciliation.error) {
+                  return {
+                    success: false,
+                    error: reconciliation.error,
+                  };
+                }
+
+                runnerState = reconciliation.runnerState;
+              } else {
+                runnerState = {
+                  ...runnerState,
+                  activeAction: null,
+                  activeActionStartedAt: null,
+                  activeActionNeedsRelease: false,
+                  activeActionNeedsReconciliation: false,
+                };
+              }
+            } catch (error) {
+              return {
+                success: false,
+                error: `Could not release the interrupted unstarted action: ${
+                  error instanceof Error ? error.message : String(error)
+                }`,
+              };
+            }
+          }
+
+          if (
+            !enabled &&
+            runnerState.activeAction &&
+            runnerState.activeActionStartedAt === null &&
+            !runnerState.activeActionNeedsReconciliation
+          ) {
+            const { claimedAt, claimedBy, id } = runnerState.activeAction;
+            let didReleaseAction = false;
+
+            if (claimedAt && claimedBy) {
+              try {
+                const client = await getApiClient();
+                const releasedAction = await releaseActionClaim(
+                  client,
+                  id,
+                  claimedBy,
+                  claimedAt,
+                );
+
+                didReleaseAction = releasedAction !== null;
+              } catch (error) {
+                console.error(
+                  '[Twenty] Could not release the action while pausing the runner:',
+                  error,
+                );
+              }
+            }
+
+            runnerState = getRunnerStateAfterPause({
+              runnerState,
+              didReleaseUnstartedAction: didReleaseAction,
+            });
+          } else if (!enabled) {
+            runnerState = getRunnerStateAfterPause({ runnerState });
+          }
+
+          const nextState = enabled
+            ? { ...runnerState, enabled: true, tabId: tabId ?? null }
+            : runnerState;
+
+          await setLinkedinRunnerState(nextState);
+
+          if (!enabled) {
+            await browser.action.setBadgeText({ text: '' });
+          }
+
+          return { success: true, data: nextState };
+        });
       }
 
       case 'UPDATE_RECORD': {
@@ -1302,7 +1627,7 @@ export default defineBackground(() => {
   browser.runtime.onMessage.addListener(
     (message: ExtensionMessage, sender, sendResponse) => {
       // Handle async by returning true and using sendResponse
-      handleMessage(message, sender).then(sendResponse);
+      void handleMessage(message, sender).then(sendResponse);
       return true; // Indicates we will send a response asynchronously
     },
   );

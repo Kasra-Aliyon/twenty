@@ -23,9 +23,14 @@ export class GmailMessageOutboundService implements MessageOutboundDriver {
   async sendMessage(
     sendMessageInput: SendMessageInput,
     connectedAccount: ConnectedAccountEntity,
+    onProviderStart?: () => Promise<void>,
   ): Promise<SendMessageResult> {
     const { gmailClient, encodedMessage, messageBuffer } =
       await this.composeGmailMessage(connectedAccount, sendMessageInput);
+
+    const sentAt = new Date().toISOString();
+
+    await onProviderStart?.();
 
     const { data } = await gmailClient.users.messages.send({
       userId: 'me',
@@ -39,6 +44,7 @@ export class GmailMessageOutboundService implements MessageOutboundDriver {
 
     return {
       headerMessageId: extractMessageIdFromBuffer(messageBuffer),
+      sentAt,
       messageExternalId: data.id ?? undefined,
       threadExternalId: data.threadId ?? undefined,
     };

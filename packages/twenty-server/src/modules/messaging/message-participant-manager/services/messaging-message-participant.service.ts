@@ -20,10 +20,10 @@ export class MessagingMessageParticipantService {
     participants: ParticipantWithMessageId[],
     workspaceId: string,
     transactionManager?: WorkspaceEntityManager,
-  ): Promise<void> {
+  ): Promise<MessageParticipantWorkspaceEntity[]> {
     const authContext = buildSystemAuthContext(workspaceId);
 
-    await this.globalWorkspaceOrmManager.executeInWorkspaceContext(
+    return this.globalWorkspaceOrmManager.executeInWorkspaceContext(
       async () => {
         const messageParticipantRepository =
           await this.globalWorkspaceOrmManager.getRepository<MessageParticipantWorkspaceEntity>(
@@ -68,10 +68,14 @@ export class MessagingMessageParticipantService {
           transactionManager,
         );
 
-        await this.matchParticipantService.matchParticipants({
+        return this.matchParticipantService.matchParticipants({
           participants: createdParticipants.raw ?? [],
           objectMetadataName: 'messageParticipant',
           transactionManager,
+          // The caller owns the import transaction and emits only after its
+          // commit, when the message and channel association are visible to
+          // reply listeners using a separate connection.
+          shouldEmitMatchedEvent: false,
           matchWith: 'workspaceMemberAndPerson',
           workspaceId,
         });
@@ -79,5 +83,16 @@ export class MessagingMessageParticipantService {
       authContext,
       { lite: true },
     );
+  }
+
+  public emitMessageParticipantsMatched(
+    participants: MessageParticipantWorkspaceEntity[],
+    workspaceId: string,
+  ): void {
+    this.matchParticipantService.emitParticipantsMatched({
+      participants,
+      objectMetadataName: 'messageParticipant',
+      workspaceId,
+    });
   }
 }

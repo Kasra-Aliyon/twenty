@@ -6,6 +6,7 @@ export type MessageOutboundDriver = {
   sendMessage(
     sendMessageInput: SendMessageInput,
     connectedAccount: ConnectedAccountEntity,
+    onProviderStart?: () => Promise<void>,
   ): Promise<SendMessageResult>;
 
   createDraft(

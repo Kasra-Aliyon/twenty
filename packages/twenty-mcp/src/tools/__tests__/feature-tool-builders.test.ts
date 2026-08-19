@@ -6,7 +6,7 @@ import { sequencesToolsTesting } from '../sequences.tools.js';
 import { viewToolsTesting } from '../views.tools.js';
 
 describe('feature tool input builders', () => {
-  it('filters unavailable and mismatched connected accounts', () => {
+  it('keeps unsynced accounts discoverable for LinkedIn-only sequences', () => {
     const accounts = [
       {
         id: 'active-google',
@@ -59,13 +59,22 @@ describe('feature tool input builders', () => {
       sequencesToolsTesting.filterConnectedAccounts(accounts, {
         activeOnly: true,
         provider: 'google',
+        useCase: 'SEQUENCE',
+      }),
+    ).toEqual([accounts[0], accounts[1]]);
+
+    expect(
+      sequencesToolsTesting.filterConnectedAccounts(accounts, {
+        activeOnly: true,
+        provider: undefined,
+        useCase: 'EMAIL',
       }),
     ).toEqual([accounts[0]]);
   });
 
   it('requires an enabled active inbox channel for a sequence sender', () => {
     expect(
-      sequencesToolsTesting.isReadySequenceSenderAccount({
+      sequencesToolsTesting.isReadySequenceEmailSenderAccount({
         id: 'account-id',
         handle: 'sender@example.com',
         provider: 'google',
@@ -105,6 +114,24 @@ describe('feature tool input builders', () => {
     });
 
     expect(parsed.sendWindowTimezoneMode).toBe('SEQUENCE');
+  });
+
+  it('rejects a daily-start limit that would leave an active sequence idle', () => {
+    expect(() =>
+      sequencesToolsTesting.sequenceSettingsSchema.parse({
+        activeDays: [1, 2, 3, 4, 5],
+        windowStart: '09:00',
+        windowEnd: '17:00',
+        timezone: 'UTC',
+        dailyStartLimitEnabled: true,
+        dailyStarts: 0,
+        staggerMinutes: 5,
+        linkedinDailyActionLimitEnabled: true,
+        linkedinDailyActions: 20,
+        linkedinDelayPatternMinutes: [1, 2, 3],
+        stopOnReply: true,
+      }),
+    ).toThrow();
   });
 
   it('models current sequence branches and manual execution settings', () => {

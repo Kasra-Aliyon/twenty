@@ -86,7 +86,13 @@ describe('GmailMessageOutboundService', () => {
       provider: ConnectedAccountProvider.GOOGLE,
     } as any;
 
-    await service.sendMessage(sendMessageInput, connectedAccount);
+    const onProviderStart = jest.fn().mockResolvedValue(undefined);
+
+    await service.sendMessage(
+      sendMessageInput,
+      connectedAccount,
+      onProviderStart,
+    );
 
     expect(mockSend).toHaveBeenCalledTimes(1);
     expect(mockSend).toHaveBeenCalledWith({
@@ -95,6 +101,12 @@ describe('GmailMessageOutboundService', () => {
         raw: Buffer.from('mocked-email-content').toString('base64url'),
       },
     });
+    expect(
+      mockGmailClient.users.getProfile.mock.invocationCallOrder[0],
+    ).toBeLessThan(onProviderStart.mock.invocationCallOrder[0]);
+    expect(onProviderStart.mock.invocationCallOrder[0]).toBeLessThan(
+      mockSend.mock.invocationCallOrder[0],
+    );
   });
 
   it('should send email with attachments via Gmail', async () => {

@@ -73,7 +73,7 @@ export const SettingsOutreachSequenceLimitCard = ({
             {t`Enforce daily LinkedIn action limit`}
           </StyledSettingTitle>
           <StyledSettingDescription>
-            {t`Applies the workspace-wide LinkedIn action counter when scheduling this sequence.`}
+            {t`Applies the sender's per-account LinkedIn action counter when scheduling this sequence.`}
           </StyledSettingDescription>
         </StyledSettingText>
         <Toggle
@@ -90,7 +90,7 @@ export const SettingsOutreachSequenceLimitCard = ({
         <StyledSettingText>
           <StyledSettingTitle>{t`LinkedIn actions per day`}</StyledSettingTitle>
           <StyledSettingDescription>
-            {t`LinkedIn action slots reserved per local day, between 1 and 40.`}
+            {t`LinkedIn action slots reserved per UTC day for this account, between 1 and 40.`}
           </StyledSettingDescription>
         </StyledSettingText>
         <SettingsCounter

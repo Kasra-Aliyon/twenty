@@ -270,6 +270,72 @@ export class CacheStorageService {
     await this.del(key);
   }
 
+  async acquireLockWithToken(
+    key: string,
+    token: string,
+    ttl = 1000,
+  ): Promise<boolean> {
+    if (!this.isRedisCache()) {
+      throw new Error(
+        'acquireLockWithToken is only supported with Redis cache',
+      );
+    }
+
+    const redisClient = (this.cache as RedisCache).store.client;
+    const result = await redisClient.set(this.getKey(key), token, {
+      NX: true,
+      PX: ttl,
+    });
+
+    return result === 'OK';
+  }
+
+  async renewLockWithToken(
+    key: string,
+    token: string,
+    ttl = 1000,
+  ): Promise<boolean> {
+    if (!this.isRedisCache()) {
+      throw new Error('renewLockWithToken is only supported with Redis cache');
+    }
+
+    const redisClient = (this.cache as RedisCache).store.client;
+    const script = `
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+  return redis.call('PEXPIRE', KEYS[1], ARGV[2])
+else
+  return 0
+end`;
+    const result = await redisClient.eval(script, {
+      keys: [this.getKey(key)],
+      arguments: [token, String(ttl)],
+    });
+
+    return result === 1;
+  }
+
+  async releaseLockWithToken(key: string, token: string): Promise<boolean> {
+    if (!this.isRedisCache()) {
+      throw new Error(
+        'releaseLockWithToken is only supported with Redis cache',
+      );
+    }
+
+    const redisClient = (this.cache as RedisCache).store.client;
+    const script = `
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+  return redis.call('DEL', KEYS[1])
+else
+  return 0
+end`;
+    const result = await redisClient.eval(script, {
+      keys: [this.getKey(key)],
+      arguments: [token],
+    });
+
+    return result === 1;
+  }
+
   async incrBy(key: string, increment: number): Promise<number> {
     if (this.isRedisCache()) {
       return (this.cache as RedisCache).store.client.incrBy(

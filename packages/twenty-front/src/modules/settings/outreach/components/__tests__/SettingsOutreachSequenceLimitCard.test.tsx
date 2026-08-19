@@ -51,6 +51,9 @@ describe('SettingsOutreachSequenceLimitCard', () => {
     expect(
       screen.getByText(/per day in the sequence time zone/),
     ).toBeInTheDocument();
+    expect(
+      screen.getByText(/LinkedIn action slots reserved per UTC day/),
+    ).toBeInTheDocument();
 
     rerender(
       <SettingsOutreachSequenceLimitCard
@@ -60,6 +63,8 @@ describe('SettingsOutreachSequenceLimitCard', () => {
       />,
     );
 
-    expect(screen.getByText(/per UTC day/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Contacts allowed.*per UTC day/),
+    ).toBeInTheDocument();
   });
 });

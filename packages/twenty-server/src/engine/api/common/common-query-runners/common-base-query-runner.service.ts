@@ -33,6 +33,7 @@ import { CommonSelectedFieldsResult } from 'src/engine/api/common/types/common-s
 import { OBJECTS_WITH_SETTINGS_PERMISSIONS_REQUIREMENTS } from 'src/engine/api/graphql/graphql-query-runner/constants/objects-with-settings-permissions-requirements';
 import { GraphqlQueryParser } from 'src/engine/api/graphql/graphql-query-runner/graphql-query-parsers/graphql-query.parser';
 import { WorkspacePreQueryHookPayload } from 'src/engine/api/graphql/workspace-query-runner/workspace-query-hook/types/workspace-query-hook.type';
+import { shouldRunWorkspaceQueryInTransaction } from 'src/engine/api/graphql/workspace-query-runner/workspace-query-hook/utils/workspace-query-hook-transaction.util';
 import { WorkspaceQueryHookService } from 'src/engine/api/graphql/workspace-query-runner/workspace-query-hook/workspace-query-hook.service';
 import { isApiKeyAuthContext } from 'src/engine/core-modules/auth/guards/is-api-key-auth-context.guard';
 import { isUserAuthContext } from 'src/engine/core-modules/auth/guards/is-user-auth-context.guard';
@@ -52,6 +53,8 @@ import {
 } from 'src/engine/metadata-modules/permissions/permissions.exception';
 import { PermissionsService } from 'src/engine/metadata-modules/permissions/permissions.service';
 import { GlobalWorkspaceOrmManager } from 'src/engine/twenty-orm/global-workspace-datasource/global-workspace-orm.manager';
+import { type GlobalWorkspaceDataSource } from 'src/engine/twenty-orm/global-workspace-datasource/global-workspace-datasource';
+import { type WorkspaceEntityManager } from 'src/engine/twenty-orm/entity-manager/workspace-entity-manager';
 import { getWorkspaceContext } from 'src/engine/twenty-orm/storage/orm-workspace-context.storage';
 import { resolveRolePermissionConfig } from 'src/engine/twenty-orm/utils/resolve-role-permission-config.util';
 import { WorkspaceCacheService } from 'src/engine/workspace-cache/services/workspace-cache.service';
@@ -222,11 +225,59 @@ export abstract class CommonBaseQueryRunnerService<
       await this.prepareExtendedQueryRunnerContextWithGlobalDatasource(
         queryRunnerContext,
       );
+    const shouldRunInTransaction =
+      shouldRunWorkspaceQueryInTransaction(processedArgs);
+    const results = shouldRunInTransaction
+      ? await extendedQueryRunnerContext.workspaceDataSource.transaction(
+          async (transactionManager) => {
+            const workspaceEntityManager =
+              transactionManager as WorkspaceEntityManager;
+            const transactionalArgs =
+              (await this.workspaceQueryHookService.executeTransactionalPreQueryHooks(
+                extendedQueryRunnerContext.authContext,
+                queryRunnerContext.flatObjectMetadata.nameSingular,
+                this.operationName,
+                processedArgs as WorkspacePreQueryHookPayload<CommonQueryNames>,
+                workspaceEntityManager,
+              )) as CommonExtendedInput<Args>;
+            const repository = workspaceEntityManager.getRepository(
+              queryRunnerContext.flatObjectMetadata.nameSingular,
+              extendedQueryRunnerContext.rolePermissionConfig,
+              extendedQueryRunnerContext.authContext,
+            );
+            const workspaceDataSource =
+              this.buildTransactionScopedWorkspaceDataSource({
+                authContext: extendedQueryRunnerContext.authContext,
+                rolePermissionConfig:
+                  extendedQueryRunnerContext.rolePermissionConfig,
+                workspaceDataSource:
+                  extendedQueryRunnerContext.workspaceDataSource,
+                workspaceEntityManager,
+              });
 
-    const results = await this.run(processedArgs, {
-      ...extendedQueryRunnerContext,
-      commonQueryParser,
-    });
+            const transactionResults = await this.run(transactionalArgs, {
+              ...extendedQueryRunnerContext,
+              commonQueryParser,
+              repository,
+              workspaceDataSource,
+            });
+
+            await this.workspaceQueryHookService.executeTransactionalPostMutationHooks(
+              extendedQueryRunnerContext.authContext,
+              queryRunnerContext.flatObjectMetadata.nameSingular,
+              this.operationName,
+              transactionalArgs as WorkspacePreQueryHookPayload<CommonQueryNames>,
+              transactionResults as QueryResultFieldValue,
+              workspaceEntityManager,
+            );
+
+            return transactionResults;
+          },
+        )
+      : await this.run(processedArgs, {
+          ...extendedQueryRunnerContext,
+          commonQueryParser,
+        });
 
     return this.enrichResultsWithGettersAndHooks({
       results,
@@ -236,6 +287,38 @@ export abstract class CommonBaseQueryRunnerService<
       flatObjectMetadataMaps: queryRunnerContext.flatObjectMetadataMaps,
       flatFieldMetadataMaps: queryRunnerContext.flatFieldMetadataMaps,
     });
+  }
+
+  private buildTransactionScopedWorkspaceDataSource({
+    authContext,
+    rolePermissionConfig,
+    workspaceDataSource,
+    workspaceEntityManager,
+  }: {
+    authContext: WorkspaceAuthContext;
+    rolePermissionConfig: CommonExtendedQueryRunnerContext['rolePermissionConfig'];
+    workspaceDataSource: GlobalWorkspaceDataSource;
+    workspaceEntityManager: WorkspaceEntityManager;
+  }): GlobalWorkspaceDataSource {
+    const transactionScopedDataSource = Object.create(
+      workspaceDataSource,
+    ) as GlobalWorkspaceDataSource;
+
+    Object.defineProperty(transactionScopedDataSource, 'getRepository', {
+      value: (
+        target: Parameters<GlobalWorkspaceDataSource['getRepository']>[0],
+        permissionConfig?: Parameters<
+          GlobalWorkspaceDataSource['getRepository']
+        >[1],
+      ) =>
+        workspaceEntityManager.getRepository(
+          target,
+          permissionConfig ?? rolePermissionConfig,
+          authContext,
+        ),
+    });
+
+    return transactionScopedDataSource;
   }
 
   private async enrichResultsWithGettersAndHooks({

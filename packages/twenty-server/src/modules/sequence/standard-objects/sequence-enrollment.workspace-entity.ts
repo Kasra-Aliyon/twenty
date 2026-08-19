@@ -22,6 +22,29 @@ export type SequenceSentEmailMetadata = {
 export type SequenceLastSendAttempt = {
   stepId: string;
   attemptedAt: string;
+  dailyReservation?: {
+    mailboxId: string;
+    token: string;
+    usageDate: string;
+  };
+  preProviderFailure?: {
+    attemptCount: number;
+    errorMessage: string;
+    failedAt: string;
+  };
+  reservationReleasePendingAt?: string;
+  providerStartedAt?: string;
+  deliveredEmail?: {
+    stepPosition: number;
+    metadata: SequenceSentEmailMetadata;
+  };
+  previousCursor?: {
+    currentStepId: string | null;
+    currentStepPosition: number;
+    waitingOn: SequenceWaitingOn | null;
+    nextActionAt: string | null;
+    stopOnReply: boolean;
+  };
 };
 
 export class SequenceEnrollmentWorkspaceEntity extends BaseWorkspaceEntity {

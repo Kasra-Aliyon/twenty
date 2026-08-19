@@ -9,7 +9,6 @@ import {
   SEQUENCE_ENROLLMENT_STATUSES,
   type SequenceEnrollmentStatus,
 } from 'twenty-shared/types';
-import { In } from 'typeorm';
 
 import { OnDatabaseBatchEvent } from 'src/engine/api/graphql/graphql-query-runner/decorators/on-database-batch-event.decorator';
 import { DatabaseEventAction } from 'src/engine/api/graphql/graphql-query-runner/enums/database-event-action';
@@ -78,14 +77,21 @@ export class SequenceEnrollmentListener {
     workspaceId: string;
     enrollments: SequenceEnrollmentWorkspaceEntity[];
   }): Promise<void> {
-    const sequenceIds = [
-      ...new Set(enrollments.map((enrollment) => enrollment.sequenceId)),
-    ];
+    const enrollmentIdsBySequenceId = new Map<string, string[]>();
 
-    for (const sequenceId of sequenceIds) {
+    for (const enrollment of enrollments) {
+      const enrollmentIds =
+        enrollmentIdsBySequenceId.get(enrollment.sequenceId) ?? [];
+
+      enrollmentIds.push(enrollment.id);
+      enrollmentIdsBySequenceId.set(enrollment.sequenceId, enrollmentIds);
+    }
+
+    for (const [sequenceId, enrollmentIdsToLock] of enrollmentIdsBySequenceId) {
       await this.sequenceMetricsService.recomputeForSequence({
         workspaceId,
         sequenceId,
+        enrollmentIdsToLock,
       });
     }
 
@@ -106,10 +112,7 @@ export class SequenceEnrollmentListener {
           await linkedinActionRepository.update(
             {
               sequenceEnrollmentId: enrollment.id,
-              status: In([
-                LINKEDIN_ACTION_STATUSES.SCHEDULED,
-                LINKEDIN_ACTION_STATUSES.CLAIMED,
-              ]),
+              status: LINKEDIN_ACTION_STATUSES.SCHEDULED,
             },
             {
               status: LINKEDIN_ACTION_STATUSES.CANCELLED,

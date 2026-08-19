@@ -68,7 +68,11 @@ export class EmailComposerService {
     return this.globalWorkspaceOrmManager.executeInWorkspaceContext(
       async () => {
         const connectedAccount = await this.connectedAccountRepository.findOne({
-          where: { id: connectedAccountId, workspaceId },
+          where: {
+            id: connectedAccountId,
+            workspaceId,
+            archivedAt: IsNull(),
+          },
           relations: {
             messageChannels: {
               messageFolders: true,

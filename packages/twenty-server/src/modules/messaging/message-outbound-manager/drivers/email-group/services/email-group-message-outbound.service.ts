@@ -29,6 +29,7 @@ export class EmailGroupMessageOutboundService implements MessageOutboundDriver {
   async sendMessage(
     sendMessageInput: SendMessageInput,
     connectedAccount: ConnectedAccountEntity,
+    onProviderStart?: () => Promise<void>,
   ): Promise<SendMessageResult> {
     const emailingDomain = await this.resolveEmailingDomain(connectedAccount);
 
@@ -38,6 +39,8 @@ export class EmailGroupMessageOutboundService implements MessageOutboundDriver {
         MessageChannelExceptionCode.EMAIL_GROUP_NOT_CONFIGURED,
       );
     }
+
+    await onProviderStart?.();
 
     const result = await this.emailingDomainSenderService.sendEmail(
       connectedAccount.workspaceId,

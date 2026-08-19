@@ -25,6 +25,7 @@ import { AddLinkedinMessageReadReceiptsCommand } from 'src/database/commands/upg
 import { BackstopSequenceEmailLimitColumnsCommand } from 'src/database/commands/upgrade-version-command/2-15/2-15-workspace-command-1800000021000-backstop-sequence-email-limit-columns.command';
 import { AddPersonTimeZoneCommand } from 'src/database/commands/upgrade-version-command/2-15/2-15-workspace-command-1800000022000-add-person-time-zone.command';
 import { AddLinkedinNavigationItemCommand } from 'src/database/commands/upgrade-version-command/2-15/2-15-workspace-command-1800000023000-add-linkedin-navigation-item.command';
+import { RecomputeSequenceCountersCommand } from 'src/database/commands/upgrade-version-command/2-15/2-15-workspace-command-1800000024000-recompute-sequence-counters.command';
 import { ApplicationModule } from 'src/engine/core-modules/application/application.module';
 import { FeatureFlagModule } from 'src/engine/core-modules/feature-flag/feature-flag.module';
 import { UserWorkspaceEntity } from 'src/engine/core-modules/user-workspace/user-workspace.entity';
@@ -35,6 +36,7 @@ import { WorkspaceMetadataVersionModule } from 'src/engine/metadata-modules/work
 import { WorkspaceCacheModule } from 'src/engine/workspace-cache/workspace-cache.module';
 import { WorkspaceMigrationModule } from 'src/engine/workspace-manager/workspace-migration/workspace-migration.module';
 import { LinkedinModule } from 'src/modules/linkedin/linkedin.module';
+import { SequenceMetricsService } from 'src/modules/sequence/services/sequence-metrics.service';
 
 @Module({
   imports: [
@@ -76,6 +78,8 @@ import { LinkedinModule } from 'src/modules/linkedin/linkedin.module';
     BackstopSequenceEmailLimitColumnsCommand,
     AddPersonTimeZoneCommand,
     AddLinkedinNavigationItemCommand,
+    RecomputeSequenceCountersCommand,
+    SequenceMetricsService,
   ],
 })
 export class V2_15_UpgradeVersionCommandModule {}

@@ -80,6 +80,8 @@ import { AddIsPlainTextEmailEnabledFastInstanceCommand } from 'src/database/comm
 import { AddViewFieldSubFieldNameFastInstanceCommand } from 'src/database/commands/upgrade-version-command/2-15/2-15-instance-command-fast-1786114573952-add-view-field-sub-field-name';
 import { AllowViewFieldSubFieldsFastInstanceCommand } from 'src/database/commands/upgrade-version-command/2-15/2-15-instance-command-fast-1800000018500-allow-view-field-sub-fields';
 import { AddSequenceEmailLimitsToConnectedAccountFastInstanceCommand } from 'src/database/commands/upgrade-version-command/2-15/2-15-instance-command-fast-1800000020500-add-sequence-email-limits-to-connected-account';
+import { AddSequenceEmailLastSendAtToConnectedAccountFastInstanceCommand } from 'src/database/commands/upgrade-version-command/2-15/2-15-instance-command-fast-1800000025000-add-sequence-email-last-send-at-to-connected-account';
+import { AddSequenceEmailReservationTokensToConnectedAccountFastInstanceCommand } from 'src/database/commands/upgrade-version-command/2-15/2-15-instance-command-fast-1800000026000-add-sequence-email-reservation-tokens-to-connected-account';
 
 export const INSTANCE_COMMANDS = [
   AddViewFieldGroupIdIndexOnViewFieldFastInstanceCommand,
@@ -162,4 +164,6 @@ export const INSTANCE_COMMANDS = [
   AddViewFieldSubFieldNameFastInstanceCommand,
   AllowViewFieldSubFieldsFastInstanceCommand,
   AddSequenceEmailLimitsToConnectedAccountFastInstanceCommand,
+  AddSequenceEmailLastSendAtToConnectedAccountFastInstanceCommand,
+  AddSequenceEmailReservationTokensToConnectedAccountFastInstanceCommand,
 ];

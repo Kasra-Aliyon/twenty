@@ -16,13 +16,18 @@ import { SequenceProcessEnrollmentJob } from 'src/modules/sequence/jobs/sequence
 import { SequenceEnrollmentListener } from 'src/modules/sequence/listeners/sequence-enrollment.listener';
 import { SequenceLinkedinActionListener } from 'src/modules/sequence/listeners/sequence-linkedin-action.listener';
 import { SequenceLinkedinReplyListener } from 'src/modules/sequence/listeners/sequence-linkedin-reply.listener';
+import { SequencePersonListener } from 'src/modules/sequence/listeners/sequence-person.listener';
 import { SequenceReplyListener } from 'src/modules/sequence/listeners/sequence-reply.listener';
 import { SequenceTaskListener } from 'src/modules/sequence/listeners/sequence-task.listener';
 import { SequenceAnalyticsResolver } from 'src/modules/sequence/resolvers/sequence-analytics.resolver';
+import { SequenceLinkedinActionResolver } from 'src/modules/sequence/resolvers/sequence-linkedin-action.resolver';
 import { SequenceAnalyticsService } from 'src/modules/sequence/services/sequence-analytics.service';
+import { SequenceEmailReplyReconciliationService } from 'src/modules/sequence/services/sequence-email-reply-reconciliation.service';
 import { SequenceEmailSenderService } from 'src/modules/sequence/services/sequence-email-sender.service';
 import { SequenceExecutorService } from 'src/modules/sequence/services/sequence-executor.service';
 import { SequenceLinkedinInvitationReconcilerService } from 'src/modules/sequence/services/sequence-linkedin-invitation-reconciler.service';
+import { SequenceLinkedinActionClaimService } from 'src/modules/sequence/services/sequence-linkedin-action-claim.service';
+import { SequenceLinkedinActionMutationService } from 'src/modules/sequence/services/sequence-linkedin-action-mutation.service';
 import { SequenceLinkedinThrottleService } from 'src/modules/sequence/services/sequence-linkedin-throttle.service';
 import { SequenceMetricsService } from 'src/modules/sequence/services/sequence-metrics.service';
 import { SequenceMailboxThrottleService } from 'src/modules/sequence/services/sequence-mailbox-throttle.service';
@@ -50,16 +55,21 @@ import { SequenceVariableService } from 'src/modules/sequence/services/sequence-
   providers: [
     SequenceAnalyticsResolver,
     SequenceAnalyticsService,
+    SequenceEmailReplyReconciliationService,
     SequenceEmailSenderService,
     SequenceEnrollmentListener,
     SequenceExecutorService,
     SequenceLinkedinActionListener,
+    SequenceLinkedinActionResolver,
+    SequenceLinkedinActionClaimService,
+    SequenceLinkedinActionMutationService,
     SequenceLinkedinInvitationReconcilerService,
     SequenceLinkedinReplyListener,
     SequenceLinkedinThrottleService,
     SequenceMailboxThrottleService,
     SequenceMetricsService,
     SequenceProcessEnrollmentJob,
+    SequencePersonListener,
     SequenceQueueService,
     SequenceReplyListener,
     SequenceSchedulerService,

@@ -1,8 +1,10 @@
+import { randomUUID } from 'node:crypto';
+
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 
 import { isDefined } from 'twenty-shared/utils';
-import { type Repository } from 'typeorm';
+import { type EntityManager, type Repository } from 'typeorm';
 
 import { InjectCacheStorage } from 'src/engine/core-modules/cache-storage/decorators/cache-storage.decorator';
 import { CacheStorageService } from 'src/engine/core-modules/cache-storage/services/cache-storage.service';
@@ -32,9 +34,29 @@ export class SequenceMailboxThrottleService {
   }: {
     workspaceId: string;
     mailboxId: string;
-  }): Promise<boolean> {
-    return this.cacheStorageService.acquireLock(
+  }): Promise<string | null> {
+    const token = randomUUID();
+    const acquired = await this.cacheStorageService.acquireLockWithToken(
       this.getSendLockKey(workspaceId, mailboxId),
+      token,
+      SEQUENCE_MAILBOX_SEND_LOCK_TTL,
+    );
+
+    return acquired ? token : null;
+  }
+
+  async renewSendLock({
+    workspaceId,
+    mailboxId,
+    token,
+  }: {
+    workspaceId: string;
+    mailboxId: string;
+    token: string;
+  }): Promise<boolean> {
+    return this.cacheStorageService.renewLockWithToken(
+      this.getSendLockKey(workspaceId, mailboxId),
+      token,
       SEQUENCE_MAILBOX_SEND_LOCK_TTL,
     );
   }
@@ -42,12 +64,15 @@ export class SequenceMailboxThrottleService {
   async releaseSendLock({
     workspaceId,
     mailboxId,
+    token,
   }: {
     workspaceId: string;
     mailboxId: string;
-  }): Promise<void> {
-    await this.cacheStorageService.releaseLock(
+    token: string;
+  }): Promise<boolean> {
+    return this.cacheStorageService.releaseLockWithToken(
       this.getSendLockKey(workspaceId, mailboxId),
+      token,
     );
   }
 
@@ -63,18 +88,19 @@ export class SequenceMailboxThrottleService {
     const cachedValue = await this.cacheStorageService.get<string>(
       this.getLastSendAtCacheKey(workspaceId, mailboxId),
     );
-
-    if (isDefined(cachedValue)) {
-      const cachedDate = new Date(cachedValue);
-
-      if (!Number.isNaN(cachedDate.getTime())) {
-        return cachedDate;
-      }
-    }
+    const cachedTimestamp = isDefined(cachedValue)
+      ? Date.parse(cachedValue)
+      : 0;
+    const connectedAccount = await this.connectedAccountRepository.findOne({
+      where: { id: mailboxId, workspaceId },
+      select: { sequenceEmailLastSendAt: true },
+    });
+    const durableTimestamp =
+      connectedAccount?.sequenceEmailLastSendAt?.getTime() ?? 0;
 
     const enrollments = await enrollmentRepository.find({
       where: { senderConnectedAccountId: mailboxId },
-      select: { sentEmailsByStepId: true },
+      select: { lastSendAttempt: true, sentEmailsByStepId: true },
     });
     const mostRecentTimestamp = enrollments.reduce(
       (latestTimestamp, enrollment) => {
@@ -87,10 +113,23 @@ export class SequenceMailboxThrottleService {
             ? latestSentTimestamp
             : Math.max(latestSentTimestamp, sentTimestamp);
         }, 0);
+        const lastSendAttempt = enrollment.lastSendAttempt;
+        const sendAttemptTimestamp =
+          isDefined(lastSendAttempt?.preProviderFailure) ||
+          isDefined(lastSendAttempt?.reservationReleasePendingAt)
+            ? Number.NaN
+            : Date.parse(lastSendAttempt?.attemptedAt ?? '');
 
-        return Math.max(latestTimestamp, enrollmentLatestTimestamp);
+        return Math.max(
+          latestTimestamp,
+          enrollmentLatestTimestamp,
+          Number.isNaN(sendAttemptTimestamp) ? 0 : sendAttemptTimestamp,
+        );
       },
-      0,
+      Math.max(
+        Number.isNaN(cachedTimestamp) ? 0 : cachedTimestamp,
+        durableTimestamp,
+      ),
     );
 
     if (mostRecentTimestamp === 0) {
@@ -137,23 +176,68 @@ export class SequenceMailboxThrottleService {
     );
   }
 
+  async recordEmailSendClaimWatermark({
+    workspaceId,
+    mailboxId,
+    date,
+    transactionManager,
+  }: {
+    workspaceId: string;
+    mailboxId: string;
+    date: Date;
+    transactionManager?: EntityManager;
+  }): Promise<void> {
+    const queryRunner =
+      transactionManager ?? this.connectedAccountRepository.manager;
+    const updatedRows = (await queryRunner.query(
+      `UPDATE "core"."connectedAccount"
+       SET "sequenceEmailLastSendAt" = CASE
+             WHEN "sequenceEmailLastSendAt" IS NULL
+               OR "sequenceEmailLastSendAt" < $3::timestamptz
+             THEN $3::timestamptz
+             ELSE "sequenceEmailLastSendAt"
+           END,
+           "updatedAt" = NOW()
+       WHERE "id" = $1
+         AND "workspaceId" = $2
+       RETURNING "id"`,
+      [mailboxId, workspaceId, date.toISOString()],
+    )) as { id: string }[];
+
+    if (updatedRows.length !== 1) {
+      throw new Error(
+        `Could not record the sequence email pacing watermark for mailbox ${mailboxId}`,
+      );
+    }
+  }
+
   async reserveUtcDailySend({
     workspaceId,
     mailboxId,
     now,
+    transactionManager,
   }: {
     workspaceId: string;
     mailboxId: string;
     now: Date;
-  }): Promise<{ usageDate: string } | null> {
+    transactionManager?: EntityManager;
+  }): Promise<{ reservationToken: string; usageDate: string } | null> {
     const usageDate = now.toISOString().slice(0, 10);
-    const reservedRows = (await this.connectedAccountRepository.query(
+    const reservationToken = randomUUID();
+    const queryRunner =
+      transactionManager ?? this.connectedAccountRepository.manager;
+    const reservedRows = (await queryRunner.query(
       `UPDATE "core"."connectedAccount"
        SET "sequenceDailyEmailUsageDate" = $3::date,
            "sequenceDailyEmailUsageCount" = CASE
              WHEN "sequenceDailyEmailUsageDate" = $3::date
                THEN "sequenceDailyEmailUsageCount" + 1
              ELSE 1
+           END,
+           "sequenceDailyEmailReservationTokens" = CASE
+             WHEN "sequenceDailyEmailUsageDate" = $3::date
+               THEN "sequenceDailyEmailReservationTokens" || jsonb_build_array($4::text)
+             ELSE jsonb_build_array($4::text)
            END,
            "updatedAt" = NOW()
        WHERE "id" = $1
@@ -166,31 +250,47 @@ export class SequenceMailboxThrottleService {
              ELSE 0
            END < "sequenceDailyEmailLimit"
          )
+         AND NOT (
+           CASE
+             WHEN "sequenceDailyEmailUsageDate" = $3::date
+               THEN "sequenceDailyEmailReservationTokens"
+             ELSE '[]'::jsonb
+           END ? $4::text
+         )
        RETURNING "id"`,
-      [mailboxId, workspaceId, usageDate],
+      [mailboxId, workspaceId, usageDate, reservationToken],
     )) as { id: string }[];
 
-    return reservedRows.length === 1 ? { usageDate } : null;
+    return reservedRows.length === 1 ? { reservationToken, usageDate } : null;
   }
 
   async releaseUtcDailySendReservation({
     workspaceId,
     mailboxId,
+    reservationToken,
     usageDate,
+    transactionManager,
   }: {
     workspaceId: string;
     mailboxId: string;
+    reservationToken: string;
     usageDate: string;
+    transactionManager?: EntityManager;
   }): Promise<void> {
-    await this.connectedAccountRepository.query(
+    const queryRunner =
+      transactionManager ?? this.connectedAccountRepository.manager;
+
+    await queryRunner.query(
       `UPDATE "core"."connectedAccount"
        SET "sequenceDailyEmailUsageCount" = "sequenceDailyEmailUsageCount" - 1,
+           "sequenceDailyEmailReservationTokens" = "sequenceDailyEmailReservationTokens" - $4::text,
            "updatedAt" = NOW()
        WHERE "id" = $1
          AND "workspaceId" = $2
          AND "sequenceDailyEmailUsageDate" = $3::date
-         AND "sequenceDailyEmailUsageCount" > 0`,
-      [mailboxId, workspaceId, usageDate],
+         AND "sequenceDailyEmailUsageCount" > 0
+         AND "sequenceDailyEmailReservationTokens" ? $4::text`,
+      [mailboxId, workspaceId, usageDate, reservationToken],
     );
   }
 

@@ -132,6 +132,12 @@ export class ConnectedAccountEntity extends WorkspaceRelatedEntity {
   @Column({ type: 'integer', nullable: false, default: 0 })
   sequenceDailyEmailUsageCount: number;
 
+  @Column({ type: 'jsonb', nullable: false, default: () => "'[]'::jsonb" })
+  sequenceDailyEmailReservationTokens: string[];
+
+  @Column({ type: 'timestamptz', nullable: true })
+  sequenceEmailLastSendAt: Date | null;
+
   @OneToMany(
     'MessageChannelEntity',
     (messageChannel: MessageChannelEntity) => messageChannel.connectedAccount,
