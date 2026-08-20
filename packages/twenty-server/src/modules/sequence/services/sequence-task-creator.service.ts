@@ -14,6 +14,7 @@ import { type SequenceEnrollmentWorkspaceEntity } from 'src/modules/sequence/sta
 import { type SequenceStepWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence-step.workspace-entity';
 import { TaskTargetWorkspaceEntity } from 'src/modules/task/standard-objects/task-target.workspace-entity';
 import { TaskWorkspaceEntity } from 'src/modules/task/standard-objects/task.workspace-entity';
+import { WorkspaceMemberWorkspaceEntity } from 'src/modules/workspace-member/standard-objects/workspace-member.workspace-entity';
 import { renderSequenceTemplate } from 'src/modules/sequence/utils/render-sequence-template.util';
 
 @Injectable()
@@ -70,6 +71,36 @@ export class SequenceTaskCreatorService {
           TaskTargetWorkspaceEntity,
           { shouldBypassPermissionChecks: true },
         );
+      const workspaceMemberRepository =
+        await this.globalWorkspaceOrmManager.getRepository(
+          workspaceId,
+          WorkspaceMemberWorkspaceEntity,
+          { shouldBypassPermissionChecks: true },
+        );
+      const assigneeCandidateIds = [
+        settings.assigneeWorkspaceMemberId,
+        enrollment.createdBy?.workspaceMemberId,
+      ].filter(isDefined);
+      let assigneeId: string | null = null;
+
+      for (const assigneeCandidateId of new Set(assigneeCandidateIds)) {
+        const activeWorkspaceMember = await workspaceMemberRepository.findOne(
+          {
+            where: { id: assigneeCandidateId },
+            select: ['id'],
+            ...(isDefined(entityManager)
+              ? { lock: { mode: 'pessimistic_read' as const } }
+              : {}),
+          },
+          entityManager,
+        );
+
+        if (isDefined(activeWorkspaceMember)) {
+          assigneeId = activeWorkspaceMember.id;
+          break;
+        }
+      }
+
       const insertResult = await taskRepository.insert(
         {
           title,
@@ -78,10 +109,7 @@ export class SequenceTaskCreatorService {
           status: 'TODO',
           type: settings.taskType,
           priority: settings.priority,
-          assigneeId:
-            settings.assigneeWorkspaceMemberId ??
-            enrollment.createdBy?.workspaceMemberId ??
-            null,
+          assigneeId,
           sequenceEnrollmentId: enrollment.id,
           sequenceStepId: step.id,
         },

@@ -150,7 +150,7 @@ export class SequenceTaskCompletionService {
         const manualLinkedinAction = this.getManualLinkedinAction(step);
         let actionInput:
           | (ManualLinkedinAction & {
-              ownerWorkspaceMemberId: string;
+              connectedAccountId: string;
               person: PersonWorkspaceEntity;
             })
           | null = null;
@@ -182,13 +182,9 @@ export class SequenceTaskCompletionService {
               PersonWorkspaceEntity,
               { shouldBypassPermissionChecks: true },
             );
-          const [ownerWorkspaceMemberId, person] = await Promise.all([
-            this.sequenceSenderService.getSenderOwnerWorkspaceMemberIdOrThrow({
-              connectedAccountId: senderConnectedAccountId,
-              workspaceId,
-            }),
-            personRepository.findOne({ where: { id: enrollment.personId } }),
-          ]);
+          const person = await personRepository.findOne({
+            where: { id: enrollment.personId },
+          });
 
           if (!isDefined(person)) {
             throw new SequenceTaskCompletionPermanentError(
@@ -198,7 +194,7 @@ export class SequenceTaskCompletionService {
 
           actionInput = {
             ...manualLinkedinAction,
-            ownerWorkspaceMemberId,
+            connectedAccountId: senderConnectedAccountId,
             person,
           };
         }
@@ -210,6 +206,30 @@ export class SequenceTaskCompletionService {
           async (transactionManager) => {
             const workspaceTransactionManager =
               transactionManager as WorkspaceEntityManager;
+
+            // Enrollment mutations use enrollment -> task locking. Keep task
+            // completion on the same order so a manual skip cannot deadlock
+            // against a task event while both rows are being serialized.
+            const lockedEnrollment = await enrollmentRepository.findOne(
+              {
+                where: {
+                  id: enrollmentId,
+                  status: SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
+                  currentStepId: stepId,
+                  waitingOn: In([
+                    SEQUENCE_WAITING_ON.TASK_DONE,
+                    SEQUENCE_WAITING_ON.TASK_DEADLINE,
+                  ]),
+                },
+                select: ['id'],
+                lock: { mode: 'pessimistic_write' },
+              },
+              workspaceTransactionManager,
+            );
+
+            if (!isDefined(lockedEnrollment)) {
+              return false;
+            }
 
             if (isDefined(taskId)) {
               const committedTask = await sourceTaskRepository?.findOne(
@@ -253,6 +273,17 @@ export class SequenceTaskCompletionService {
             }
 
             if (isDefined(actionInput)) {
+              // Automated admission locks enrollment/action state before this
+              // same owner row. Keeping that order serializes manual history
+              // against the account-wide daily cap without a lock inversion.
+              const ownerWorkspaceMemberId =
+                await this.sequenceSenderService.getSenderOwnerWorkspaceMemberIdOrThrow(
+                  {
+                    connectedAccountId: actionInput.connectedAccountId,
+                    workspaceEntityManager: workspaceTransactionManager,
+                    workspaceId,
+                  },
+                );
               const linkedinActionRepository =
                 await this.globalWorkspaceOrmManager.getRepository(
                   workspaceId,
@@ -275,7 +306,7 @@ export class SequenceTaskCompletionService {
                     actionInput.person.linkedinLink?.primaryLinkUrl ?? '',
                   noteText: '',
                   connectionState: actionInput.connectionState,
-                  ownerWorkspaceMemberId: actionInput.ownerWorkspaceMemberId,
+                  ownerWorkspaceMemberId,
                   personId: enrollment.personId,
                   sequenceEnrollmentId: enrollment.id,
                   sequenceStepId: step.id,

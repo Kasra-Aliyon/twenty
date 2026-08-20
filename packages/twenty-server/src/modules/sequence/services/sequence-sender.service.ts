@@ -11,6 +11,7 @@ import { type EntityManager, IsNull, Repository } from 'typeorm';
 import { UserWorkspaceEntity } from 'src/engine/core-modules/user-workspace/user-workspace.entity';
 import { ConnectedAccountEntity } from 'src/engine/metadata-modules/connected-account/entities/connected-account.entity';
 import { MessageChannelEntity } from 'src/engine/metadata-modules/message-channel/entities/message-channel.entity';
+import { type WorkspaceEntityManager } from 'src/engine/twenty-orm/entity-manager/workspace-entity-manager';
 import { GlobalWorkspaceOrmManager } from 'src/engine/twenty-orm/global-workspace-datasource/global-workspace-orm.manager';
 import { WorkspaceMemberWorkspaceEntity } from 'src/modules/workspace-member/standard-objects/workspace-member.workspace-entity';
 
@@ -168,10 +169,12 @@ export class SequenceSenderService {
   async getSenderOwnerWorkspaceMemberIdOrThrow({
     connectedAccountId,
     expectedUserWorkspaceId,
+    workspaceEntityManager,
     workspaceId,
   }: {
     connectedAccountId: string;
     expectedUserWorkspaceId?: string;
+    workspaceEntityManager?: WorkspaceEntityManager;
     workspaceId: string;
   }): Promise<string> {
     const connectedAccount = await this.getSenderAccountOrThrow({
@@ -182,15 +185,18 @@ export class SequenceSenderService {
 
     return this.getOwnerWorkspaceMemberIdOrThrow({
       connectedAccount,
+      workspaceEntityManager,
       workspaceId,
     });
   }
 
   async getOwnerWorkspaceMemberIdOrThrow({
     connectedAccount,
+    workspaceEntityManager,
     workspaceId,
   }: {
     connectedAccount: ConnectedAccountEntity;
+    workspaceEntityManager?: WorkspaceEntityManager;
     workspaceId: string;
   }): Promise<string> {
     const userWorkspace = await this.userWorkspaceRepository.findOne({
@@ -213,10 +219,19 @@ export class SequenceSenderService {
         WorkspaceMemberWorkspaceEntity,
         { shouldBypassPermissionChecks: true },
       );
-    const workspaceMember = await workspaceMemberRepository.findOne({
-      where: { userId: userWorkspace.userId },
-      select: ['id'],
-    });
+    const workspaceMember = isDefined(workspaceEntityManager)
+      ? await workspaceMemberRepository.findOne(
+          {
+            where: { userId: userWorkspace.userId },
+            select: ['id'],
+            lock: { mode: 'pessimistic_write' },
+          },
+          workspaceEntityManager,
+        )
+      : await workspaceMemberRepository.findOne({
+          where: { userId: userWorkspace.userId },
+          select: ['id'],
+        });
 
     if (!isDefined(workspaceMember)) {
       throw new SequenceSenderUnavailableError(

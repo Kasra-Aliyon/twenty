@@ -146,6 +146,10 @@ export class SequenceSchedulerService {
         enrollmentRepository,
         now,
       });
+      await this.enqueueDeliveredEmailCheckpointRecoveries({
+        workspaceId,
+        enrollmentRepository,
+      });
       await this.enqueueOrphanedEmailReservationRecoveries({
         workspaceId,
         enrollmentRepository,
@@ -397,6 +401,58 @@ export class SequenceSchedulerService {
         now,
       });
     }, buildSystemAuthContext(workspaceId));
+  }
+
+  private async enqueueDeliveredEmailCheckpointRecoveries({
+    workspaceId,
+    enrollmentRepository,
+  }: {
+    workspaceId: string;
+    enrollmentRepository: WorkspaceRepository<SequenceEnrollmentWorkspaceEntity>;
+  }): Promise<void> {
+    const deliveredCheckpoint = Raw(
+      (columnAlias) => `${columnAlias} ->> 'deliveredEmail' IS NOT NULL`,
+    );
+    const missingSentEmailAttribution = Raw(
+      (columnAlias) =>
+        `NOT (COALESCE(${columnAlias}, '{}'::jsonb) ? ` +
+        `("lastSendAttempt" ->> 'stepId'))`,
+    );
+    const candidates = await enrollmentRepository.find({
+      where: {
+        status: In([
+          SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
+          SEQUENCE_ENROLLMENT_STATUSES.COMPLETED,
+          SEQUENCE_ENROLLMENT_STATUSES.REPLIED,
+          SEQUENCE_ENROLLMENT_STATUSES.FAILED,
+          SEQUENCE_ENROLLMENT_STATUSES.REMOVED,
+        ]),
+        lastSendAttempt: deliveredCheckpoint,
+        sentEmailsByStepId: missingSentEmailAttribution,
+      },
+      select: ['id', 'lastSendAttempt', 'sentEmailsByStepId'],
+      order: { updatedAt: 'ASC', id: 'ASC' },
+      take: SEQUENCE_SCHEDULER_BATCH_SIZE,
+    });
+
+    for (const enrollment of candidates) {
+      const sendAttempt = enrollment.lastSendAttempt;
+
+      // The durable provider checkpoint is authoritative even if pausing,
+      // archiving, reply handling, or a worker crash changed lifecycle state
+      // before sentEmailsByStepId was attributed.
+      if (
+        !isDefined(sendAttempt?.deliveredEmail) ||
+        isDefined(enrollment.sentEmailsByStepId?.[sendAttempt.stepId])
+      ) {
+        continue;
+      }
+
+      await this.sequenceQueueService.enqueueProcess({
+        workspaceId,
+        enrollmentId: enrollment.id,
+      });
+    }
   }
 
   private async enqueueOrphanedEmailReservationRecoveries({
