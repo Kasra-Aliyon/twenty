@@ -1231,8 +1231,17 @@ export class SequenceExecutorService {
           senderConnectedAccountId,
         },
       );
-      const [hasOutstandingRequest, isConnected] = await Promise.all([
+      const [
+        hasOutstandingRequest,
+        hasInFlightInvitationMutation,
+        isConnected,
+      ] = await Promise.all([
         this.hasOutstandingConnectionRequest({
+          workspaceId,
+          person,
+          ownerWorkspaceMemberId,
+        }),
+        this.hasInFlightInvitationMutation({
           workspaceId,
           person,
           ownerWorkspaceMemberId,
@@ -1251,6 +1260,16 @@ export class SequenceExecutorService {
           enrollmentRepository,
           enrollment,
           step,
+        });
+
+        return;
+      }
+
+      if (hasInFlightInvitationMutation) {
+        await this.retryStepLater({
+          enrollmentRepository,
+          enrollment,
+          reason: 'Another invitation mutation is still in flight',
         });
 
         return;
@@ -1406,7 +1425,11 @@ export class SequenceExecutorService {
           senderConnectedAccountId,
         },
       );
-      const [isConnected, hasOutstandingRequest] = await Promise.all([
+      const [
+        isConnected,
+        hasOutstandingRequest,
+        hasInFlightInvitationMutation,
+      ] = await Promise.all([
         this.isPersonConnectedToSender({
           workspaceId,
           person,
@@ -1417,9 +1440,34 @@ export class SequenceExecutorService {
           person,
           ownerWorkspaceMemberId,
         }),
+        this.hasInFlightInvitationMutation({
+          workspaceId,
+          person,
+          ownerWorkspaceMemberId,
+        }),
       ]);
 
-      if (isConnected || !hasOutstandingRequest) {
+      if (isConnected) {
+        await this.advanceEnrollmentStep({
+          enrollmentRepository,
+          enrollment,
+          step,
+        });
+
+        return;
+      }
+
+      if (hasInFlightInvitationMutation) {
+        await this.retryStepLater({
+          enrollmentRepository,
+          enrollment,
+          reason: 'Another invitation mutation is still in flight',
+        });
+
+        return;
+      }
+
+      if (!hasOutstandingRequest) {
         await this.advanceEnrollmentStep({
           enrollmentRepository,
           enrollment,
@@ -2599,42 +2647,15 @@ export class SequenceExecutorService {
       enrollment.senderConnectedAccountId ?? sequenceSenderConnectedAccountId;
 
     try {
-      const ownerWorkspaceMemberId = await this.getSenderOwnerWorkspaceMemberId(
-        {
-          workspaceId,
-          senderConnectedAccountId,
-        },
-      );
-      // An invitation that is already sent or already queued is skipped
-      // regardless of the step setting: re-inviting is not something the
-      // sequence can do, and it burns a daily LinkedIn action slot.
-      const hasOutstandingRequest = await this.hasOutstandingConnectionRequest({
-        workspaceId,
-        person,
-        ownerWorkspaceMemberId,
-      });
-
-      if (hasOutstandingRequest) {
-        await this.advanceEnrollmentStep({
-          workspaceId,
-          enrollmentRepository,
-          enrollment,
-          pausedLinkedinRetryActionId,
-          step,
-        });
-
-        return;
-      }
-
       const isConnected = await this.isPersonConnectedToSender({
         workspaceId,
         person,
         senderConnectedAccountId,
       });
 
-      // LinkedIn cannot send another invitation to an existing connection.
-      // Always skip here rather than consuming a queue slot that the browser
-      // runner can only mark as skipped later.
+      // Existing connections need no invitation. Invitation-history decisions
+      // stay inside the person lock so a concurrent withdrawal cannot make an
+      // unlocked durable observation stale before this cursor advances.
       if (isConnected) {
         await this.advanceEnrollmentStep({
           workspaceId,
@@ -2732,26 +2753,13 @@ export class SequenceExecutorService {
     try {
       const senderConnectedAccountId =
         enrollment.senderConnectedAccountId ?? sequenceSenderConnectedAccountId;
-      const ownerWorkspaceMemberId = await this.getSenderOwnerWorkspaceMemberId(
-        {
-          workspaceId,
-          senderConnectedAccountId,
-        },
-      );
-      const [isConnected, hasOutstandingRequest] = await Promise.all([
-        this.isPersonConnectedToSender({
-          workspaceId,
-          person,
-          senderConnectedAccountId,
-        }),
-        this.hasOutstandingConnectionRequest({
-          workspaceId,
-          person,
-          ownerWorkspaceMemberId,
-        }),
-      ]);
+      const isConnected = await this.isPersonConnectedToSender({
+        workspaceId,
+        person,
+        senderConnectedAccountId,
+      });
 
-      if (isConnected || !hasOutstandingRequest) {
+      if (isConnected) {
         await this.advanceEnrollmentStep({
           workspaceId,
           enrollmentRepository,
@@ -3031,18 +3039,6 @@ export class SequenceExecutorService {
           return;
         }
 
-        const consumed = await this.consumePausedLinkedinRetryMarker({
-          linkedinActionRepository,
-          pausedLinkedinRetryActionId,
-          enrollment,
-          step,
-          transactionManager: workspaceTransactionManager,
-        });
-
-        if (!consumed) {
-          return;
-        }
-
         const shouldDeduplicate =
           type === LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST ||
           type === LINKEDIN_ACTION_TYPES.WITHDRAW_CONNECTION_REQUEST;
@@ -3060,26 +3056,66 @@ export class SequenceExecutorService {
             workspaceTransactionManager,
           );
 
-          const inFlightInvitationMutationCount =
-            await linkedinActionRepository.count(
+          const hasInFlightInvitationMutation =
+            await this.hasInFlightInvitationMutation({
+              workspaceId,
+              person,
+              ownerWorkspaceMemberId,
+              transactionManager: workspaceTransactionManager,
+            });
+
+          if (hasInFlightInvitationMutation) {
+            // Another enrollment owns the provider outcome. Keep this cursor
+            // before the invitation step until that action becomes a durable
+            // success or terminal failure; a queue claim is not completion.
+            await enrollmentRepository.update(
               {
-                where: {
-                  personId: person.id,
-                  ownerWorkspaceMemberId,
-                  type: In([
-                    LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST,
-                    LINKEDIN_ACTION_TYPES.WITHDRAW_CONNECTION_REQUEST,
-                  ]),
-                  status: In([
-                    LINKEDIN_ACTION_STATUSES.SCHEDULED,
-                    LINKEDIN_ACTION_STATUSES.CLAIMED,
-                  ]),
-                },
+                id: enrollment.id,
+                status: SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
+                waitingOn: SEQUENCE_WAITING_ON.DELAY,
+                currentStepPosition: enrollment.currentStepPosition,
+                currentStepId: isDefined(enrollment.currentStepId)
+                  ? enrollment.currentStepId
+                  : IsNull(),
+              },
+              {
+                waitingOn: SEQUENCE_WAITING_ON.DELAY,
+                nextActionAt: new Date(
+                  Date.now() + SEQUENCE_SENDER_RETRY_DELAY_MILLISECONDS,
+                ),
               },
               workspaceTransactionManager,
             );
 
-          if (inFlightInvitationMutationCount > 0) {
+            return;
+          }
+
+          const hasOutstandingRequest =
+            await this.hasOutstandingConnectionRequest({
+              workspaceId,
+              person,
+              ownerWorkspaceMemberId,
+              transactionManager: workspaceTransactionManager,
+            });
+          const hasAuthoritativeSkip =
+            (type === LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST &&
+              hasOutstandingRequest) ||
+            (type === LINKEDIN_ACTION_TYPES.WITHDRAW_CONNECTION_REQUEST &&
+              !hasOutstandingRequest);
+
+          if (hasAuthoritativeSkip) {
+            const consumed = await this.consumePausedLinkedinRetryMarker({
+              linkedinActionRepository,
+              pausedLinkedinRetryActionId,
+              enrollment,
+              step,
+              transactionManager: workspaceTransactionManager,
+            });
+
+            if (!consumed) {
+              return;
+            }
+
             const skipResult = await enrollmentRepository.update(
               {
                 id: enrollment.id,
@@ -3108,6 +3144,18 @@ export class SequenceExecutorService {
 
             return;
           }
+        }
+
+        const consumed = await this.consumePausedLinkedinRetryMarker({
+          linkedinActionRepository,
+          pausedLinkedinRetryActionId,
+          enrollment,
+          step,
+          transactionManager: workspaceTransactionManager,
+        });
+
+        if (!consumed) {
+          return;
         }
 
         const claimResult = await enrollmentRepository.update(
@@ -3425,16 +3473,16 @@ export class SequenceExecutorService {
     );
   }
 
-  // A connection request that is already scheduled, claimed, or awaiting a
-  // reply from LinkedIn must not be duplicated by another step or sequence.
-  private async hasOutstandingConnectionRequest({
+  private async hasInFlightInvitationMutation({
     workspaceId,
     person,
     ownerWorkspaceMemberId,
+    transactionManager,
   }: {
     workspaceId: string;
     person: PersonWorkspaceEntity;
     ownerWorkspaceMemberId: string;
+    transactionManager?: WorkspaceEntityManager;
   }): Promise<boolean> {
     const linkedinActionRepository =
       await this.globalWorkspaceOrmManager.getRepository(
@@ -3442,21 +3490,48 @@ export class SequenceExecutorService {
         LinkedinActionWorkspaceEntity,
         { shouldBypassPermissionChecks: true },
       );
-    const inFlightCount = await linkedinActionRepository.count({
+
+    const options = {
       where: {
         personId: person.id,
         ownerWorkspaceMemberId,
-        type: LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST,
+        type: In([
+          LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST,
+          LINKEDIN_ACTION_TYPES.WITHDRAW_CONNECTION_REQUEST,
+        ]),
         status: In([
           LINKEDIN_ACTION_STATUSES.SCHEDULED,
           LINKEDIN_ACTION_STATUSES.CLAIMED,
         ]),
       },
-    });
+    };
+    const inFlightCount = isDefined(transactionManager)
+      ? await linkedinActionRepository.count(options, transactionManager)
+      : await linkedinActionRepository.count(options);
 
-    if (inFlightCount > 0) {
-      return true;
-    }
+    return inFlightCount > 0;
+  }
+
+  // Only durable provider or connector observations prove that an invitation
+  // is outstanding. A SCHEDULED or CLAIMED action is handled separately as a
+  // retry dependency because it may still fail before LinkedIn accepts it.
+  private async hasOutstandingConnectionRequest({
+    workspaceId,
+    person,
+    ownerWorkspaceMemberId,
+    transactionManager,
+  }: {
+    workspaceId: string;
+    person: PersonWorkspaceEntity;
+    ownerWorkspaceMemberId: string;
+    transactionManager?: WorkspaceEntityManager;
+  }): Promise<boolean> {
+    const linkedinActionRepository =
+      await this.globalWorkspaceOrmManager.getRepository(
+        workspaceId,
+        LinkedinActionWorkspaceEntity,
+        { shouldBypassPermissionChecks: true },
+      );
 
     const observationCutoff = new Date(
       Date.now() - LINKEDIN_CONNECTION_OBSERVATION_MAX_AGE_MS,
@@ -3465,46 +3540,60 @@ export class SequenceExecutorService {
       personId: person.id,
       ownerWorkspaceMemberId,
     };
+    const latestExecutedActionOptions = {
+      where: {
+        ...terminalActionScope,
+        type: In([
+          LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST,
+          LINKEDIN_ACTION_TYPES.WITHDRAW_CONNECTION_REQUEST,
+        ]),
+        status: In([
+          LINKEDIN_ACTION_STATUSES.COMPLETED,
+          LINKEDIN_ACTION_STATUSES.SKIPPED,
+        ]),
+        executedAt: Not(IsNull()),
+      },
+      order: { executedAt: 'DESC' as const, id: 'DESC' as const },
+    };
+    const latestPreProviderInvitationActionOptions = {
+      where: [
+        {
+          ...terminalActionScope,
+          type: LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST,
+          status: LINKEDIN_ACTION_STATUSES.SKIPPED,
+          connectionState: LINKEDIN_CONNECTION_STATES.PENDING,
+          executedAt: IsNull(),
+          updatedAt: MoreThanOrEqual(observationCutoff.toISOString()),
+        },
+        {
+          ...terminalActionScope,
+          type: LINKEDIN_ACTION_TYPES.WITHDRAW_CONNECTION_REQUEST,
+          status: LINKEDIN_ACTION_STATUSES.SKIPPED,
+          connectionState: In([
+            LINKEDIN_CONNECTION_STATES.NOT_CONNECTED,
+            LINKEDIN_CONNECTION_STATES.WITHDRAWN,
+          ]),
+          executedAt: IsNull(),
+        },
+      ],
+      order: { updatedAt: 'DESC' as const, id: 'DESC' as const },
+    };
     const [latestExecutedAction, latestPreProviderInvitationAction] =
       await Promise.all([
-        linkedinActionRepository.findOne({
-          where: {
-            ...terminalActionScope,
-            type: In([
-              LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST,
-              LINKEDIN_ACTION_TYPES.WITHDRAW_CONNECTION_REQUEST,
-            ]),
-            status: In([
-              LINKEDIN_ACTION_STATUSES.COMPLETED,
-              LINKEDIN_ACTION_STATUSES.SKIPPED,
-            ]),
-            executedAt: Not(IsNull()),
-          },
-          order: { executedAt: 'DESC', id: 'DESC' },
-        }),
-        linkedinActionRepository.findOne({
-          where: [
-            {
-              ...terminalActionScope,
-              type: LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST,
-              status: LINKEDIN_ACTION_STATUSES.SKIPPED,
-              connectionState: LINKEDIN_CONNECTION_STATES.PENDING,
-              executedAt: IsNull(),
-              updatedAt: MoreThanOrEqual(observationCutoff.toISOString()),
-            },
-            {
-              ...terminalActionScope,
-              type: LINKEDIN_ACTION_TYPES.WITHDRAW_CONNECTION_REQUEST,
-              status: LINKEDIN_ACTION_STATUSES.SKIPPED,
-              connectionState: In([
-                LINKEDIN_CONNECTION_STATES.NOT_CONNECTED,
-                LINKEDIN_CONNECTION_STATES.WITHDRAWN,
-              ]),
-              executedAt: IsNull(),
-            },
-          ],
-          order: { updatedAt: 'DESC', id: 'DESC' },
-        }),
+        isDefined(transactionManager)
+          ? linkedinActionRepository.findOne(
+              latestExecutedActionOptions,
+              transactionManager,
+            )
+          : linkedinActionRepository.findOne(latestExecutedActionOptions),
+        isDefined(transactionManager)
+          ? linkedinActionRepository.findOne(
+              latestPreProviderInvitationActionOptions,
+              transactionManager,
+            )
+          : linkedinActionRepository.findOne(
+              latestPreProviderInvitationActionOptions,
+            ),
       ]);
     const latestTerminalAction = this.latestLinkedinActionObservation(
       latestExecutedAction,
@@ -3552,19 +3641,21 @@ export class SequenceExecutorService {
           LinkedinInvitationWorkspaceEntity,
           { shouldBypassPermissionChecks: true },
         );
+      const options = {
+        where: {
+          ownerWorkspaceMemberId,
+          handle,
+          direction: 'SENT' as const,
+          sentAt: MoreThan(withdrawalObservedAt),
+        },
+      };
+      const invitationCount = isDefined(transactionManager)
+        ? await invitationRepository.count(options, transactionManager)
+        : await invitationRepository.count(options);
 
       // A later manual invitation can legitimately follow a withdrawal. Keep
       // it outstanding while ignoring the connector's older retained row.
-      return (
-        (await invitationRepository.count({
-          where: {
-            ownerWorkspaceMemberId,
-            handle,
-            direction: 'SENT',
-            sentAt: MoreThan(withdrawalObservedAt),
-          },
-        })) > 0
-      );
+      return invitationCount > 0;
     }
 
     const handle = normalizeLinkedinHandle(person.linkedinLink?.primaryLinkUrl);
@@ -3579,12 +3670,18 @@ export class SequenceExecutorService {
         LinkedinInvitationWorkspaceEntity,
         { shouldBypassPermissionChecks: true },
       );
+    const options = {
+      where: {
+        ownerWorkspaceMemberId,
+        handle,
+        direction: 'SENT' as const,
+      },
+    };
+    const invitationCount = isDefined(transactionManager)
+      ? await invitationRepository.count(options, transactionManager)
+      : await invitationRepository.count(options);
 
-    return (
-      (await invitationRepository.count({
-        where: { ownerWorkspaceMemberId, handle, direction: 'SENT' },
-      })) > 0
-    );
+    return invitationCount > 0;
   }
 
   private latestLinkedinActionObservation(
@@ -3954,8 +4051,10 @@ export class SequenceExecutorService {
                   step,
                   sendAttemptAt,
                   sendAttempt,
-                  stopOnReply:
-                    settings.stopOnReply ?? sequenceSettings.stopOnReply,
+                  // Keep the enrollment flag sequence-wide. The email-specific
+                  // policy is persisted with the delivered message below so a
+                  // delayed reply is evaluated against the email it belongs to.
+                  stopOnReply: sequenceSettings.stopOnReply,
                 });
 
                 if (!claimAcquired) {
@@ -4243,6 +4342,7 @@ export class SequenceExecutorService {
             headerMessageId: sendResult.headerMessageId,
             threadExternalId: sendResult.threadExternalId,
             sentAt: sendResult.sentAt,
+            stopOnReply: settings.stopOnReply ?? sequenceSettings.stopOnReply,
             variantId: sendResult.variantId,
             variantName: sendResult.variantName,
             connectedAccountId,

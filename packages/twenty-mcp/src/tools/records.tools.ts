@@ -1,6 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 
+import { STANDARD_OBJECTS } from '../constants.js';
 import { runTool } from '../formatting/format-tool-result.js';
 import {
   CONFIRMATION_DESCRIPTION,
@@ -17,6 +18,27 @@ import {
 } from '../schemas/common.schemas.js';
 import { RecordsService } from '../services/records.service.js';
 import type { ToolDependencies } from '../types.js';
+
+const SEQUENCE_ENGINE_OBJECT_NAMES = new Set(
+  [
+    STANDARD_OBJECTS.sequences,
+    STANDARD_OBJECTS.sequenceSteps,
+    STANDARD_OBJECTS.sequenceEnrollments,
+    'sequence',
+    'sequenceStep',
+    'sequenceEnrollment',
+  ].map((objectName) => objectName.toLowerCase()),
+);
+
+const assertGenericRecordMutationAllowed = (object: string): void => {
+  if (!SEQUENCE_ENGINE_OBJECT_NAMES.has(object.toLowerCase())) {
+    return;
+  }
+
+  throw new Error(
+    'Generic record mutations are disabled for sequences, sequence steps, and sequence enrollments. Use the dedicated sequence tools so lifecycle validation and confirmation cannot be bypassed.',
+  );
+};
 
 export const registerRecordTools = (
   server: McpServer,
@@ -102,7 +124,7 @@ export const registerRecordTools = (
     {
       title: 'Create a Twenty record',
       description:
-        'Creates one record for any live object. Field names, values, and enums are validated against cached live metadata first.',
+        'Creates one record for any live object except sequence engine objects, which require dedicated sequence tools. Field names, values, and enums are validated against cached live metadata first.',
       inputSchema: z.object({
         object: objectSlugSchema,
         data: recordDataSchema,
@@ -113,7 +135,11 @@ export const registerRecordTools = (
       annotations: { readOnlyHint: false, idempotentHint: false },
     },
     async ({ object, data, depth, response_format }) =>
-      runTool(() => records.create({ object, data, depth }), response_format),
+      runTool(async () => {
+        assertGenericRecordMutationAllowed(object);
+
+        return records.create({ object, data, depth });
+      }, response_format),
   );
 
   server.registerTool(
@@ -121,7 +147,7 @@ export const registerRecordTools = (
     {
       title: 'Update a Twenty record',
       description:
-        'Partially updates one record after validating field names, types, and enum values against live metadata.',
+        'Partially updates one record except sequence engine objects, which require dedicated sequence tools, after validating field names, types, and enum values against live metadata.',
       inputSchema: z.object({
         object: objectSlugSchema,
         id: recordIdSchema,
@@ -133,10 +159,11 @@ export const registerRecordTools = (
       annotations: { readOnlyHint: false, idempotentHint: false },
     },
     async ({ object, id, data, depth, response_format }) =>
-      runTool(
-        () => records.update({ object, id, data, depth }),
-        response_format,
-      ),
+      runTool(async () => {
+        assertGenericRecordMutationAllowed(object);
+
+        return records.update({ object, id, data, depth });
+      }, response_format),
   );
 
   server.registerTool(
@@ -144,7 +171,7 @@ export const registerRecordTools = (
     {
       title: 'Move a Twenty record to trash',
       description:
-        'Soft-deletes one record by sending soft_delete=true. The operation is recoverable with twenty_restore_record.',
+        'Soft-deletes one non-sequence-engine record by sending soft_delete=true. The operation is recoverable with twenty_restore_record.',
       inputSchema: z.object({
         object: objectSlugSchema,
         id: recordIdSchema,
@@ -160,6 +187,8 @@ export const registerRecordTools = (
     },
     async ({ object, id, confirm, response_format }) =>
       runTool(async () => {
+        assertGenericRecordMutationAllowed(object);
+
         if (!confirm) {
           throw new Error(
             'Soft delete not performed: confirm must be true after explicit user confirmation.',
@@ -174,7 +203,8 @@ export const registerRecordTools = (
     'twenty_restore_record',
     {
       title: 'Restore a Twenty record',
-      description: 'Restores one soft-deleted record from trash.',
+      description:
+        'Restores one soft-deleted non-sequence-engine record from trash.',
       inputSchema: z.object({
         object: objectSlugSchema,
         id: recordIdSchema,
@@ -185,7 +215,11 @@ export const registerRecordTools = (
       annotations: { readOnlyHint: false, idempotentHint: true },
     },
     async ({ object, id, depth, response_format }) =>
-      runTool(() => records.restore(object, id, depth), response_format),
+      runTool(async () => {
+        assertGenericRecordMutationAllowed(object);
+
+        return records.restore(object, id, depth);
+      }, response_format),
   );
 
   server.registerTool(
@@ -193,7 +227,7 @@ export const registerRecordTools = (
     {
       title: 'Batch-create Twenty records',
       description:
-        'Creates up to 100 records of one standard or custom object. This is a bulk mutation; confirm the intended set before calling.',
+        'Creates up to 100 records of one standard or custom object except sequence engine objects, which require dedicated sequence tools. This is a bulk mutation; confirm the intended set before calling.',
       inputSchema: z.object({
         object: objectSlugSchema,
         data: z.array(recordDataSchema).min(1).max(100),
@@ -210,6 +244,8 @@ export const registerRecordTools = (
     },
     async ({ object, data, confirm, depth, response_format }) =>
       runTool(async () => {
+        assertGenericRecordMutationAllowed(object);
+
         if (!confirm) {
           throw new Error(
             'Batch create not performed: confirm must be true after explicit user confirmation.',
@@ -255,7 +291,7 @@ export const registerRecordTools = (
     {
       title: 'Merge duplicate Twenty records',
       description:
-        'Merges two or more existing records. conflict_priority_index selects the winning record in ids. Use dry_run first and require explicit confirmation for the real merge.',
+        'Merges two or more existing non-sequence-engine records. conflict_priority_index selects the winning record in ids. Use dry_run first and require explicit confirmation for the real merge.',
       inputSchema: z.object({
         object: objectSlugSchema,
         ids: z.array(recordIdSchema).min(2).max(20),
@@ -282,6 +318,8 @@ export const registerRecordTools = (
       response_format,
     }) =>
       runTool(async () => {
+        assertGenericRecordMutationAllowed(object);
+
         if (!dry_run && !confirm) {
           throw new Error(
             'Merge not performed: confirm must be true for a non-dry-run merge.',
@@ -320,7 +358,7 @@ export const registerRecordTools = (
           .array(z.string())
           .optional()
           .describe(
-            'Available aggregation keys, for example countId or sumAmountAmountMicros. Twenty validates exact keys.',
+            'Available aggregation keys, for example countNotEmptyId or sumAmountAmountMicros. Twenty validates exact keys.',
           ),
         filter: rawFilterSchema,
         order_by: orderBySchema,
@@ -362,7 +400,7 @@ export const registerRecordTools = (
       {
         title: 'Permanently destroy a Twenty record',
         description:
-          'Permanently and irreversibly destroys one record. Prefer twenty_delete_record. Requires explicit confirmation.',
+          'Permanently and irreversibly destroys one non-sequence-engine record. Prefer twenty_delete_record. Requires explicit confirmation.',
         inputSchema: z.object({
           object: objectSlugSchema,
           id: recordIdSchema,
@@ -377,7 +415,11 @@ export const registerRecordTools = (
         },
       },
       async ({ object, id, response_format }) =>
-        runTool(() => records.destroy(object, id), response_format),
+        runTool(async () => {
+          assertGenericRecordMutationAllowed(object);
+
+          return records.destroy(object, id);
+        }, response_format),
     );
   }
 };

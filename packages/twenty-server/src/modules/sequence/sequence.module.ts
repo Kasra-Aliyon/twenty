@@ -19,8 +19,10 @@ import { SequenceLinkedinReplyListener } from 'src/modules/sequence/listeners/se
 import { SequencePersonListener } from 'src/modules/sequence/listeners/sequence-person.listener';
 import { SequenceReplyListener } from 'src/modules/sequence/listeners/sequence-reply.listener';
 import { SequenceTaskListener } from 'src/modules/sequence/listeners/sequence-task.listener';
+import { SequenceQueryHookModule } from 'src/modules/sequence/query-hooks/sequence-query-hook.module';
 import { SequenceAnalyticsResolver } from 'src/modules/sequence/resolvers/sequence-analytics.resolver';
 import { SequenceLinkedinActionResolver } from 'src/modules/sequence/resolvers/sequence-linkedin-action.resolver';
+import { SequenceReadinessResolver } from 'src/modules/sequence/resolvers/sequence-readiness.resolver';
 import { SequenceAnalyticsService } from 'src/modules/sequence/services/sequence-analytics.service';
 import { SequenceEmailReplyReconciliationService } from 'src/modules/sequence/services/sequence-email-reply-reconciliation.service';
 import { SequenceEmailSenderService } from 'src/modules/sequence/services/sequence-email-sender.service';
@@ -43,6 +45,7 @@ import { SequenceVariableService } from 'src/modules/sequence/services/sequence-
     ApolloEnrichmentModule,
     FeatureFlagModule,
     MessagingSendManagerModule,
+    SequenceQueryHookModule,
     ToolModule,
     WorkspaceDataSourceModule,
     TypeOrmModule.forFeature([
@@ -71,6 +74,7 @@ import { SequenceVariableService } from 'src/modules/sequence/services/sequence-
     SequenceProcessEnrollmentJob,
     SequencePersonListener,
     SequenceQueueService,
+    SequenceReadinessResolver,
     SequenceReplyListener,
     SequenceSchedulerService,
     SequenceSenderService,

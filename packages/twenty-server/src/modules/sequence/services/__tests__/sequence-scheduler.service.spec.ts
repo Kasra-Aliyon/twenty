@@ -2578,6 +2578,32 @@ describe('SequenceSchedulerService', () => {
     expect(enqueueProcess).not.toHaveBeenCalled();
   });
 
+  it('does not reserve a mailbox slot when scheduling authorization loses its CAS', async () => {
+    const racedEnrollment = buildEnrollment('raced-due-id');
+    const schedulableEnrollment = buildEnrollment('schedulable-due-id');
+    const { service, enrollmentRepository, enqueueProcess } = setup({
+      startedToday: 2,
+      dueEnrollments: [racedEnrollment, schedulableEnrollment],
+    });
+
+    enrollmentRepository.update.mockResolvedValueOnce({ affected: 0 });
+
+    await service.tick(workspaceId, now);
+
+    expect(enrollmentRepository.update).toHaveBeenCalledWith(
+      expect.objectContaining({ id: schedulableEnrollment.id }),
+      expect.objectContaining({
+        waitingOn: SEQUENCE_WAITING_ON.EMAIL_SCHEDULED,
+        nextActionAt: now,
+      }),
+    );
+    expect(enqueueProcess).toHaveBeenCalledTimes(1);
+    expect(enqueueProcess).toHaveBeenCalledWith({
+      workspaceId,
+      enrollmentId: schedulableEnrollment.id,
+    });
+  });
+
   it('allocates around another active sequence reservation', async () => {
     const dueEnrollment = buildEnrollment('due-id');
     const reservedEnrollment = {

@@ -25,7 +25,14 @@ import {
 } from 'src/engine/api/common/common-query-runners/errors/common-query-runner.exception';
 import { isUserAuthContext } from 'src/engine/core-modules/auth/guards/is-user-auth-context.guard';
 import { type WorkspaceAuthContext } from 'src/engine/core-modules/auth/types/workspace-auth-context.type';
+import {
+  PermissionsException,
+  PermissionsExceptionCode,
+  PermissionsExceptionMessage,
+} from 'src/engine/metadata-modules/permissions/permissions.exception';
 import { GlobalWorkspaceOrmManager } from 'src/engine/twenty-orm/global-workspace-datasource/global-workspace-orm.manager';
+import { getWorkspaceContext } from 'src/engine/twenty-orm/storage/orm-workspace-context.storage';
+import { resolveRolePermissionConfig } from 'src/engine/twenty-orm/utils/resolve-role-permission-config.util';
 import {
   LINKEDIN_CONNECTION_NOTE_MAX_LENGTH,
   LINKEDIN_DIRECT_MESSAGE_MAX_LENGTH,
@@ -36,6 +43,7 @@ import { type SequenceEnrollmentWorkspaceEntity } from 'src/modules/sequence/sta
 import { SequenceStepWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence-step.workspace-entity';
 import { SequenceWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence.workspace-entity';
 import { parseSequenceSettings } from 'src/modules/sequence/utils/parse-sequence-settings.util';
+import { WorkspaceMemberWorkspaceEntity } from 'src/modules/workspace-member/standard-objects/workspace-member.workspace-entity';
 
 const SEQUENCE_ENGINE_FIELDS = new Set([
   'activeCount',
@@ -449,86 +457,200 @@ export class SequenceInvariantService {
     }
 
     if (data.status === SEQUENCE_STATUSES.ACTIVE) {
-      const steps = await this.getSequenceSteps({
+      await this.assertSequenceActivationRequirements({
         authContext,
         sequenceId,
-      });
-      const senderConnectedAccountIds = this.getEffectiveSenderPool({
-        senderConnectedAccountId: nextSenderConnectedAccountId,
         settings: nextSettings,
+        senderConnectedAccountId: nextSenderConnectedAccountId,
+      });
+    }
+  }
+
+  async assertSequenceActivationReady({
+    authContext,
+    sequenceId,
+  }: {
+    authContext: WorkspaceAuthContext;
+    sequenceId: string;
+  }): Promise<void> {
+    const [sequence] = await this.getSequences({
+      authContext,
+      sequenceIds: [sequenceId],
+    });
+
+    if (!sequence) {
+      this.throwBadRequest('The sequence was not found');
+    }
+
+    const settings = parseSequenceSettings(sequence.settings);
+
+    this.assertSenderPoolSize(settings);
+    await this.assertSequenceActivationRequirements({
+      authContext,
+      sequenceId,
+      settings,
+      senderConnectedAccountId: sequence.senderConnectedAccountId,
+    });
+  }
+
+  async assertSequenceReadable({
+    authContext,
+    sequenceId,
+  }: {
+    authContext: WorkspaceAuthContext;
+    sequenceId: string;
+  }): Promise<void> {
+    await this.globalWorkspaceOrmManager.executeInWorkspaceContext(async () => {
+      const workspaceContext = getWorkspaceContext();
+      const rolePermissionConfig = resolveRolePermissionConfig({
+        authContext,
+        userWorkspaceRoleMap: workspaceContext.userWorkspaceRoleMap,
+        apiKeyRoleMap: workspaceContext.apiKeyRoleMap,
       });
 
-      if (steps.length === 0) {
-        this.throwBadRequest('Add a step before activating the sequence');
-      }
-
-      // Every scheduling path is gated on the sending window. With no active
-      // day the window never opens, so the sequence would sit ACTIVE and never
-      // advance a single enrollment.
-      if (nextSettings.activeDays.length === 0) {
-        this.throwBadRequest(
-          'Choose at least one sending day before activating the sequence',
+      if (!rolePermissionConfig) {
+        throw new PermissionsException(
+          PermissionsExceptionMessage.PERMISSION_DENIED,
+          PermissionsExceptionCode.PERMISSION_DENIED,
         );
       }
 
-      this.assertSequenceStepsValid(steps, nextSettings);
+      const sequenceRepository =
+        await this.globalWorkspaceOrmManager.getRepository(
+          authContext.workspace.id,
+          SequenceWorkspaceEntity,
+          rolePermissionConfig,
+        );
+      const sequence = await sequenceRepository.findOne({
+        where: { id: sequenceId },
+        select: ['id', 'senderConnectedAccountId', 'settings'],
+      });
 
-      const hasAutomatedEmailStep = steps.some(
-        ({ settings }) =>
-          settings.type === SEQUENCE_STEP_TYPES.SEND_EMAIL &&
-          settings.executionMode !== SEQUENCE_ACTION_EXECUTION_MODES.MANUAL,
-      );
-      const hasLinkedinActionStep = steps.some(
-        ({ settings }) =>
-          settings.type === SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST ||
-          settings.type === SEQUENCE_STEP_TYPES.SEND_LINKEDIN_MESSAGE ||
-          settings.type === SEQUENCE_STEP_TYPES.WITHDRAW_CONNECTION_REQUEST,
-      );
-      const hasSenderDependentCondition = steps.some(
-        ({ settings }) =>
-          settings.type === SEQUENCE_STEP_TYPES.CONDITION &&
-          SENDER_DEPENDENT_CONDITIONS.has(settings.condition),
-      );
-      const requiresSender =
-        hasAutomatedEmailStep ||
-        hasLinkedinActionStep ||
-        hasSenderDependentCondition;
-
-      if (requiresSender && senderConnectedAccountIds.length === 0) {
-        this.throwBadRequest('Choose a sender before activating the sequence');
+      if (!sequence) {
+        this.throwBadRequest('The sequence was not found');
       }
 
-      if (requiresSender) {
-        for (const connectedAccountId of senderConnectedAccountIds) {
-          try {
-            const expectedUserWorkspaceId = isUserAuthContext(authContext)
-              ? authContext.userWorkspaceId
-              : undefined;
+      const permittedStepRepository =
+        await this.globalWorkspaceOrmManager.getRepository(
+          authContext.workspace.id,
+          SequenceStepWorkspaceEntity,
+          rolePermissionConfig,
+        );
+      const readableSteps = await permittedStepRepository.find({
+        where: { sequenceId },
+        select: ['id', 'position', 'sequenceId', 'settings', 'type'],
+      });
+      const internalStepRepository =
+        await this.globalWorkspaceOrmManager.getRepository(
+          authContext.workspace.id,
+          SequenceStepWorkspaceEntity,
+          { shouldBypassPermissionChecks: true },
+        );
+      const internalStepCount = await internalStepRepository.count({
+        where: { sequenceId },
+      });
 
-            // Only automated email actually sends through the mailbox.
-            // LinkedIn steps and LinkedIn conditions merely identify the owning
-            // workspace member, so a syncing inbox must not block them.
-            if (hasAutomatedEmailStep) {
-              await this.sequenceSenderService.getReadySenderOrThrow({
-                connectedAccountId,
-                expectedUserWorkspaceId,
-                workspaceId: authContext.workspace.id,
-              });
-            } else {
-              await this.sequenceSenderService.getSenderAccountOrThrow({
-                connectedAccountId,
-                expectedUserWorkspaceId,
-                workspaceId: authContext.workspace.id,
-              });
-            }
-          } catch (error) {
-            this.throwBadRequest(
-              error instanceof Error
-                ? error.message
-                : 'A selected sender mailbox is not ready',
-            );
-          }
+      if (readableSteps.length !== internalStepCount) {
+        throw new PermissionsException(
+          PermissionsExceptionMessage.PERMISSION_DENIED,
+          PermissionsExceptionCode.PERMISSION_DENIED,
+        );
+      }
+    }, authContext);
+  }
+
+  private async assertSequenceActivationRequirements({
+    authContext,
+    sequenceId,
+    settings,
+    senderConnectedAccountId,
+  }: {
+    authContext: WorkspaceAuthContext;
+    sequenceId: string;
+    settings: SequenceSettings;
+    senderConnectedAccountId: string | null;
+  }): Promise<void> {
+    const steps = await this.getSequenceSteps({
+      authContext,
+      sequenceId,
+    });
+    const senderConnectedAccountIds = this.getEffectiveSenderPool({
+      senderConnectedAccountId,
+      settings,
+    });
+
+    if (steps.length === 0) {
+      this.throwBadRequest('Add a step before activating the sequence');
+    }
+
+    // Every scheduling path is gated on the sending window. With no active
+    // day the window never opens, so the sequence would sit ACTIVE and never
+    // advance a single enrollment.
+    if (settings.activeDays.length === 0) {
+      this.throwBadRequest(
+        'Choose at least one sending day before activating the sequence',
+      );
+    }
+
+    this.assertSequenceStepsValid(steps, settings);
+    await this.assertTaskAssigneesExist({ authContext, steps });
+
+    const hasAutomatedEmailStep = steps.some(
+      ({ settings }) =>
+        settings.type === SEQUENCE_STEP_TYPES.SEND_EMAIL &&
+        settings.executionMode !== SEQUENCE_ACTION_EXECUTION_MODES.MANUAL,
+    );
+    const hasLinkedinActionStep = steps.some(
+      ({ settings }) =>
+        settings.type === SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST ||
+        settings.type === SEQUENCE_STEP_TYPES.SEND_LINKEDIN_MESSAGE ||
+        settings.type === SEQUENCE_STEP_TYPES.WITHDRAW_CONNECTION_REQUEST,
+    );
+    const hasSenderDependentCondition = steps.some(
+      ({ settings }) =>
+        settings.type === SEQUENCE_STEP_TYPES.CONDITION &&
+        SENDER_DEPENDENT_CONDITIONS.has(settings.condition),
+    );
+    const requiresSender =
+      hasAutomatedEmailStep ||
+      hasLinkedinActionStep ||
+      hasSenderDependentCondition;
+
+    if (requiresSender && senderConnectedAccountIds.length === 0) {
+      this.throwBadRequest('Choose a sender before activating the sequence');
+    }
+
+    if (!requiresSender) {
+      return;
+    }
+
+    for (const connectedAccountId of senderConnectedAccountIds) {
+      try {
+        const expectedUserWorkspaceId = isUserAuthContext(authContext)
+          ? authContext.userWorkspaceId
+          : undefined;
+
+        // Only automated email actually sends through the mailbox. LinkedIn
+        // steps and conditions only require an owned, active sender account.
+        if (hasAutomatedEmailStep) {
+          await this.sequenceSenderService.getReadySenderOrThrow({
+            connectedAccountId,
+            expectedUserWorkspaceId,
+            workspaceId: authContext.workspace.id,
+          });
+        } else {
+          await this.sequenceSenderService.getSenderAccountOrThrow({
+            connectedAccountId,
+            expectedUserWorkspaceId,
+            workspaceId: authContext.workspace.id,
+          });
         }
+      } catch (error) {
+        this.throwBadRequest(
+          error instanceof Error
+            ? error.message
+            : 'A selected sender mailbox is not ready',
+        );
       }
     }
   }
@@ -612,6 +734,9 @@ export class SequenceInvariantService {
             typeof settings.titleTemplate !== 'string' ||
             settings.titleTemplate.trim().length === 0 ||
             typeof settings.notesTemplate !== 'string' ||
+            (settings.assigneeWorkspaceMemberId !== null &&
+              settings.assigneeWorkspaceMemberId !== undefined &&
+              typeof settings.assigneeWorkspaceMemberId !== 'string') ||
             !KNOWN_TASK_TYPES.has(settings.taskType) ||
             !KNOWN_TASK_PRIORITIES.has(settings.priority) ||
             !KNOWN_TASK_CONTINUE_MODES.has(settings.continueMode) ||
@@ -784,6 +909,51 @@ export class SequenceInvariantService {
 
         visitedStepIds.add(ancestor.id);
         currentStep = ancestor;
+      }
+    }
+  }
+
+  private async assertTaskAssigneesExist({
+    authContext,
+    steps,
+  }: {
+    authContext: WorkspaceAuthContext;
+    steps: SequenceStepWorkspaceEntity[];
+  }): Promise<void> {
+    const taskStepByAssigneeId = new Map<string, SequenceStepWorkspaceEntity>();
+
+    for (const step of steps) {
+      if (
+        step.settings.type === SEQUENCE_STEP_TYPES.CREATE_TASK &&
+        typeof step.settings.assigneeWorkspaceMemberId === 'string'
+      ) {
+        taskStepByAssigneeId.set(step.settings.assigneeWorkspaceMemberId, step);
+      }
+    }
+
+    if (taskStepByAssigneeId.size === 0) {
+      return;
+    }
+
+    const workspaceMemberRepository =
+      await this.globalWorkspaceOrmManager.getRepository(
+        authContext.workspace.id,
+        WorkspaceMemberWorkspaceEntity,
+        { shouldBypassPermissionChecks: true },
+      );
+    const workspaceMembers = await workspaceMemberRepository.find({
+      where: { id: In([...taskStepByAssigneeId.keys()]) },
+      select: ['id'],
+    });
+    const existingWorkspaceMemberIds = new Set(
+      workspaceMembers.map(({ id }) => id),
+    );
+
+    for (const [assigneeWorkspaceMemberId, step] of taskStepByAssigneeId) {
+      if (!existingWorkspaceMemberIds.has(assigneeWorkspaceMemberId)) {
+        this.throwBadRequest(
+          `Sequence task ${step.id} references a workspace member that does not exist`,
+        );
       }
     }
   }

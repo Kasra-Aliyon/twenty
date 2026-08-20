@@ -18,6 +18,7 @@ import { type SequenceSenderService } from 'src/modules/sequence/services/sequen
 import { DEFAULT_SEQUENCE_SETTINGS } from 'src/modules/sequence/sequence.constants';
 import { SequenceStepWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence-step.workspace-entity';
 import { SequenceWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence.workspace-entity';
+import { WorkspaceMemberWorkspaceEntity } from 'src/modules/workspace-member/standard-objects/workspace-member.workspace-entity';
 
 describe('SequenceInvariantService', () => {
   const authContext = {
@@ -42,6 +43,9 @@ describe('SequenceInvariantService', () => {
   let stepRepository: {
     find: jest.Mock;
     count: jest.Mock;
+  };
+  let workspaceMemberRepository: {
+    find: jest.Mock;
   };
   let service: SequenceInvariantService;
   const sequenceSenderService = {
@@ -71,6 +75,9 @@ describe('SequenceInvariantService', () => {
       ]),
       count: jest.fn().mockResolvedValue(1),
     };
+    workspaceMemberRepository = {
+      find: jest.fn().mockResolvedValue([]),
+    };
     const enrollmentRepository = {
       findOne: jest.fn().mockResolvedValue(enrollment),
       count: jest.fn().mockImplementation(async () => activeEnrollmentCount),
@@ -80,6 +87,9 @@ describe('SequenceInvariantService', () => {
       getRepository: jest.fn(async (_workspaceId, entity) => {
         if (entity === SequenceWorkspaceEntity) return sequenceRepository;
         if (entity === SequenceStepWorkspaceEntity) return stepRepository;
+        if (entity === WorkspaceMemberWorkspaceEntity) {
+          return workspaceMemberRepository;
+        }
         if (entity === 'sequenceEnrollment') return enrollmentRepository;
         return {};
       }),
@@ -633,6 +643,65 @@ describe('SequenceInvariantService', () => {
         data: { status: SEQUENCE_STATUSES.ACTIVE },
       }),
     ).rejects.toThrow('task task-step-id is not fully configured');
+  });
+
+  it('blocks activation when a configured task assignee does not exist', async () => {
+    stepRepository.find.mockResolvedValue([
+      {
+        id: 'task-step-id',
+        sequenceId: sequence.id,
+        settings: {
+          type: SEQUENCE_STEP_TYPES.CREATE_TASK,
+          taskType: SEQUENCE_TASK_TYPES.CUSTOM,
+          titleTemplate: 'Follow up',
+          notesTemplate: '',
+          priority: TASK_PRIORITIES.MEDIUM,
+          assigneeWorkspaceMemberId: 'missing-workspace-member-id',
+          continueMode: 'ON_DONE',
+          deadlineDays: null,
+        },
+      },
+    ]);
+
+    await expect(
+      service.assertSequenceUpdateAllowed({
+        authContext,
+        sequenceId: sequence.id,
+        data: { status: SEQUENCE_STATUSES.ACTIVE },
+      }),
+    ).rejects.toThrow(
+      'task task-step-id references a workspace member that does not exist',
+    );
+  });
+
+  it('allows activation when every configured task assignee exists', async () => {
+    workspaceMemberRepository.find.mockResolvedValue([
+      { id: 'workspace-member-id' },
+    ]);
+    stepRepository.find.mockResolvedValue([
+      {
+        id: 'task-step-id',
+        sequenceId: sequence.id,
+        settings: {
+          type: SEQUENCE_STEP_TYPES.CREATE_TASK,
+          taskType: SEQUENCE_TASK_TYPES.CUSTOM,
+          titleTemplate: 'Follow up',
+          notesTemplate: '',
+          priority: TASK_PRIORITIES.MEDIUM,
+          assigneeWorkspaceMemberId: 'workspace-member-id',
+          continueMode: 'ON_DONE',
+          deadlineDays: null,
+        },
+      },
+    ]);
+
+    await expect(
+      service.assertSequenceUpdateAllowed({
+        authContext,
+        sequenceId: sequence.id,
+        data: { status: SEQUENCE_STATUSES.ACTIVE },
+      }),
+    ).resolves.toBeUndefined();
   });
 
   it('blocks activation when an email draft is empty', async () => {

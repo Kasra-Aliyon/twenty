@@ -30,7 +30,12 @@ import { QUERY_MAX_RECORDS } from 'twenty-shared/constants';
 import {
   FeatureFlagKey,
   type RecordGqlOperationFilter,
+  SEQUENCE_ACTION_EXECUTION_MODES,
+  SEQUENCE_CONDITION_TYPES,
+  SEQUENCE_STEP_TYPES,
+  type SequenceConditionType,
   type SequenceSettings,
+  type SequenceStepSettings,
   type SequenceStatus,
 } from 'twenty-shared/types';
 import { combineFilters } from 'twenty-shared/utils';
@@ -43,6 +48,9 @@ type SequenceForEnrollment = ObjectRecord & {
   status: SequenceStatus;
   senderConnectedAccountId: string | null;
   settings: SequenceSettings;
+  steps?: Array<{
+    settings: SequenceStepSettings;
+  }>;
 };
 
 type ExistingSequenceEnrollment = ObjectRecord & {
@@ -51,6 +59,32 @@ type ExistingSequenceEnrollment = ObjectRecord & {
 };
 
 const SEQUENCES_PAGE_SIZE = 50;
+
+const SENDER_DEPENDENT_CONDITIONS: ReadonlySet<SequenceConditionType> = new Set(
+  [
+    SEQUENCE_CONDITION_TYPES.IS_IN_LINKEDIN_NETWORK,
+    SEQUENCE_CONDITION_TYPES.ACCEPTED_LINKEDIN_INVITE,
+    SEQUENCE_CONDITION_TYPES.OPENED_LINKEDIN_MESSAGE,
+  ],
+);
+
+const doesSequenceRequireSender = (sequence: SequenceForEnrollment): boolean =>
+  sequence.steps?.some(({ settings }) => {
+    switch (settings.type) {
+      case SEQUENCE_STEP_TYPES.SEND_EMAIL:
+        return (
+          settings.executionMode !== SEQUENCE_ACTION_EXECUTION_MODES.MANUAL
+        );
+      case SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST:
+      case SEQUENCE_STEP_TYPES.SEND_LINKEDIN_MESSAGE:
+      case SEQUENCE_STEP_TYPES.WITHDRAW_CONNECTION_REQUEST:
+        return true;
+      case SEQUENCE_STEP_TYPES.CONDITION:
+        return SENDER_DEPENDENT_CONDITIONS.has(settings.condition);
+      default:
+        return false;
+    }
+  }) ?? false;
 
 const AddToSequenceActionContent = ({
   requiredFilter,
@@ -122,6 +156,10 @@ const AddToSequenceActionContent = ({
       status: true,
       senderConnectedAccountId: true,
       settings: true,
+      steps: {
+        id: true,
+        settings: true,
+      },
     },
     limit: SEQUENCES_PAGE_SIZE,
   });
@@ -255,7 +293,8 @@ const AddToSequenceActionContent = ({
                 contextualText={sequence.status}
                 disabled={
                   areEnrollmentsLoading ||
-                  (!sequence.senderConnectedAccountId &&
+                  (doesSequenceRequireSender(sequence) &&
+                    !sequence.senderConnectedAccountId &&
                     (sequence.settings.senderConnectedAccountIds?.length ??
                       0) === 0)
                 }

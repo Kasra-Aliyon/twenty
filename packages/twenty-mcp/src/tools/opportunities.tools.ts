@@ -259,7 +259,7 @@ export const registerOpportunityTools = (
           records.groupBy({
             object: STANDARD_OBJECTS.opportunities,
             groupBy: [{ stage: true }],
-            aggregate: ['countId', 'sumAmountAmountMicros'],
+            aggregate: ['countNotEmptyId', 'sumAmountAmountMicros'],
             filter,
             includeRecords: include_records,
           }),

@@ -2,6 +2,7 @@ import { type ObjectRecordCreateEvent } from 'twenty-shared/database-events';
 import {
   LINKEDIN_ACTION_STATUSES,
   LINKEDIN_ACTION_TYPES,
+  SEQUENCE_ENROLLMENT_STATUSES,
 } from 'twenty-shared/types';
 
 import { type FeatureFlagService } from 'src/engine/core-modules/feature-flag/services/feature-flag.service';
@@ -116,6 +117,40 @@ describe('SequenceLinkedinReplyListener', () => {
         status: 'REPLIED',
         waitingOn: null,
         nextActionAt: null,
+      }),
+    );
+  });
+
+  it('guards the final reply update when an eligible enrollment concurrently becomes terminal', async () => {
+    await listener.handleMessageCreatedEvent(buildMessageCreatedPayload());
+
+    expect(enrollmentRepository.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          status: expect.objectContaining({
+            _type: 'in',
+            _value: [
+              SEQUENCE_ENROLLMENT_STATUSES.PENDING,
+              SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
+            ],
+          }),
+          stopOnReply: true,
+        }),
+      }),
+    );
+    expect(enrollmentRepository.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: expect.objectContaining({ _value: ['enrollment-id'] }),
+        status: expect.objectContaining({
+          _type: 'in',
+          _value: [
+            SEQUENCE_ENROLLMENT_STATUSES.PENDING,
+            SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
+          ],
+        }),
+      }),
+      expect.objectContaining({
+        status: SEQUENCE_ENROLLMENT_STATUSES.REPLIED,
       }),
     );
   });

@@ -1,5 +1,5 @@
 export const SERVER_NAME = 'twenty-mcp-server';
-export const SERVER_VERSION = '0.2.0';
+export const SERVER_VERSION = '0.3.0';
 
 export const DEFAULT_CHARACTER_LIMIT = 25_000;
 export const DEFAULT_LIST_LIMIT = 20;

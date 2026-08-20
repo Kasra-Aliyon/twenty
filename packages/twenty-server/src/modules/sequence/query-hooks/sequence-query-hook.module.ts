@@ -63,5 +63,6 @@ import {
     SequenceRestoreManyPreQueryHook,
     SequenceMergeManyPreQueryHook,
   ],
+  exports: [SequenceInvariantService],
 })
 export class SequenceQueryHookModule {}

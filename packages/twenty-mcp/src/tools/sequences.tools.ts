@@ -16,6 +16,7 @@ import {
   SEQUENCE_TASK_TYPES,
   SEQUENCE_TEMPLATE_VARIABLES,
   SEQUENCE_WAITING_ON,
+  SERVER_VERSION,
   STANDARD_OBJECTS,
 } from '../constants.js';
 import { runTool } from '../formatting/format-tool-result.js';
@@ -27,8 +28,10 @@ import {
   responseFormatSchema,
   TOOL_OUTPUT_SCHEMA,
 } from '../schemas/common.schemas.js';
+import { TwentyApiError } from '../services/errors.js';
 import { combineFilters, filterCondition } from '../services/filter-builder.js';
 import { RecordsService } from '../services/records.service.js';
+import type { TwentyClient } from '../services/twenty-client.js';
 import { requireUserToken } from '../services/user-auth.js';
 import type { ToolDependencies } from '../types.js';
 import { compactRecord } from './tool-data-builders.js';
@@ -68,6 +71,36 @@ const sequenceSettingsSchema = z.object({
     )
     .optional(),
 });
+
+const sequenceSettingsPatchSchema = z.object({
+  activeDays: sequenceSettingsSchema.shape.activeDays.optional(),
+  windowStart: sequenceSettingsSchema.shape.windowStart.optional(),
+  windowEnd: sequenceSettingsSchema.shape.windowEnd.optional(),
+  timezone: sequenceSettingsSchema.shape.timezone.optional(),
+  sendWindowTimezoneMode: sequenceSettingsSchema.shape.sendWindowTimezoneMode
+    .removeDefault()
+    .optional(),
+  dailyStartLimitEnabled:
+    sequenceSettingsSchema.shape.dailyStartLimitEnabled.optional(),
+  dailyStarts: sequenceSettingsSchema.shape.dailyStarts.optional(),
+  staggerMinutes: sequenceSettingsSchema.shape.staggerMinutes.optional(),
+  linkedinDailyActionLimitEnabled:
+    sequenceSettingsSchema.shape.linkedinDailyActionLimitEnabled.optional(),
+  linkedinDailyActions:
+    sequenceSettingsSchema.shape.linkedinDailyActions.optional(),
+  linkedinDelayPatternMinutes:
+    sequenceSettingsSchema.shape.linkedinDelayPatternMinutes.optional(),
+  stopOnReply: sequenceSettingsSchema.shape.stopOnReply.optional(),
+  senderConnectedAccountIds:
+    sequenceSettingsSchema.shape.senderConnectedAccountIds,
+});
+
+const SEQUENCE_MCP_CONTRACT_VERSION = '2026-08-20.2';
+const SEQUENCE_SETTINGS_ATOMIC_PATCH_MARKER =
+  '__twentySequenceSettingsAtomicPatch';
+const SEQUENCE_STEP_SETTINGS_PATCH_BASE_TYPE =
+  '__twentySequenceStepSettingsPatchBaseType';
+const SEQUENCE_STEP_ATOMIC_APPEND_MARKER = '__twentySequenceStepAtomicAppend';
 
 const CONNECTED_ACCOUNTS_QUERY = `
   query TwentyMcpConnectedAccounts {
@@ -149,6 +182,26 @@ const SEQUENCE_ANALYTICS_QUERY = `
         repliedCount
         replyRate
       }
+    }
+  }
+`;
+
+const SEQUENCE_READINESS_QUERY = `
+  query TwentyMcpSequenceReadiness($sequenceId: UUID!) {
+    sequenceReadiness(sequenceId: $sequenceId) {
+      ready
+      errors
+    }
+  }
+`;
+
+const SEQUENCE_MUTATION_CAPABILITIES_QUERY = `
+  query TwentyMcpSequenceMutationCapabilities {
+    sequenceMutationCapabilities {
+      atomicSettingsPatch
+      atomicSettingsPatchVersion
+      atomicStepAppend
+      atomicStepAppendVersion
     }
   }
 `;
@@ -270,7 +323,7 @@ const taskSettingsSchema = z.object({
   titleTemplate: z.string().min(1),
   notesTemplate: z.string().default(''),
   priority: z.enum(SEQUENCE_TASK_PRIORITIES).default('MEDIUM'),
-  assigneeWorkspaceMemberId: z.string().nullable().default(null),
+  assigneeWorkspaceMemberId: recordIdSchema.nullable().default(null),
   continueMode: z.enum(SEQUENCE_TASK_CONTINUE_MODES).default('ON_DONE'),
   deadlineDays: z.number().nonnegative().nullable().default(null),
 });
@@ -403,9 +456,154 @@ const stepInputSchema = z
     }
   });
 
+const actionExecutionSettingsPatchShape = {
+  ...placementSettingsShape,
+  executionMode: actionExecutionSettingsShape.executionMode
+    .removeDefault()
+    .optional(),
+  manualTaskTitle: actionExecutionSettingsShape.manualTaskTitle
+    .removeDefault()
+    .optional(),
+  manualTaskDescription: actionExecutionSettingsShape.manualTaskDescription
+    .removeDefault()
+    .optional(),
+};
+
+const stepUpdateInputSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal(SEQUENCE_STEP_TYPES[0]),
+    settings: z.object({
+      ...actionExecutionSettingsPatchShape,
+      subject: emailSettingsSchema.shape.subject.optional(),
+      bodyHtml: emailSettingsSchema.shape.bodyHtml.optional(),
+      variants: emailSettingsSchema.shape.variants.nullable(),
+      threadAsReplyToPreviousEmail:
+        emailSettingsSchema.shape.threadAsReplyToPreviousEmail
+          .removeDefault()
+          .optional(),
+      stopOnReply: emailSettingsSchema.shape.stopOnReply
+        .removeDefault()
+        .optional(),
+    }),
+  }),
+  z.object({
+    type: z.literal(SEQUENCE_STEP_TYPES[1]),
+    settings: z.object({
+      ...placementSettingsShape,
+      days: delaySettingsSchema.shape.days.removeDefault().optional(),
+      hours: delaySettingsSchema.shape.hours.removeDefault().optional(),
+      minutes: delaySettingsSchema.shape.minutes.removeDefault().optional(),
+    }),
+  }),
+  z.object({
+    type: z.literal(SEQUENCE_STEP_TYPES[2]),
+    settings: z.object({
+      ...placementSettingsShape,
+      taskType: taskSettingsSchema.shape.taskType.removeDefault().optional(),
+      titleTemplate: taskSettingsSchema.shape.titleTemplate.optional(),
+      notesTemplate: taskSettingsSchema.shape.notesTemplate
+        .removeDefault()
+        .optional(),
+      priority: taskSettingsSchema.shape.priority.removeDefault().optional(),
+      assigneeWorkspaceMemberId:
+        taskSettingsSchema.shape.assigneeWorkspaceMemberId
+          .removeDefault()
+          .optional(),
+      continueMode: taskSettingsSchema.shape.continueMode
+        .removeDefault()
+        .optional(),
+      deadlineDays: taskSettingsSchema.shape.deadlineDays
+        .removeDefault()
+        .optional(),
+    }),
+  }),
+  z.object({
+    type: z.literal(SEQUENCE_STEP_TYPES[3]),
+    settings: z.object({
+      ...actionExecutionSettingsPatchShape,
+      noteTemplate: connectionRequestSettingsSchema.shape.noteTemplate
+        .removeDefault()
+        .optional(),
+    }),
+  }),
+  z.object({
+    type: z.literal(SEQUENCE_STEP_TYPES[4]),
+    settings: z.object({
+      ...actionExecutionSettingsPatchShape,
+      messageTemplate:
+        linkedinMessageSettingsSchema.shape.messageTemplate.optional(),
+    }),
+  }),
+  z.object({
+    type: z.literal(SEQUENCE_STEP_TYPES[5]),
+    settings: z.object({
+      ...actionExecutionSettingsPatchShape,
+      withdrawAfterDays: withdrawSettingsSchema.shape.withdrawAfterDays
+        .removeDefault()
+        .optional(),
+      withdrawAfterHours: withdrawSettingsSchema.shape.withdrawAfterHours
+        .removeDefault()
+        .optional(),
+    }),
+  }),
+  z.object({
+    type: z.literal(SEQUENCE_STEP_TYPES[6]),
+    settings: z.object({
+      ...placementSettingsShape,
+      condition: conditionSettingsSchema.shape.condition.optional(),
+      expected: conditionSettingsSchema.shape.expected,
+    }),
+  }),
+  z.object({
+    type: z.literal(SEQUENCE_STEP_TYPES[7]),
+    settings: z.object(actionExecutionSettingsPatchShape),
+  }),
+]);
+
 type SequenceStepInput = z.infer<typeof stepInputSchema>;
+type SequenceStepUpdateInput = z.infer<typeof stepUpdateInputSchema>;
 
 type UnknownRecord = Record<string, unknown>;
+
+type SequenceEmailVariantAnalytics = {
+  stepId: string;
+  stepName: string;
+  variantId: string;
+  variantName: string;
+  sentCount: number;
+  repliedCount: number;
+  replyRate: number;
+};
+
+type SequenceAnalytics = {
+  enrolledCount: number;
+  contactedCount: number;
+  sentEmailCount: number;
+  repliedCount: number;
+  completedCount: number;
+  failedCount: number;
+  replyRate: number;
+  emailVariants: SequenceEmailVariantAnalytics[];
+};
+
+type SequenceAnalyticsStep = {
+  id: string;
+  name: string | null;
+  position: number;
+  settings: UnknownRecord;
+};
+
+type SequenceValidationStep = SequenceAnalyticsStep & {
+  createdAt: string;
+};
+
+type SequenceValidationBranch = {
+  conditionStepId: string;
+  outcome: string;
+};
+
+const DEFAULT_SEQUENCE_EMAIL_VARIANT_ID = 'default';
+const DEFAULT_SEQUENCE_EMAIL_VARIANT_NAME = 'Default';
 
 const isRecord = (value: unknown): value is UnknownRecord =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -446,11 +644,13 @@ const normalizedStepSettings = (
 };
 
 const stepData = ({
+  atomicAppend = false,
   input,
   name,
   position,
   sequenceId,
 }: {
+  atomicAppend?: boolean;
   input: SequenceStepInput;
   name?: string | null;
   position?: number;
@@ -460,7 +660,13 @@ const stepData = ({
     ['sequenceId', sequenceId],
     ['name', name],
     ['type', getSequenceStepStorageType(input.type)],
-    ['settings', normalizedStepSettings(input)],
+    [
+      'settings',
+      {
+        ...normalizedStepSettings(input),
+        ...(atomicAppend ? { [SEQUENCE_STEP_ATOMIC_APPEND_MARKER]: true } : {}),
+      },
+    ],
     ['position', position],
   ]);
 
@@ -485,7 +691,7 @@ const withPreservedStepSettings = ({
   input,
 }: {
   currentStep: unknown;
-  input: SequenceStepInput;
+  input: SequenceStepUpdateInput;
 }): SequenceStepInput => {
   const currentSettings = getStepSettings(currentStep);
   const currentBranch = currentSettings.branch;
@@ -493,28 +699,78 @@ const withPreservedStepSettings = ({
     input.settings.branch !== undefined || !isRecord(currentBranch)
       ? input.settings.branch
       : (currentBranch as z.infer<typeof sequenceStepBranchSchema>);
-  const preservedExpected =
-    input.type === SEQUENCE_STEP_TYPES[6] &&
-    input.settings.expected === undefined &&
-    typeof currentSettings.expected === 'boolean'
-      ? currentSettings.expected
-      : input.type === SEQUENCE_STEP_TYPES[6]
-        ? input.settings.expected
-        : undefined;
+  const currentType = currentSettings.type;
+  const mergedSettings: UnknownRecord = {
+    ...(currentType === input.type ? currentSettings : {}),
+    ...input.settings,
+    ...(preservedBranch === undefined ? {} : { branch: preservedBranch }),
+  };
 
-  return {
-    ...input,
-    settings: {
-      ...input.settings,
-      ...(preservedBranch === undefined ? {} : { branch: preservedBranch }),
-      ...(preservedExpected === undefined
-        ? {}
-        : { expected: preservedExpected }),
-    },
-  } as SequenceStepInput;
+  if (
+    input.type === SEQUENCE_STEP_TYPES[0] &&
+    'variants' in input.settings &&
+    input.settings.variants === null
+  ) {
+    delete mergedSettings.variants;
+  }
+
+  return stepInputSchema.parse({
+    type: input.type,
+    settings: mergedSettings,
+  });
 };
 
 const withPreservedStepBranch = withPreservedStepSettings;
+
+const stepPatchData = ({
+  currentStep,
+  input,
+  name,
+}: {
+  currentStep: unknown;
+  input: SequenceStepUpdateInput;
+  name?: string | null;
+}): Record<string, unknown> => {
+  const currentSettings = getStepSettings(currentStep);
+  const currentType = currentSettings.type;
+
+  if (typeof currentType !== 'string') {
+    throw new Error('Twenty returned a sequence step without a settings type.');
+  }
+
+  const normalizedInput = withPreservedStepSettings({ currentStep, input });
+  const isTypeChange = currentType !== input.type;
+  const settingsPatch: UnknownRecord = isTypeChange
+    ? normalizedStepSettings(normalizedInput)
+    : {
+        type: input.type,
+        ...input.settings,
+      };
+
+  if (
+    !isTypeChange &&
+    input.type === SEQUENCE_STEP_TYPES[0] &&
+    normalizedInput.type === SEQUENCE_STEP_TYPES[0] &&
+    normalizedInput.settings.executionMode === 'MANUAL' &&
+    input.settings.executionMode === 'MANUAL'
+  ) {
+    settingsPatch.threadAsReplyToPreviousEmail = false;
+    settingsPatch.stopOnReply = false;
+  }
+
+  return compactRecord([
+    ['name', name],
+    ['type', getSequenceStepStorageType(input.type)],
+    [
+      'settings',
+      {
+        ...settingsPatch,
+        [SEQUENCE_SETTINGS_ATOMIC_PATCH_MARKER]: true,
+        [SEQUENCE_STEP_SETTINGS_PATCH_BASE_TYPE]: currentType,
+      },
+    ],
+  ]);
+};
 
 const assertBranchTarget = async ({
   branch,
@@ -606,6 +862,454 @@ const listAllSequenceSteps = async ({
   return steps;
 };
 
+type SequenceMutationCapabilities = {
+  atomicSettingsPatch: boolean;
+  atomicSettingsPatchVersion: number;
+  atomicStepAppend: boolean;
+  atomicStepAppendVersion: number;
+};
+
+const getSequenceMutationCapabilities = async (
+  client: TwentyClient,
+): Promise<SequenceMutationCapabilities> => {
+  let result: {
+    sequenceMutationCapabilities: SequenceMutationCapabilities;
+  };
+
+  try {
+    result = await client.graphql(
+      SEQUENCE_MUTATION_CAPABILITIES_QUERY,
+      {},
+      { endpoint: 'metadata' },
+    );
+  } catch (error) {
+    throw new TwentyApiError({
+      message:
+        'This Twenty backend does not advertise concurrency-safe sequence patches. Upgrade the backend before changing sequence or step settings.',
+      code: 'SEQUENCE_ATOMIC_PATCH_UNSUPPORTED',
+      details: error,
+    });
+  }
+
+  return result.sequenceMutationCapabilities;
+};
+
+const assertAtomicSequencePatchSupported = async (
+  client: TwentyClient,
+): Promise<void> => {
+  const capabilities = await getSequenceMutationCapabilities(client);
+
+  if (
+    capabilities.atomicSettingsPatch !== true ||
+    capabilities.atomicSettingsPatchVersion !== 1
+  ) {
+    throw new TwentyApiError({
+      message:
+        'This Twenty backend does not support the required concurrency-safe sequence patch protocol version 1. Upgrade the backend before changing sequence or step settings.',
+      code: 'SEQUENCE_ATOMIC_PATCH_UNSUPPORTED',
+      details: capabilities,
+    });
+  }
+};
+
+const assertAtomicStepAppendSupported = async (
+  client: TwentyClient,
+): Promise<void> => {
+  const capabilities = await getSequenceMutationCapabilities(client);
+
+  if (
+    capabilities.atomicStepAppend !== true ||
+    capabilities.atomicStepAppendVersion !== 1
+  ) {
+    throw new TwentyApiError({
+      message:
+        'This Twenty backend does not support the required concurrency-safe sequence step append protocol version 1. Upgrade the backend or provide an explicit position.',
+      code: 'SEQUENCE_ATOMIC_APPEND_UNSUPPORTED',
+      details: capabilities,
+    });
+  }
+};
+
+const listAllSequenceEnrollments = async ({
+  records,
+  sequenceId,
+}: {
+  records: RecordsService;
+  sequenceId: string;
+}): Promise<unknown[]> => {
+  const enrollments: unknown[] = [];
+  let startingAfter: string | undefined;
+
+  do {
+    const page = await records.list({
+      object: STANDARD_OBJECTS.sequenceEnrollments,
+      filter: filterCondition('sequenceId', 'eq', sequenceId),
+      limit: MAX_LIST_LIMIT,
+      startingAfter,
+    });
+
+    enrollments.push(...page.items);
+    startingAfter =
+      page.has_more && page.next_cursor !== null ? page.next_cursor : undefined;
+  } while (startingAfter !== undefined);
+
+  return enrollments;
+};
+
+const getSequenceValidationSteps = (
+  steps: unknown[],
+): SequenceValidationStep[] =>
+  steps
+    .flatMap((step) => {
+      if (!isRecord(step) || typeof step.id !== 'string') {
+        return [];
+      }
+
+      return [
+        {
+          id: step.id,
+          name: typeof step.name === 'string' ? step.name : null,
+          position: typeof step.position === 'number' ? step.position : 0,
+          createdAt: typeof step.createdAt === 'string' ? step.createdAt : '',
+          settings: isRecord(step.settings) ? step.settings : {},
+        },
+      ];
+    })
+    .sort((first, second) => compareSequenceValidationSteps(first, second));
+
+const getSequenceValidationBranch = (
+  step: SequenceValidationStep,
+): SequenceValidationBranch | undefined => {
+  const branch = step.settings.branch;
+
+  return isRecord(branch) &&
+    typeof branch.conditionStepId === 'string' &&
+    typeof branch.outcome === 'string'
+    ? {
+        conditionStepId: branch.conditionStepId,
+        outcome: branch.outcome,
+      }
+    : undefined;
+};
+
+const isSameSequenceValidationBranch = (
+  first: SequenceValidationBranch | undefined,
+  second: SequenceValidationBranch | undefined,
+): boolean =>
+  first?.conditionStepId === second?.conditionStepId &&
+  first?.outcome === second?.outcome;
+
+function compareSequenceValidationSteps(
+  first: SequenceValidationStep,
+  second: SequenceValidationStep,
+): number {
+  if (first.position !== second.position) {
+    return first.position - second.position;
+  }
+
+  const createdAtComparison = first.createdAt.localeCompare(second.createdAt);
+
+  return createdAtComparison !== 0
+    ? createdAtComparison
+    : first.id.localeCompare(second.id);
+}
+
+const findNextSequenceValidationStep = ({
+  currentStep,
+  steps,
+  visitedStepIds = new Set<string>(),
+}: {
+  currentStep: SequenceValidationStep;
+  steps: SequenceValidationStep[];
+  visitedStepIds?: Set<string>;
+}): SequenceValidationStep | undefined => {
+  if (visitedStepIds.has(currentStep.id)) {
+    return undefined;
+  }
+
+  const nextVisitedStepIds = new Set(visitedStepIds).add(currentStep.id);
+  const currentBranch = getSequenceValidationBranch(currentStep);
+  const nextSibling = steps.find(
+    (step) =>
+      compareSequenceValidationSteps(step, currentStep) > 0 &&
+      isSameSequenceValidationBranch(
+        getSequenceValidationBranch(step),
+        currentBranch,
+      ),
+  );
+
+  if (nextSibling !== undefined) {
+    return nextSibling;
+  }
+
+  if (currentBranch === undefined) {
+    return undefined;
+  }
+
+  const parentCondition = steps.find(
+    (step) => step.id === currentBranch.conditionStepId,
+  );
+
+  return parentCondition === undefined
+    ? undefined
+    : findNextSequenceValidationStep({
+        currentStep: parentCondition,
+        steps,
+        visitedStepIds: nextVisitedStepIds,
+      });
+};
+
+const getSequenceValidationWarnings = (steps: unknown[]): string[] => {
+  const validationSteps = getSequenceValidationSteps(steps);
+  const pointInTimeConditionByActionType = new Map([
+    ['SEND_CONNECTION_REQUEST', 'ACCEPTED_LINKEDIN_INVITE'],
+    ['SEND_LINKEDIN_MESSAGE', 'OPENED_LINKEDIN_MESSAGE'],
+  ]);
+  const warnings: string[] = [];
+
+  for (const step of validationSteps) {
+    const pointInTimeCondition = pointInTimeConditionByActionType.get(
+      typeof step.settings.type === 'string' ? step.settings.type : '',
+    );
+
+    if (pointInTimeCondition === undefined) {
+      continue;
+    }
+
+    const nextStep = findNextSequenceValidationStep({
+      currentStep: step,
+      steps: validationSteps,
+    });
+
+    if (
+      nextStep?.settings.type !== 'CONDITION' ||
+      nextStep.settings.condition !== pointInTimeCondition
+    ) {
+      continue;
+    }
+
+    warnings.push(
+      `Condition step ${nextStep.id} checks ${pointInTimeCondition} immediately after ${step.settings.type} step ${step.id}. This is a point-in-time check; add a DELAY before the condition if the external event needs time to occur.`,
+    );
+  }
+
+  return warnings;
+};
+
+const getSequenceAnalyticsReplyRate = ({
+  repliedCount,
+  sentCount,
+}: {
+  repliedCount: number;
+  sentCount: number;
+}): number => (sentCount === 0 ? 0 : (repliedCount / sentCount) * 100);
+
+const getSequenceAnalyticsSteps = (steps: unknown[]): SequenceAnalyticsStep[] =>
+  steps.flatMap((step) => {
+    if (!isRecord(step) || typeof step.id !== 'string') {
+      return [];
+    }
+
+    return [
+      {
+        id: step.id,
+        name: typeof step.name === 'string' ? step.name : null,
+        position: typeof step.position === 'number' ? step.position : 0,
+        settings: isRecord(step.settings) ? step.settings : {},
+      },
+    ];
+  });
+
+const getSequenceEmailVariantDefinitions = (
+  settings: UnknownRecord,
+): Array<{ id: string; name: string }> => {
+  if (Array.isArray(settings.variants) && settings.variants.length > 0) {
+    const variants = settings.variants.flatMap((variant) =>
+      isRecord(variant) &&
+      typeof variant.id === 'string' &&
+      typeof variant.name === 'string'
+        ? [{ id: variant.id, name: variant.name }]
+        : [],
+    );
+
+    if (variants.length > 0) {
+      return variants;
+    }
+  }
+
+  return [
+    {
+      id: DEFAULT_SEQUENCE_EMAIL_VARIANT_ID,
+      name: DEFAULT_SEQUENCE_EMAIL_VARIANT_NAME,
+    },
+  ];
+};
+
+const buildSequenceAnalyticsFallback = ({
+  enrollments,
+  steps,
+}: {
+  enrollments: unknown[];
+  steps: unknown[];
+}): SequenceAnalytics => {
+  const analyticsSteps = getSequenceAnalyticsSteps(steps);
+  const stepsById = new Map(analyticsSteps.map((step) => [step.id, step]));
+  const buckets = new Map<string, SequenceEmailVariantAnalytics>();
+
+  for (const step of analyticsSteps) {
+    if (step.settings.type !== SEQUENCE_STEP_TYPES[0]) {
+      continue;
+    }
+
+    const stepName = step.name ?? `Email step ${step.position + 1}`;
+
+    for (const variant of getSequenceEmailVariantDefinitions(step.settings)) {
+      buckets.set(`${step.id}:${variant.id}`, {
+        stepId: step.id,
+        stepName,
+        variantId: variant.id,
+        variantName: variant.name,
+        sentCount: 0,
+        repliedCount: 0,
+        replyRate: 0,
+      });
+    }
+  }
+
+  let contactedCount = 0;
+  let sentEmailCount = 0;
+  let repliedCount = 0;
+  let completedCount = 0;
+  let failedCount = 0;
+
+  for (const enrollmentValue of enrollments) {
+    const enrollment = isRecord(enrollmentValue) ? enrollmentValue : {};
+    const sentEmailsByStepId = isRecord(enrollment.sentEmailsByStepId)
+      ? enrollment.sentEmailsByStepId
+      : {};
+    const sentEntries = Object.entries(sentEmailsByStepId);
+    let hasEmailReply = false;
+
+    if (sentEntries.length > 0) {
+      contactedCount += 1;
+    }
+
+    sentEmailCount += sentEntries.length;
+
+    for (const [stepId, metadataValue] of sentEntries) {
+      const metadata = isRecord(metadataValue) ? metadataValue : {};
+      const variantId =
+        typeof metadata.variantId === 'string'
+          ? metadata.variantId
+          : DEFAULT_SEQUENCE_EMAIL_VARIANT_ID;
+      const variantName =
+        typeof metadata.variantName === 'string'
+          ? metadata.variantName
+          : DEFAULT_SEQUENCE_EMAIL_VARIANT_NAME;
+      const key = `${stepId}:${variantId}`;
+      const existingBucket = buckets.get(key);
+      const bucket =
+        existingBucket ??
+        ({
+          stepId,
+          stepName: stepsById.get(stepId)?.name ?? 'Email step',
+          variantId,
+          variantName,
+          sentCount: 0,
+          repliedCount: 0,
+          replyRate: 0,
+        } satisfies SequenceEmailVariantAnalytics);
+
+      bucket.sentCount += 1;
+
+      if (metadata.repliedAt !== undefined) {
+        bucket.repliedCount += 1;
+        hasEmailReply = true;
+      }
+
+      buckets.set(key, bucket);
+    }
+
+    if (enrollment.status === 'REPLIED' || hasEmailReply) {
+      repliedCount += 1;
+    }
+
+    if (enrollment.status === 'COMPLETED') {
+      completedCount += 1;
+    }
+
+    if (enrollment.status === 'FAILED') {
+      failedCount += 1;
+    }
+  }
+
+  const emailVariants = [...buckets.values()]
+    .map((bucket) => ({
+      ...bucket,
+      replyRate: getSequenceAnalyticsReplyRate({
+        repliedCount: bucket.repliedCount,
+        sentCount: bucket.sentCount,
+      }),
+    }))
+    .sort((first, second) => {
+      const firstPosition = stepsById.get(first.stepId)?.position ?? 0;
+      const secondPosition = stepsById.get(second.stepId)?.position ?? 0;
+
+      return (
+        firstPosition - secondPosition ||
+        first.variantName.localeCompare(second.variantName)
+      );
+    });
+
+  return {
+    enrolledCount: enrollments.length,
+    contactedCount,
+    sentEmailCount,
+    repliedCount,
+    completedCount,
+    failedCount,
+    replyRate: getSequenceAnalyticsReplyRate({
+      repliedCount,
+      sentCount: enrollments.length,
+    }),
+    emailVariants,
+  };
+};
+
+const isSequenceAnalyticsResolverUnavailable = (error: unknown): boolean =>
+  error instanceof TwentyApiError &&
+  error.code === 'GRAPHQL_ERROR' &&
+  /Cannot query field ["']sequenceAnalytics["']/i.test(error.message);
+
+const getSequenceAnalytics = async ({
+  client,
+  records,
+  sequenceId,
+}: {
+  client: ToolDependencies['client'];
+  records: RecordsService;
+  sequenceId: string;
+}): Promise<unknown> => {
+  try {
+    const result = await client.graphql<{
+      sequenceAnalytics: unknown;
+    }>(SEQUENCE_ANALYTICS_QUERY, { sequenceId }, { endpoint: 'metadata' });
+
+    return result.sequenceAnalytics;
+  } catch (error) {
+    if (!isSequenceAnalyticsResolverUnavailable(error)) {
+      throw error;
+    }
+
+    const [steps, enrollments] = await Promise.all([
+      listAllSequenceSteps({ records, sequenceId }),
+      listAllSequenceEnrollments({ records, sequenceId }),
+    ]);
+
+    return buildSequenceAnalyticsFallback({ enrollments, steps });
+  }
+};
+
 const createSequenceData = ({
   name,
   settings,
@@ -614,15 +1318,99 @@ const createSequenceData = ({
   name: string;
   settings?: Partial<z.infer<typeof sequenceSettingsSchema>>;
   senderConnectedAccountId?: string;
-}): Record<string, unknown> => ({
+}): Record<string, unknown> => {
+  const senderConnectedAccountIds =
+    settings?.senderConnectedAccountIds ??
+    (senderConnectedAccountId === undefined ? [] : [senderConnectedAccountId]);
+
+  if (
+    senderConnectedAccountId !== undefined &&
+    settings?.senderConnectedAccountIds !== undefined &&
+    senderConnectedAccountIds[0] !== senderConnectedAccountId
+  ) {
+    throw new Error(
+      'sender_connected_account_id must match the first settings.senderConnectedAccountIds entry.',
+    );
+  }
+
+  return {
+    name,
+    settings: {
+      ...DEFAULT_SEQUENCE_SETTINGS,
+      ...settings,
+      senderConnectedAccountIds,
+    },
+    ...(senderConnectedAccountIds[0] === undefined
+      ? {}
+      : { senderConnectedAccountId: senderConnectedAccountIds[0] }),
+  };
+};
+
+const sequencePatchData = ({
   name,
-  settings: { ...DEFAULT_SEQUENCE_SETTINGS, ...settings },
-  ...(senderConnectedAccountId === undefined
-    ? {}
-    : { senderConnectedAccountId }),
-});
+  senderConnectedAccountId,
+  settings,
+}: {
+  name?: string;
+  senderConnectedAccountId?: string | null;
+  settings?: z.infer<typeof sequenceSettingsPatchSchema>;
+}): Record<string, unknown> => {
+  const shouldUpdateSettings =
+    settings !== undefined || senderConnectedAccountId !== undefined;
+
+  if (!shouldUpdateSettings) {
+    return compactRecord([['name', name]]);
+  }
+
+  const hasSenderPoolPatch =
+    settings !== undefined &&
+    Object.prototype.hasOwnProperty.call(settings, 'senderConnectedAccountIds');
+  const senderConnectedAccountIds = hasSenderPoolPatch
+    ? (settings?.senderConnectedAccountIds ?? [])
+    : senderConnectedAccountId !== undefined
+      ? senderConnectedAccountId === null
+        ? []
+        : [senderConnectedAccountId]
+      : undefined;
+  const mirroredSenderConnectedAccountId =
+    senderConnectedAccountIds?.[0] ?? null;
+
+  if (
+    hasSenderPoolPatch &&
+    senderConnectedAccountId !== undefined &&
+    senderConnectedAccountId !== mirroredSenderConnectedAccountId
+  ) {
+    throw new Error(
+      'sender_connected_account_id must match the first settings.senderConnectedAccountIds entry.',
+    );
+  }
+
+  return compactRecord([
+    ['name', name],
+    [
+      'settings',
+      {
+        ...settings,
+        ...(senderConnectedAccountIds === undefined
+          ? {}
+          : { senderConnectedAccountIds }),
+        [SEQUENCE_SETTINGS_ATOMIC_PATCH_MARKER]: true,
+      },
+    ],
+    [
+      'senderConnectedAccountId',
+      senderConnectedAccountIds === undefined
+        ? undefined
+        : mirroredSenderConnectedAccountId,
+    ],
+  ]);
+};
+
+const mergeSequenceUpdateData = sequencePatchData;
 
 const SEQUENCE_CAPABILITIES = {
+  server_version: SERVER_VERSION,
+  contract_version: SEQUENCE_MCP_CONTRACT_VERSION,
   lifecycle: {
     statuses: SEQUENCE_STATUSES,
     activation_requirements: [
@@ -633,13 +1421,17 @@ const SEQUENCE_CAPABILITIES = {
     ],
     editing:
       'Pause the sequence before changing settings. Sender and step changes also require active enrollments to finish.',
+    scheduled_activation:
+      'Twenty has no one-shot activation date. To start tomorrow, call twenty_set_sequence_status tomorrow or use an external scheduler.',
+    archive:
+      'twenty_archive_sequence removes open enrollments, completes their open tasks, cancels scheduled LinkedIn actions, and releases eligible enrichment claims. Already-claimed external work may still finish. Restore preserves that history rather than restarting it.',
   },
   sequence_settings: {
     defaults: DEFAULT_SEQUENCE_SETTINGS,
     active_days:
       'Integers 0-6 where 0 is Sunday. At least one day is required before activation.',
     sending_window:
-      'windowStart/windowEnd are HH:mm. SEQUENCE mode uses settings.timezone. RECIPIENT mode uses the Person timeZone field and falls back to UTC when it is missing or invalid.',
+      'windowStart/windowEnd are HH:mm. SEQUENCE mode uses settings.timezone. RECIPIENT mode uses the Person timeZone field and falls back to UTC when it is missing or invalid. start > end is an overnight window whose after-midnight portion belongs to the previous active day; equal start/end means all day.',
     daily_start_limit:
       'dailyStartLimitEnabled controls whether dailyStarts limits pending admissions. SEQUENCE mode resets the quota by settings.timezone; RECIPIENT mode uses one sequence-wide UTC day.',
     daily_starts:
@@ -660,7 +1452,7 @@ const SEQUENCE_CAPABILITIES = {
       outcome: SEQUENCE_CONDITION_BRANCHES,
     },
     semantics:
-      'The raw condition result is compared with settings.expected (default true). The resulting match enters YES and the opposite result enters NO. Each lane runs by global position, then merges into the next root step. Nested conditions are not supported by the builder.',
+      'Conditions are point-in-time checks: they do not wait or re-evaluate. The raw result is compared with settings.expected (default true). The resulting match enters YES and the opposite result enters NO. Each lane runs by global position, then merges into the next root step. Add a delay before invite-accepted or message-opened checks when the external event needs time to occur. Nested conditions are not supported by the current builder.',
   },
   execution_modes: {
     values: SEQUENCE_ACTION_EXECUTION_MODES,
@@ -745,7 +1537,7 @@ const SEQUENCE_CAPABILITIES = {
         HAS_LINKEDIN_URL:
           'True when the person has a valid LinkedIn profile URL.',
         ACCEPTED_LINKEDIN_INVITE:
-          'True for a synced or recorded first-degree LinkedIn connection.',
+          'True only when the person is a synced or recorded first-degree connection and this workspace/sender has evidence that it previously sent the invitation, accounting for withdrawals.',
         OPENED_LINKEDIN_MESSAGE:
           'True for a confirmed recipient read receipt or an inbound reply after this enrollment sent its LinkedIn action.',
         HAS_PHONE_NUMBER: 'True when the person has a primary phone number.',
@@ -793,6 +1585,39 @@ export const registerSequenceTools = (
     },
     async ({ response_format }) =>
       runTool(async () => SEQUENCE_CAPABILITIES, response_format),
+  );
+
+  server.registerTool(
+    'twenty_validate_sequence',
+    {
+      title: 'Validate sequence activation readiness',
+      description:
+        'Runs the server activation-readiness invariants and workspace feature-flag check without changing sequence state. Returns the workspace feature-flag blocker, when present, and the first activation-invariant blocker, plus warnings for point-in-time LinkedIn conditions that immediately follow the action they observe. Call before activation.',
+      inputSchema: z.object({
+        sequence_id: recordIdSchema,
+        response_format: responseFormatSchema,
+      }),
+      outputSchema: TOOL_OUTPUT_SCHEMA,
+      annotations: { readOnlyHint: true, idempotentHint: true },
+    },
+    async ({ sequence_id, response_format }) =>
+      runTool(async () => {
+        const [result, steps] = await Promise.all([
+          dependencies.client.graphql<{
+            sequenceReadiness: { ready: boolean; errors: string[] };
+          }>(
+            SEQUENCE_READINESS_QUERY,
+            { sequenceId: sequence_id },
+            { endpoint: 'metadata' },
+          ),
+          listAllSequenceSteps({ records, sequenceId: sequence_id }),
+        ]);
+
+        return {
+          ...result.sequenceReadiness,
+          warnings: getSequenceValidationWarnings(steps),
+        };
+      }, response_format),
   );
 
   server.registerTool(
@@ -963,12 +1788,14 @@ export const registerSequenceTools = (
       inputSchema: z.object({
         status: z.enum(SEQUENCE_STATUSES).optional(),
         limit: listLimitSchema,
+        starting_after: z.string().optional(),
+        ending_before: z.string().optional(),
         response_format: responseFormatSchema,
       }),
       outputSchema: TOOL_OUTPUT_SCHEMA,
       annotations: { readOnlyHint: true, idempotentHint: true },
     },
-    async ({ status, limit, response_format }) =>
+    async ({ status, limit, starting_after, ending_before, response_format }) =>
       runTool(
         () =>
           records.list({
@@ -979,6 +1806,8 @@ export const registerSequenceTools = (
                 : filterCondition('status', 'eq', status),
             orderBy: 'position[AscNullsFirst]',
             limit,
+            startingAfter: starting_after,
+            endingBefore: ending_before,
           }),
         response_format,
       ),
@@ -1039,11 +1868,11 @@ export const registerSequenceTools = (
     {
       title: 'Create an outreach sequence',
       description:
-        'Creates a DRAFT sequence with safe weekday/business-hour defaults unless settings are supplied.',
+        'Creates a DRAFT sequence with safe weekday/business-hour defaults unless settings are supplied. settings.senderConnectedAccountIds is the canonical sender pool; the legacy sender field is mirrored automatically.',
       inputSchema: z.object({
         name: z.string().min(1),
         settings: sequenceSettingsSchema.partial().optional(),
-        sender_connected_account_id: z.string().optional(),
+        sender_connected_account_id: recordIdSchema.optional(),
         response_format: responseFormatSchema,
       }),
       outputSchema: TOOL_OUTPUT_SCHEMA,
@@ -1069,14 +1898,22 @@ export const registerSequenceTools = (
     {
       title: 'Update an outreach sequence',
       description:
-        'Renames a sequence or changes settings/sender. Twenty requires pausing before settings changes when active.',
-      inputSchema: z.object({
-        sequence_id: recordIdSchema,
-        name: z.string().min(1).optional(),
-        settings: sequenceSettingsSchema.optional(),
-        sender_connected_account_id: z.string().nullable().optional(),
-        response_format: responseFormatSchema,
-      }),
+        'Patches a sequence name, settings, or sender pool while preserving every omitted setting. settings.senderConnectedAccountIds is canonical and the legacy sender field is mirrored automatically. Twenty requires pausing before settings changes when active.',
+      inputSchema: z
+        .object({
+          sequence_id: recordIdSchema,
+          name: z.string().min(1).optional(),
+          settings: sequenceSettingsPatchSchema.optional(),
+          sender_connected_account_id: recordIdSchema.nullable().optional(),
+          response_format: responseFormatSchema,
+        })
+        .refine(
+          ({ name, sender_connected_account_id, settings }) =>
+            name !== undefined ||
+            sender_connected_account_id !== undefined ||
+            settings !== undefined,
+          'Provide name, settings, and/or sender_connected_account_id.',
+        ),
       outputSchema: TOOL_OUTPUT_SCHEMA,
       annotations: { readOnlyHint: false, idempotentHint: false },
     },
@@ -1087,19 +1924,24 @@ export const registerSequenceTools = (
       sender_connected_account_id,
       response_format,
     }) =>
-      runTool(
-        () =>
-          records.update({
-            object: STANDARD_OBJECTS.sequences,
-            id: sequence_id,
-            data: compactRecord([
-              ['name', name],
-              ['settings', settings],
-              ['senderConnectedAccountId', sender_connected_account_id],
-            ]),
+      runTool(async () => {
+        if (
+          settings !== undefined ||
+          sender_connected_account_id !== undefined
+        ) {
+          await assertAtomicSequencePatchSupported(dependencies.client);
+        }
+
+        return records.update({
+          object: STANDARD_OBJECTS.sequences,
+          id: sequence_id,
+          data: sequencePatchData({
+            name,
+            settings,
+            senderConnectedAccountId: sender_connected_account_id,
           }),
-        response_format,
-      ),
+        });
+      }, response_format),
   );
 
   server.registerTool(
@@ -1144,11 +1986,99 @@ export const registerSequenceTools = (
   );
 
   server.registerTool(
+    'twenty_archive_sequence',
+    {
+      title: 'Archive an outreach sequence',
+      description:
+        'Moves a sequence to trash. Twenty removes pending/active enrollments, completes their open tasks, cancels scheduled LinkedIn actions, and releases eligible enrichment claims; already-claimed external work may still finish. Requires confirmation.',
+      inputSchema: z.object({
+        sequence_id: recordIdSchema,
+        confirm: z.boolean().describe(CONFIRMATION_DESCRIPTION),
+        response_format: responseFormatSchema,
+      }),
+      outputSchema: TOOL_OUTPUT_SCHEMA,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
+    },
+    async ({ sequence_id, confirm, response_format }) =>
+      runTool(async () => {
+        if (!confirm) {
+          throw new Error(
+            'Sequence archive not performed: confirm the sequence and lifecycle effects first.',
+          );
+        }
+
+        return records.softDelete(STANDARD_OBJECTS.sequences, sequence_id);
+      }, response_format),
+  );
+
+  server.registerTool(
+    'twenty_restore_sequence',
+    {
+      title: 'Restore an archived outreach sequence',
+      description:
+        'Restores an archived sequence by ID. Previously removed enrollments and completed tasks remain historical and are not restarted. Confirm the sequence before restoring it.',
+      inputSchema: z.object({
+        sequence_id: recordIdSchema,
+        confirm: z.boolean().describe(CONFIRMATION_DESCRIPTION),
+        response_format: responseFormatSchema,
+      }),
+      outputSchema: TOOL_OUTPUT_SCHEMA,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+      },
+    },
+    async ({ sequence_id, confirm, response_format }) =>
+      runTool(async () => {
+        if (!confirm) {
+          throw new Error(
+            'Sequence restore not performed: confirm the archived sequence first.',
+          );
+        }
+
+        return records.restore(STANDARD_OBJECTS.sequences, sequence_id);
+      }, response_format),
+  );
+
+  if (dependencies.enableAdvanced) {
+    server.registerTool(
+      'twenty_destroy_sequence',
+      {
+        title: 'Permanently destroy an archived outreach sequence',
+        description:
+          'Permanently and irreversibly destroys an archived sequence and its retained graph/history according to Twenty cascade rules. Archive first and require exact confirmation.',
+        inputSchema: z.object({
+          sequence_id: recordIdSchema,
+          confirm: z.literal(true).describe(CONFIRMATION_DESCRIPTION),
+          response_format: responseFormatSchema,
+        }),
+        outputSchema: TOOL_OUTPUT_SCHEMA,
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: true,
+          idempotentHint: false,
+        },
+      },
+      async ({ sequence_id, response_format }) =>
+        runTool(
+          () => records.destroy(STANDARD_OBJECTS.sequences, sequence_id),
+          response_format,
+        ),
+    );
+  }
+
+  server.registerTool(
     'twenty_add_sequence_step',
     {
       title: 'Add an outreach sequence step',
       description:
-        'Adds any current sequence step: email, delay, task, LinkedIn action, condition, or phone enrichment. Put an action in a Yes/No lane with settings.branch={conditionStepId,outcome}. Action-capable steps accept AUTOMATED or MANUAL execution. The sequence must not be active.',
+        'Adds any current sequence step: email, delay, task, LinkedIn action, condition, or phone enrichment. Put an action in a Yes/No lane with settings.branch={conditionStepId,outcome}. Action-capable steps accept AUTOMATED or MANUAL execution. Omitted position appends after the current global maximum. The sequence must not be active.',
       inputSchema: z.object({
         sequence_id: recordIdSchema,
         name: z.string().nullable().optional(),
@@ -1167,10 +2097,15 @@ export const registerSequenceTools = (
           sequenceId: sequence_id,
         });
 
+        if (position === undefined) {
+          await assertAtomicStepAppendSupported(dependencies.client);
+        }
+
         return records.create({
           object: STANDARD_OBJECTS.sequenceSteps,
           data: stepData({
             input: step,
+            atomicAppend: position === undefined,
             sequenceId: sequence_id,
             name,
             position,
@@ -1184,25 +2119,38 @@ export const registerSequenceTools = (
     {
       title: 'Update an outreach sequence step',
       description:
-        'Updates the type/settings/name of a step. Omitted settings.branch preserves its current lane; null moves it to the root flow. The containing sequence must not be active.',
-      inputSchema: z.object({
-        step_id: recordIdSchema,
-        name: z.string().nullable().optional(),
-        step: stepInputSchema,
-        response_format: responseFormatSchema,
-      }),
+        'Patches the type/settings/name of a step while preserving every omitted setting. Omitted settings.branch preserves its current lane; null moves it to the root flow. Pass variants=null to remove an email A/B test. The containing sequence must not be active.',
+      inputSchema: z
+        .object({
+          step_id: recordIdSchema,
+          name: z.string().nullable().optional(),
+          step: stepUpdateInputSchema.optional(),
+          response_format: responseFormatSchema,
+        })
+        .refine(
+          ({ name, step }) => name !== undefined || step !== undefined,
+          'Provide name and/or step.',
+        ),
       outputSchema: TOOL_OUTPUT_SCHEMA,
       annotations: { readOnlyHint: false, idempotentHint: false },
     },
     async ({ step_id, name, step, response_format }) =>
       runTool(async () => {
+        if (step === undefined) {
+          return records.update({
+            object: STANDARD_OBJECTS.sequenceSteps,
+            id: step_id,
+            data: { name },
+          });
+        }
+
+        await assertAtomicSequencePatchSupported(dependencies.client);
+
         const currentStep = await records.get({
           object: STANDARD_OBJECTS.sequenceSteps,
           id: step_id,
         });
-        const input = stepInputSchema.parse(
-          withPreservedStepSettings({ currentStep, input: step }),
-        );
+        const input = withPreservedStepSettings({ currentStep, input: step });
 
         await assertBranchTarget({
           branch: input.settings.branch,
@@ -1213,7 +2161,7 @@ export const registerSequenceTools = (
         return records.update({
           object: STANDARD_OBJECTS.sequenceSteps,
           id: step_id,
-          data: stepData({ input, name }),
+          data: stepPatchData({ currentStep, input: step, name }),
         });
       }, response_format),
   );
@@ -1259,7 +2207,7 @@ export const registerSequenceTools = (
       annotations: {
         readOnlyHint: false,
         destructiveHint: true,
-        idempotentHint: true,
+        idempotentHint: false,
       },
     },
     async ({ step_id, confirm, response_format }) =>
@@ -1353,7 +2301,14 @@ export const registerSequenceTools = (
       description:
         'Enrolls up to 100 people and reports success/failure per person. Confirm the complete recipient set first.',
       inputSchema: z.object({
-        person_ids: z.array(recordIdSchema).min(1).max(100),
+        person_ids: z
+          .array(recordIdSchema)
+          .min(1)
+          .max(100)
+          .refine(
+            (personIds) => new Set(personIds).size === personIds.length,
+            'person_ids cannot contain duplicates.',
+          ),
         sequence_id: recordIdSchema,
         confirm: z.boolean().describe(CONFIRMATION_DESCRIPTION),
         response_format: responseFormatSchema,
@@ -1417,12 +2372,23 @@ export const registerSequenceTools = (
         status: z.enum(SEQUENCE_ENROLLMENT_STATUSES).optional(),
         limit: listLimitSchema,
         depth: depthSchema,
+        starting_after: z.string().optional(),
+        ending_before: z.string().optional(),
         response_format: responseFormatSchema,
       }),
       outputSchema: TOOL_OUTPUT_SCHEMA,
       annotations: { readOnlyHint: true, idempotentHint: true },
     },
-    async ({ sequence_id, person_id, status, limit, depth, response_format }) =>
+    async ({
+      sequence_id,
+      person_id,
+      status,
+      limit,
+      depth,
+      starting_after,
+      ending_before,
+      response_format,
+    }) =>
       runTool(
         () =>
           records.list({
@@ -1440,6 +2406,8 @@ export const registerSequenceTools = (
             ]),
             limit,
             depth,
+            startingAfter: starting_after,
+            endingBefore: ending_before,
           }),
         response_format,
       ),
@@ -1460,7 +2428,7 @@ export const registerSequenceTools = (
       annotations: {
         readOnlyHint: false,
         destructiveHint: true,
-        idempotentHint: true,
+        idempotentHint: false,
       },
     },
     async ({ enrollment_id, confirm, response_format }) =>
@@ -1494,7 +2462,7 @@ export const registerSequenceTools = (
       annotations: {
         readOnlyHint: false,
         destructiveHint: true,
-        idempotentHint: true,
+        idempotentHint: false,
         openWorldHint: true,
       },
     },
@@ -1532,7 +2500,7 @@ export const registerSequenceTools = (
       annotations: {
         readOnlyHint: false,
         destructiveHint: true,
-        idempotentHint: true,
+        idempotentHint: false,
       },
     },
     async ({ enrollment_id, confirm, response_format }) =>
@@ -1566,7 +2534,7 @@ export const registerSequenceTools = (
     },
     async ({ sequence_id, response_format }) =>
       runTool(async () => {
-        const [sequence, enrollmentGroups, result] = await Promise.all([
+        const [sequence, enrollmentGroups, analytics] = await Promise.all([
           records.get({
             object: STANDARD_OBJECTS.sequences,
             id: sequence_id,
@@ -1574,22 +2542,20 @@ export const registerSequenceTools = (
           records.groupBy({
             object: STANDARD_OBJECTS.sequenceEnrollments,
             groupBy: [{ status: true }],
-            aggregate: ['countId'],
+            aggregate: ['countNotEmptyId'],
             filter: filterCondition('sequenceId', 'eq', sequence_id),
           }),
-          dependencies.client.graphql<{
-            sequenceAnalytics: unknown;
-          }>(
-            SEQUENCE_ANALYTICS_QUERY,
-            { sequenceId: sequence_id },
-            { endpoint: 'metadata' },
-          ),
+          getSequenceAnalytics({
+            client: dependencies.client,
+            records,
+            sequenceId: sequence_id,
+          }),
         ]);
 
         return {
           sequence,
           enrollments_by_status: enrollmentGroups,
-          analytics: result.sequenceAnalytics,
+          analytics,
         };
       }, response_format),
   );
@@ -1602,11 +2568,16 @@ export const sequencesToolsTesting = {
   getSequenceStepStorageType,
   isReadySequenceEmailSenderAccount,
   isSequenceSenderAccount,
+  mergeSequenceUpdateData,
   normalizedStepSettings,
+  sequenceCapabilities: SEQUENCE_CAPABILITIES,
+  sequenceSettingsPatchSchema,
   sequenceSettingsSchema,
   sequenceStepPositionSchema,
   stepData,
+  stepPatchData,
   stepInputSchema,
+  stepUpdateInputSchema,
   withPreservedStepBranch,
   withPreservedStepSettings,
 };

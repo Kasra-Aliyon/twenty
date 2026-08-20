@@ -4,7 +4,7 @@ A standalone Model Context Protocol server for Twenty CRM. It gives local coding
 agents a metadata-aware interface to standard objects, custom objects, and common
 CRM workflows without coupling the MCP process to the Twenty server runtime.
 
-The server exposes 113 tools by default and four additional tools when advanced
+The server exposes 126 tools by default and five additional tools when advanced
 mode is enabled. It uses stdio by default and also supports stateless Streamable
 HTTP.
 
@@ -186,7 +186,7 @@ default_tools_approval_mode = "writes"
 | Opportunities        | `twenty_find_opportunities`, `twenty_set_opportunity_stage`, `twenty_get_pipeline`                                                                                                                                                                                                          |
 | Work and activity    | `twenty_create_task`, `twenty_complete_task`, `twenty_create_note`, `twenty_attach_task`, `twenty_attach_note`, `twenty_list_activities`                                                                                                                                                    |
 | Lists                | `twenty_list_lists`, `twenty_create_list`, `twenty_add_record_to_list`, `twenty_remove_record_from_list`, `twenty_create_folder`                                                                                                                                                            |
-| Sequences            | `twenty_get_sequence_capabilities`, `twenty_create_sequence`, `twenty_list_sequence_steps`, `twenty_add_sequence_step`, `twenty_set_sequence_status`, `twenty_enroll_person_in_sequence`, `twenty_mark_enrollment_replied`, `twenty_skip_enrollment_to_next_step`, `twenty_stop_enrollment` |
+| Sequences            | `twenty_get_sequence_capabilities`, `twenty_validate_sequence`, `twenty_create_sequence`, `twenty_list_sequence_steps`, `twenty_add_sequence_step`, `twenty_set_sequence_status`, `twenty_enroll_person_in_sequence`, `twenty_mark_enrollment_replied`, `twenty_skip_enrollment_to_next_step`, `twenty_stop_enrollment` |
 | Email and campaigns  | `twenty_list_connected_accounts`, `twenty_send_email`, `twenty_reply_to_email`, `twenty_create_email_draft`, `twenty_send_email_draft`, `twenty_preview_email_campaign`, `twenty_send_email_campaign`                                                                                       |
 | Dashboards           | `twenty_list_dashboards`, `twenty_get_dashboard`, `twenty_create_dashboard`, `twenty_duplicate_dashboard`, `twenty_add_dashboard_tab`, `twenty_add_dashboard_widget`, `twenty_update_dashboard_widget`                                                                                      |
 | Saved views          | `twenty_list_views`, `twenty_create_view`, `twenty_update_view`, `twenty_create_view_component`, `twenty_update_view_component`, `twenty_resolve_view_query`                                                                                                                                |
@@ -260,11 +260,30 @@ lane with:
 
 Both lanes merge into the next root step. Deleting a condition through
 `twenty_delete_sequence_step` also soft-deletes its branch descendants.
+Conditions are point-in-time checks rather than waits. Add a delay before an
+invite-accepted or message-opened condition when the external event needs time
+to occur. Nested conditions are not supported by the current UI/MCP builder.
+
+Sequence and step updates use patch semantics: omitted settings are preserved.
+When a new step omits `position`, it is appended after the current global
+maximum. `settings.senderConnectedAccountIds` is the canonical sender pool;
+the compatibility sender field is mirrored automatically.
+
+Before activation, call `twenty_validate_sequence`. It runs the same server
+feature-flag and activation-invariant checks as the activation path without
+changing status, returning a feature-flag blocker, when present, and the first
+activation-invariant blocker in `errors`. Its non-blocking `warnings`
+flag `ACCEPTED_LINKEDIN_INVITE` immediately after a connection request and
+`OPENED_LINKEDIN_MESSAGE` immediately after a LinkedIn message; add a delay when
+those external events need time to occur.
 
 ## Safety behavior
 
 - `twenty_delete_record` always sends `soft_delete=true`; restore it with
   `twenty_restore_record`.
+- Generic record mutations are disabled for sequences, sequence steps, and
+  sequence enrollments. Use the dedicated sequence tools so their schemas,
+  lifecycle handling, and confirmations cannot be bypassed.
 - Permanent `twenty_destroy_record` is advanced-only and requires the literal
   `confirm=true`.
 - Soft deletion, list removal, step deletion, real merges, batch writes, bulk
@@ -278,13 +297,20 @@ Both lanes merge into the next root step. Deleting a condition through
   send.
 - Merge defaults to `dry_run=true`.
 - LinkedIn actions are queued asynchronously; a browser runner performs them.
-- A sequence needs at least one step before activation. A sender is required
-  only when an automated email step exists.
+- A sequence needs at least one step and one active sending day before
+  activation. A sender is required for automated email, every LinkedIn action,
+  and sender-dependent LinkedIn conditions. Only automated email requires an
+  authenticated mailbox with active inbox sync.
 - Sequence settings and steps cannot be changed while active. Pause first.
 - Marking an enrollment replied, skipping it to the next step, and removing it
   require confirmation; skipping can accelerate external outreach.
 - Twenty has no paused enrollment state. `twenty_stop_enrollment` preserves
   history by transitioning a pending or active enrollment to `REMOVED`.
+- Twenty has no one-shot activation date. To start tomorrow, activate tomorrow
+  or schedule that MCP call externally.
+- Archive/restore/destroy use the dedicated sequence lifecycle tools. Archiving
+  removes open enrollments, completes their open tasks, and cancels scheduled
+  LinkedIn actions; already-claimed external work may still finish.
 
 ## Intentional limitations
 

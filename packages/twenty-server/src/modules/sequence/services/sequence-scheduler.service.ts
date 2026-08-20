@@ -1796,6 +1796,10 @@ export class SequenceSchedulerService {
         slot: nextAvailableAt,
       });
 
+      if (!allocation.allocated) {
+        continue;
+      }
+
       if (allocation.wasRequestedSlotUsed) {
         nextAvailableAt = new Date(
           allocation.effectiveSlot.getTime() + staggerMilliseconds,
@@ -1819,6 +1823,10 @@ export class SequenceSchedulerService {
         slot: availableSlot,
       });
 
+      if (!allocation.allocated) {
+        continue;
+      }
+
       futureScheduledSlots.push(allocation.effectiveSlot);
 
       if (allocation.wasRequestedSlotUsed) {
@@ -1841,7 +1849,11 @@ export class SequenceSchedulerService {
     enrollmentRepository: WorkspaceRepository<SequenceEnrollmentWorkspaceEntity>;
     now: Date;
     slot: Date;
-  }): Promise<{ effectiveSlot: Date; wasRequestedSlotUsed: boolean }> {
+  }): Promise<{
+    allocated: boolean;
+    effectiveSlot: Date;
+    wasRequestedSlotUsed: boolean;
+  }> {
     const wasRequestedSlotUsed = isWithinSendingWindow(slot, dueEmail.settings);
     const effectiveSlot = wasRequestedSlotUsed
       ? slot
@@ -1864,7 +1876,7 @@ export class SequenceSchedulerService {
     );
 
     if (authorizationResult.affected !== 1) {
-      return { effectiveSlot, wasRequestedSlotUsed };
+      return { allocated: false, effectiveSlot, wasRequestedSlotUsed };
     }
 
     if (
@@ -1876,10 +1888,10 @@ export class SequenceSchedulerService {
         enrollmentId: dueEmail.enrollment.id,
       });
 
-      return { effectiveSlot, wasRequestedSlotUsed };
+      return { allocated: true, effectiveSlot, wasRequestedSlotUsed };
     }
 
-    return { effectiveSlot, wasRequestedSlotUsed };
+    return { allocated: true, effectiveSlot, wasRequestedSlotUsed };
   }
 
   private groupStepsBySequenceId(

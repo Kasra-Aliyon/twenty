@@ -12,8 +12,14 @@ import { type GlobalWorkspaceOrmManager } from 'src/engine/twenty-orm/global-wor
 import { LinkedinActionWorkspaceEntity } from 'src/modules/linkedin/standard-objects/linkedin-action.workspace-entity';
 import { SequenceInvariantService } from 'src/modules/sequence/query-hooks/sequence-invariant.service';
 import { type SequenceLifecycleService } from 'src/modules/sequence/query-hooks/sequence-lifecycle.service';
-import { SequenceMutationSerializationService } from 'src/modules/sequence/query-hooks/sequence-mutation-serialization.service';
 import {
+  SEQUENCE_SETTINGS_ATOMIC_PATCH_MARKER,
+  SEQUENCE_STEP_ATOMIC_APPEND_MARKER,
+  SEQUENCE_STEP_SETTINGS_PATCH_BASE_TYPE,
+  SequenceMutationSerializationService,
+} from 'src/modules/sequence/query-hooks/sequence-mutation-serialization.service';
+import {
+  SequenceCreateOnePreQueryHook,
   SequenceDeleteOnePreQueryHook,
   SequenceRestoreOnePreQueryHook,
   SequenceUpdateOnePreQueryHook,
@@ -98,10 +104,12 @@ describe('SequenceMutationSerializationService', () => {
   } as SequenceStepWorkspaceEntity;
 
   let activeDays: number[];
+  let dailyStarts: number;
   let deletedAt: Date | null;
   let sequenceStatus: (typeof SEQUENCE_STATUSES)[keyof typeof SEQUENCE_STATUSES];
   let sequenceSteps: SequenceStepWorkspaceEntity[];
   let senderConnectedAccountId: string | null;
+  let stopOnReply: boolean;
   let enrollment: SequenceEnrollmentWorkspaceEntity;
   let linkedinActionStatus:
     | (typeof LINKEDIN_ACTION_STATUSES)[keyof typeof LINKEDIN_ACTION_STATUSES]
@@ -127,10 +135,12 @@ describe('SequenceMutationSerializationService', () => {
 
   beforeEach(() => {
     activeDays = [...DEFAULT_SEQUENCE_SETTINGS.activeDays];
+    dailyStarts = DEFAULT_SEQUENCE_SETTINGS.dailyStarts;
     deletedAt = null;
     sequenceStatus = SEQUENCE_STATUSES.PAUSED;
     sequenceSteps = [firstStep];
     senderConnectedAccountId = 'old-sender-id';
+    stopOnReply = DEFAULT_SEQUENCE_SETTINGS.stopOnReply;
     enrollment = {
       id: 'enrollment-id',
       sequenceId,
@@ -145,34 +155,41 @@ describe('SequenceMutationSerializationService', () => {
     onUnlockedEnrollmentRead = undefined;
     sequenceRowMutex = new SequenceRowMutex();
 
-    const sequenceRepository = {
-      find: jest.fn(
-        async (
-          _options: unknown,
-          manager?: TestTransactionManager,
-        ): Promise<SequenceWorkspaceEntity[]> => {
-          if (manager) {
-            await sequenceRowMutex.acquire(manager.transactionId);
-          }
+    const getSequences = async (
+      _options: unknown,
+      manager?: TestTransactionManager,
+    ): Promise<SequenceWorkspaceEntity[]> => {
+      if (manager) {
+        await sequenceRowMutex.acquire(manager.transactionId);
+      }
 
-          return [
-            {
-              id: sequenceId,
-              deletedAt,
-              senderConnectedAccountId,
-              settings: {
-                ...DEFAULT_SEQUENCE_SETTINGS,
-                activeDays,
-              },
-              status: sequenceStatus,
-            } as SequenceWorkspaceEntity,
-          ];
-        },
+      return [
+        {
+          id: sequenceId,
+          deletedAt,
+          senderConnectedAccountId,
+          settings: {
+            ...DEFAULT_SEQUENCE_SETTINGS,
+            activeDays,
+            dailyStarts,
+            stopOnReply,
+          },
+          status: sequenceStatus,
+        } as SequenceWorkspaceEntity,
+      ];
+    };
+    const sequenceRepository = {
+      find: jest.fn(getSequences),
+      findOne: jest.fn(
+        async (options, manager?: TestTransactionManager) =>
+          (await getSequences(options, manager))[0] ?? null,
       ),
     };
     const stepRepository = {
       find: jest.fn(async () => sequenceSteps),
-      findOne: jest.fn(async () => firstStep),
+      findOne: jest.fn(async (options) =>
+        sequenceSteps.find(({ id }) => id === options.where.id),
+      ),
     };
     const enrollmentRepository = {
       count: jest.fn().mockResolvedValue(0),
@@ -319,6 +336,208 @@ describe('SequenceMutationSerializationService', () => {
     );
   });
 
+  it('serializes concurrent sparse sequence patches without losing either setting', async () => {
+    const updateHook = new SequenceUpdateOnePreQueryHook(
+      service,
+      {} as SequenceLifecycleService,
+    );
+    const firstPatchApplied = createDeferred();
+    const allowFirstCommit = createDeferred();
+
+    const firstPatch = runInTransaction(async (workspaceEntityManager) => {
+      const payload = await updateHook.executeInTransaction(
+        authContext,
+        'sequence',
+        {
+          id: sequenceId,
+          data: {
+            settings: {
+              dailyStarts: 12,
+              [SEQUENCE_SETTINGS_ATOMIC_PATCH_MARKER]: true,
+            },
+          },
+        } as never,
+        workspaceEntityManager,
+      );
+
+      dailyStarts = payload.data.settings.dailyStarts;
+      stopOnReply = payload.data.settings.stopOnReply;
+      firstPatchApplied.resolve();
+      await allowFirstCommit.promise;
+    });
+
+    await firstPatchApplied.promise;
+
+    const secondPatch = runInTransaction(async (workspaceEntityManager) => {
+      const payload = await updateHook.executeInTransaction(
+        authContext,
+        'sequence',
+        {
+          id: sequenceId,
+          data: {
+            settings: {
+              stopOnReply: false,
+              [SEQUENCE_SETTINGS_ATOMIC_PATCH_MARKER]: true,
+            },
+          },
+        } as never,
+        workspaceEntityManager,
+      );
+
+      dailyStarts = payload.data.settings.dailyStarts;
+      stopOnReply = payload.data.settings.stopOnReply;
+    });
+
+    await sequenceRowMutex.waitUntilContended();
+    allowFirstCommit.resolve();
+
+    await Promise.all([firstPatch, secondPatch]);
+
+    expect(dailyStarts).toBe(12);
+    expect(stopOnReply).toBe(false);
+  });
+
+  it('serializes concurrent same-type step patches without losing either setting', async () => {
+    sequenceSteps = [
+      {
+        ...firstStep,
+        settings: { ...firstStep.settings },
+      },
+    ];
+    const updateHook = new SequenceUpdateOnePreQueryHook(
+      service,
+      {} as SequenceLifecycleService,
+    );
+    const firstPatchApplied = createDeferred();
+    const allowFirstCommit = createDeferred();
+
+    const applyStepPatch = async ({
+      data,
+      workspaceEntityManager,
+    }: {
+      data: Record<string, unknown>;
+      workspaceEntityManager: WorkspaceEntityManager;
+    }) => {
+      const payload = await updateHook.executeInTransaction(
+        authContext,
+        'sequenceStep',
+        { id: firstStep.id, data: { settings: data } } as never,
+        workspaceEntityManager,
+      );
+
+      sequenceSteps[0].settings = payload.data.settings;
+    };
+
+    const firstPatch = runInTransaction(async (workspaceEntityManager) => {
+      await applyStepPatch({
+        data: {
+          type: SEQUENCE_STEP_TYPES.DELAY,
+          days: 2,
+          [SEQUENCE_SETTINGS_ATOMIC_PATCH_MARKER]: true,
+          [SEQUENCE_STEP_SETTINGS_PATCH_BASE_TYPE]: SEQUENCE_STEP_TYPES.DELAY,
+        },
+        workspaceEntityManager,
+      });
+      firstPatchApplied.resolve();
+      await allowFirstCommit.promise;
+    });
+
+    await firstPatchApplied.promise;
+
+    const secondPatch = runInTransaction((workspaceEntityManager) =>
+      applyStepPatch({
+        data: {
+          type: SEQUENCE_STEP_TYPES.DELAY,
+          hours: 3,
+          [SEQUENCE_SETTINGS_ATOMIC_PATCH_MARKER]: true,
+          [SEQUENCE_STEP_SETTINGS_PATCH_BASE_TYPE]: SEQUENCE_STEP_TYPES.DELAY,
+        },
+        workspaceEntityManager,
+      }),
+    );
+
+    await sequenceRowMutex.waitUntilContended();
+    allowFirstCommit.resolve();
+
+    await Promise.all([firstPatch, secondPatch]);
+
+    expect(sequenceSteps[0].settings).toMatchObject({
+      type: SEQUENCE_STEP_TYPES.DELAY,
+      days: 2,
+      hours: 3,
+      minutes: 0,
+    });
+  });
+
+  it('serializes concurrent omitted-position creates into distinct appended positions', async () => {
+    const createHook = new SequenceCreateOnePreQueryHook(
+      invariantService,
+      service,
+    );
+    const firstCreateApplied = createDeferred();
+    const allowFirstCommit = createDeferred();
+
+    const createStep = async ({
+      id,
+      workspaceEntityManager,
+    }: {
+      id: string;
+      workspaceEntityManager: WorkspaceEntityManager;
+    }) => {
+      const payload = await createHook.executeInTransaction(
+        authContext,
+        'sequenceStep',
+        {
+          data: {
+            id,
+            sequenceId,
+            type: SEQUENCE_STEP_TYPES.DELAY,
+            settings: {
+              type: SEQUENCE_STEP_TYPES.DELAY,
+              days: 1,
+              hours: 0,
+              minutes: 0,
+              [SEQUENCE_STEP_ATOMIC_APPEND_MARKER]: true,
+            },
+          },
+        } as never,
+        workspaceEntityManager,
+      );
+
+      sequenceSteps.push(payload.data as SequenceStepWorkspaceEntity);
+    };
+
+    const firstCreate = runInTransaction(async (workspaceEntityManager) => {
+      await createStep({ id: 'first-appended-step', workspaceEntityManager });
+      firstCreateApplied.resolve();
+      await allowFirstCommit.promise;
+    });
+
+    await firstCreateApplied.promise;
+
+    const secondCreate = runInTransaction((workspaceEntityManager) =>
+      createStep({ id: 'second-appended-step', workspaceEntityManager }),
+    );
+
+    await sequenceRowMutex.waitUntilContended();
+    allowFirstCommit.resolve();
+
+    await Promise.all([firstCreate, secondCreate]);
+
+    expect(
+      sequenceSteps
+        .filter(({ id }) => id.includes('appended'))
+        .map(({ position }) => position),
+    ).toEqual([1, 2]);
+    expect(
+      sequenceSteps.some(
+        ({ settings }) =>
+          SEQUENCE_STEP_ATOMIC_APPEND_MARKER in
+          (settings as unknown as Record<string, unknown>),
+      ),
+    ).toBe(false);
+  });
+
   it('rejects a step create that starts after resume has the row lock', async () => {
     const activationValidated = createDeferred();
     const allowActivationWrite = createDeferred();
@@ -340,7 +559,13 @@ describe('SequenceMutationSerializationService', () => {
     const stepMutation = runInTransaction(async (workspaceEntityManager) => {
       await service.serializeStepCreates({
         authContext,
-        sequenceIds: [sequenceId],
+        data: [
+          {
+            ...firstStep,
+            id: 'second-step-id',
+            position: 1,
+          },
+        ],
         workspaceEntityManager,
       });
       sequenceSteps = [

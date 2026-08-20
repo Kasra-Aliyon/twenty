@@ -36,6 +36,11 @@ type IncomingMailboxMessage = {
   threadExternalId: string | null;
 };
 
+type ReplyAttribution = {
+  enrollment: SequenceEnrollmentWorkspaceEntity;
+  shouldStop: boolean;
+};
+
 const REPLY_ATTRIBUTION_MAX_ATTEMPTS = 3;
 
 @Injectable()
@@ -235,36 +240,37 @@ export class SequenceReplyListener {
       const enrollmentIdsToStop = new Set<string>();
 
       for (const enrollment of enrollments) {
-        const attributedEnrollment = await this.attributeReplyWithRetry({
+        const replyAttribution = await this.attributeReplyWithRetry({
           enrollment,
           enrollmentRepository,
           incomingMailboxMessages:
             incomingMailboxMessagesByPersonId.get(enrollment.personId) ?? [],
         });
 
-        if (isDefined(attributedEnrollment)) {
+        if (isDefined(replyAttribution)) {
           if (
-            attributedEnrollment.stopOnReply &&
-            (attributedEnrollment.status ===
+            replyAttribution.shouldStop &&
+            (replyAttribution.enrollment.status ===
               SEQUENCE_ENROLLMENT_STATUSES.PENDING ||
-              attributedEnrollment.status ===
+              replyAttribution.enrollment.status ===
                 SEQUENCE_ENROLLMENT_STATUSES.ACTIVE)
           ) {
-            enrollmentIdsToStop.add(attributedEnrollment.id);
+            enrollmentIdsToStop.add(replyAttribution.enrollment.id);
           }
         }
 
+        const currentEnrollment = replyAttribution?.enrollment ?? enrollment;
+
         if (
-          enrollment.stopOnReply &&
-          (enrollment.status === SEQUENCE_ENROLLMENT_STATUSES.PENDING ||
-            enrollment.status === SEQUENCE_ENROLLMENT_STATUSES.ACTIVE) &&
-          this.hasReplyToEnrollmentSender({
+          (currentEnrollment.status === SEQUENCE_ENROLLMENT_STATUSES.PENDING ||
+            currentEnrollment.status === SEQUENCE_ENROLLMENT_STATUSES.ACTIVE) &&
+          this.hasStopEnabledFreshThreadReplyToEnrollmentSender({
             incomingMailboxMessages:
               incomingMailboxMessagesByPersonId.get(enrollment.personId) ?? [],
-            enrollment,
+            enrollment: currentEnrollment,
           })
         ) {
-          enrollmentIdsToStop.add(enrollment.id);
+          enrollmentIdsToStop.add(currentEnrollment.id);
         }
       }
 
@@ -279,7 +285,6 @@ export class SequenceReplyListener {
             SEQUENCE_ENROLLMENT_STATUSES.PENDING,
             SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
           ]),
-          stopOnReply: true,
         },
         {
           status: SEQUENCE_ENROLLMENT_STATUSES.REPLIED,
@@ -291,7 +296,7 @@ export class SequenceReplyListener {
     }, buildSystemAuthContext(workspaceId));
   }
 
-  private hasReplyToEnrollmentSender({
+  private hasStopEnabledFreshThreadReplyToEnrollmentSender({
     incomingMailboxMessages,
     enrollment,
   }: {
@@ -305,25 +310,51 @@ export class SequenceReplyListener {
     }
 
     return incomingMailboxMessages.some(
-      ({ connectedAccountId, receivedAt }) => {
+      ({ connectedAccountId, receivedAt, threadExternalId }) => {
         if (!isDefined(receivedAt)) {
           return false;
         }
 
-        return sentEmails.some((sentEmail) => {
-          // Successful-send metadata is the durable proof that this enrollment
-          // actually contacted the person. For legacy rows, the enrollment's
-          // pinned sender is still exact; an unassigned sender pool is not.
-          const sentThroughConnectedAccountId =
-            sentEmail.connectedAccountId ?? enrollment.senderConnectedAccountId;
-          const sentAt = Date.parse(sentEmail.sentAt);
+        const eligibleSentEmails = sentEmails
+          .filter((sentEmail) => {
+            // Successful-send metadata is the durable proof that this enrollment
+            // actually contacted the person. For legacy rows, the enrollment's
+            // pinned sender is still exact; an unassigned sender pool is not.
+            const sentThroughConnectedAccountId =
+              sentEmail.connectedAccountId ??
+              enrollment.senderConnectedAccountId;
+            const sentAt = Date.parse(sentEmail.sentAt);
 
-          return (
-            sentThroughConnectedAccountId === connectedAccountId &&
-            !Number.isNaN(sentAt) &&
-            sentAt <= receivedAt.getTime()
+            return (
+              sentThroughConnectedAccountId === connectedAccountId &&
+              !Number.isNaN(sentAt) &&
+              sentAt <= receivedAt.getTime()
+            );
+          })
+          .sort(
+            (left, right) =>
+              this.toTimestamp(right.sentAt) - this.toTimestamp(left.sentAt),
           );
-        });
+
+        if (eligibleSentEmails.length === 0) {
+          return false;
+        }
+
+        // Exact-thread replies are evaluated by buildReplyAttribution. Do not
+        // let the fresh-thread fallback replace that historical email policy
+        // with the policy from a later send through the same mailbox.
+        if (
+          isDefined(threadExternalId) &&
+          eligibleSentEmails.some(
+            (sentEmail) => sentEmail.threadExternalId === threadExternalId,
+          )
+        ) {
+          return false;
+        }
+
+        const latestSentEmail = eligibleSentEmails[0];
+
+        return latestSentEmail.stopOnReply ?? enrollment.stopOnReply;
       },
     );
   }
@@ -336,7 +367,7 @@ export class SequenceReplyListener {
     enrollment: SequenceEnrollmentWorkspaceEntity;
     enrollmentRepository: WorkspaceRepository<SequenceEnrollmentWorkspaceEntity>;
     incomingMailboxMessages: IncomingMailboxMessage[];
-  }): Promise<SequenceEnrollmentWorkspaceEntity | null> {
+  }): Promise<ReplyAttribution | null> {
     let enrollment = initialEnrollment;
 
     for (
@@ -350,6 +381,7 @@ export class SequenceReplyListener {
 
       const sentEmailsByStepId = enrollment.sentEmailsByStepId ?? {};
       const updatedSentEmailsByStepId = this.buildReplyAttribution({
+        enrollmentStopOnReply: enrollment.stopOnReply,
         incomingMailboxMessages,
         senderConnectedAccountId: enrollment.senderConnectedAccountId,
         sentEmailsByStepId,
@@ -364,13 +396,16 @@ export class SequenceReplyListener {
           id: enrollment.id,
           sentEmailsByStepId: Equal(sentEmailsByStepId),
         },
-        { sentEmailsByStepId: updatedSentEmailsByStepId },
+        { sentEmailsByStepId: updatedSentEmailsByStepId.sentEmailsByStepId },
       );
 
       if (updateResult.affected === 1) {
         return {
-          ...enrollment,
-          sentEmailsByStepId: updatedSentEmailsByStepId,
+          enrollment: {
+            ...enrollment,
+            sentEmailsByStepId: updatedSentEmailsByStepId.sentEmailsByStepId,
+          },
+          shouldStop: updatedSentEmailsByStepId.shouldStop,
         };
       }
 
@@ -397,16 +432,22 @@ export class SequenceReplyListener {
   }
 
   private buildReplyAttribution({
+    enrollmentStopOnReply,
     incomingMailboxMessages,
     senderConnectedAccountId,
     sentEmailsByStepId,
   }: {
+    enrollmentStopOnReply: boolean;
     incomingMailboxMessages: IncomingMailboxMessage[];
     senderConnectedAccountId: string | null;
     sentEmailsByStepId: Record<string, SequenceSentEmailMetadata>;
-  }): Record<string, SequenceSentEmailMetadata> | null {
+  }): {
+    sentEmailsByStepId: Record<string, SequenceSentEmailMetadata>;
+    shouldStop: boolean;
+  } | null {
     const updatedSentEmailsByStepId = { ...sentEmailsByStepId };
     let hasAttribution = false;
+    let shouldStop = false;
     const latestIncomingByMailboxThread = new Map<
       string,
       IncomingMailboxMessage
@@ -473,9 +514,12 @@ export class SequenceReplyListener {
         repliedAt: sentEmail.repliedAt ?? receivedAt.toISOString(),
       };
       hasAttribution = true;
+      shouldStop ||= sentEmail.stopOnReply ?? enrollmentStopOnReply;
     }
 
-    return hasAttribution ? updatedSentEmailsByStepId : null;
+    return hasAttribution
+      ? { sentEmailsByStepId: updatedSentEmailsByStepId, shouldStop }
+      : null;
   }
 
   private toTimestamp(value: string): number {

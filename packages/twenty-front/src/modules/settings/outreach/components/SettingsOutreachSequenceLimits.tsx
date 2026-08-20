@@ -122,6 +122,13 @@ export const SettingsOutreachSequenceLimits = () => {
       }
     }
 
+    if (effectiveSettings.activeDays.length === 0) {
+      enqueueErrorSnackBar({
+        message: t`Choose at least one active day.`,
+      });
+      return;
+    }
+
     setIsSaving(true);
 
     try {

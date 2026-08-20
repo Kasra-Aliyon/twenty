@@ -16,6 +16,7 @@ import { TwentyConfigService } from 'src/engine/core-modules/twenty-config/twent
 import { DataloaderModule } from 'src/engine/dataloaders/dataloader.module';
 import { DataloaderService } from 'src/engine/dataloaders/dataloader.service';
 import { MetadataEngineModule } from 'src/engine/metadata-modules/metadata-engine.module';
+import { SequenceModule } from 'src/modules/sequence/sequence.module';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { MetadataEngineModule } from 'src/engine/metadata-modules/metadata-engin
       ],
     }),
     MetadataEngineModule,
+    SequenceModule,
   ],
 })
 export class MetadataGraphQLApiModule {}

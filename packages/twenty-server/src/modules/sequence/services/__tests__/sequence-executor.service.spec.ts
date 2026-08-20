@@ -56,6 +56,7 @@ import {
   SEQUENCE_LINKEDIN_ACTION_PAUSE_RETRY_CONSUMED_ERROR,
   SEQUENCE_LINKEDIN_ACTION_PAUSED_ERROR,
   SEQUENCE_SEND_ATTEMPT_LEASE_MILLISECONDS,
+  SEQUENCE_SENDER_RETRY_DELAY_MILLISECONDS,
 } from 'src/modules/sequence/sequence.constants';
 import { SequenceEnrollmentWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence-enrollment.workspace-entity';
 import { SequenceStepWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence-step.workspace-entity';
@@ -4340,6 +4341,7 @@ describe('SequenceExecutorService', () => {
         currentStepId: 'connection-step-id',
         waitingOn: SEQUENCE_WAITING_ON.DELAY,
       }),
+      expect.anything(),
     );
   });
 
@@ -4385,6 +4387,7 @@ describe('SequenceExecutorService', () => {
         currentStepId: 'connection-step-id',
         waitingOn: SEQUENCE_WAITING_ON.DELAY,
       }),
+      expect.anything(),
     );
   });
 
@@ -4428,6 +4431,60 @@ describe('SequenceExecutorService', () => {
       expect.anything(),
     );
   });
+
+  it.each([
+    LINKEDIN_ACTION_STATUSES.FAILED,
+    LINKEDIN_ACTION_STATUSES.CANCELLED,
+  ])(
+    'allows a replacement after an invitation action becomes %s',
+    async (status) => {
+      const connectionStep = {
+        id: 'replacement-connection-step-id',
+        sequenceId: sequence.id,
+        position: 0,
+        settings: {
+          type: SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST,
+          noteTemplate: '',
+        },
+      } as SequenceStepWorkspaceEntity;
+      const person = {
+        ...buildPerson(),
+        linkedinLink: {
+          primaryLinkUrl: 'https://www.linkedin.com/in/ada-lovelace/',
+          primaryLinkLabel: 'LinkedIn',
+          secondaryLinks: null,
+        },
+      } as PersonWorkspaceEntity;
+      const { service, linkedinActionRepository } = setup({
+        currentEnrollment: {
+          ...enrollment,
+          waitingOn: SEQUENCE_WAITING_ON.DELAY,
+        },
+        person,
+        steps: [connectionStep],
+        latestLinkedinAction: {
+          id: 'terminal-invitation-action-id',
+          type: LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST,
+          status,
+          connectionState: LINKEDIN_CONNECTION_STATES.UNKNOWN,
+          executedAt: null,
+          errorMessage: 'Provider did not confirm the invitation',
+        } as LinkedinActionWorkspaceEntity,
+      });
+
+      await service.process({ workspaceId, enrollmentId });
+
+      expect(linkedinActionRepository.insert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sequenceEnrollmentId: enrollment.id,
+          sequenceStepId: connectionStep.id,
+          status: LINKEDIN_ACTION_STATUSES.SCHEDULED,
+          type: LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST,
+        }),
+        expect.anything(),
+      );
+    },
+  );
 
   it('retries the cancelled LinkedIn step after a paused sequence resumes', async () => {
     const connectionStep = {
@@ -4730,7 +4787,11 @@ describe('SequenceExecutorService', () => {
     expect(reserveSlot).toHaveBeenCalledTimes(1);
   });
 
-  it('consumes a paused retry atomically when person-level scheduling deduplicates it', async () => {
+  it('keeps a paused retry marker while another invitation mutation is in flight', async () => {
+    const now = new Date('2026-08-20T12:00:00.000Z');
+
+    jest.useFakeTimers({ now });
+
     const connectionStep = {
       id: 'connection-step-id',
       sequenceId: sequence.id,
@@ -4762,6 +4823,7 @@ describe('SequenceExecutorService', () => {
       },
       person,
       steps: [connectionStep],
+      sentInvitationCount: 1,
       latestLinkedinAction: {
         id: 'paused-action-id',
         type: LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST,
@@ -4769,39 +4831,38 @@ describe('SequenceExecutorService', () => {
         errorMessage: SEQUENCE_LINKEDIN_ACTION_PAUSED_ERROR,
       } as LinkedinActionWorkspaceEntity,
     });
-    let invitationMutationCount = 0;
+    linkedinActionRepository.count.mockImplementation(
+      async ({ where }, currentTransactionManager) => {
+        if (where?.connectionState === LINKEDIN_CONNECTION_STATES.CONNECTED) {
+          return 0;
+        }
 
-    linkedinActionRepository.count.mockImplementation(async ({ where }) => {
-      if (where?.connectionState === LINKEDIN_CONNECTION_STATES.CONNECTED) {
-        return 0;
-      }
-
-      invitationMutationCount += 1;
-
-      return invitationMutationCount === 1 ? 0 : 1;
-    });
+        return currentTransactionManager === transactionManager ? 1 : 0;
+      },
+    );
 
     await service.process({ workspaceId, enrollmentId });
 
     expect(linkedinActionRepository.insert).not.toHaveBeenCalled();
-    expect(linkedinActionRepository.update).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'paused-action-id' }),
-      {
-        errorMessage: SEQUENCE_LINKEDIN_ACTION_PAUSE_RETRY_CONSUMED_ERROR,
-      },
-      transactionManager,
-    );
+    expect(linkedinActionRepository.update).not.toHaveBeenCalled();
     expect(enrollmentRepository.update).toHaveBeenLastCalledWith(
       expect.objectContaining({
         id: enrollment.id,
         currentStepId: connectionStep.id,
       }),
       expect.objectContaining({
-        currentStepId: connectionStep.id,
         waitingOn: SEQUENCE_WAITING_ON.DELAY,
+        nextActionAt: new Date(
+          now.getTime() + SEQUENCE_SENDER_RETRY_DELAY_MILLISECONDS,
+        ),
       }),
       transactionManager,
     );
+    expect(
+      enrollmentRepository.update.mock.calls[
+        enrollmentRepository.update.mock.calls.length - 1
+      ]?.[1],
+    ).not.toHaveProperty('currentStepId');
   });
 
   it('keeps a new manual invitation outstanding when it was sent after a withdrawal', async () => {
@@ -4847,10 +4908,15 @@ describe('SequenceExecutorService', () => {
         currentStepId: connectionStep.id,
         waitingOn: SEQUENCE_WAITING_ON.DELAY,
       }),
+      expect.anything(),
     );
   });
 
-  it('deduplicates connection requests inside the scheduling transaction', async () => {
+  it('does not advance a connection request behind an in-flight mutation', async () => {
+    const now = new Date('2026-08-20T12:00:00.000Z');
+
+    jest.useFakeTimers({ now });
+
     const connectionStep = {
       id: 'connection-step-id',
       sequenceId: sequence.id,
@@ -4882,19 +4948,18 @@ describe('SequenceExecutorService', () => {
       },
       person,
       steps: [connectionStep],
+      sentInvitationCount: 1,
     });
 
-    let invitationMutationCount = 0;
+    linkedinActionRepository.count.mockImplementation(
+      async ({ where }, currentTransactionManager) => {
+        if (where?.connectionState === LINKEDIN_CONNECTION_STATES.CONNECTED) {
+          return 0;
+        }
 
-    linkedinActionRepository.count.mockImplementation(async ({ where }) => {
-      if (where?.connectionState === LINKEDIN_CONNECTION_STATES.CONNECTED) {
-        return 0;
-      }
-
-      invitationMutationCount += 1;
-
-      return invitationMutationCount === 1 ? 0 : 1;
-    });
+        return currentTransactionManager === transactionManager ? 1 : 0;
+      },
+    );
 
     await service.process({ workspaceId, enrollmentId });
 
@@ -4908,16 +4973,30 @@ describe('SequenceExecutorService', () => {
     expect(linkedinActionRepository.insert).not.toHaveBeenCalled();
     expect(reserveSlot).not.toHaveBeenCalled();
     expect(enrollmentRepository.update).toHaveBeenLastCalledWith(
-      expect.anything(),
       expect.objectContaining({
-        currentStepId: connectionStep.id,
+        id: enrollment.id,
+        currentStepPosition: enrollment.currentStepPosition,
+      }),
+      expect.objectContaining({
         waitingOn: SEQUENCE_WAITING_ON.DELAY,
+        nextActionAt: new Date(
+          now.getTime() + SEQUENCE_SENDER_RETRY_DELAY_MILLISECONDS,
+        ),
       }),
       transactionManager,
     );
+    expect(
+      enrollmentRepository.update.mock.calls[
+        enrollmentRepository.update.mock.calls.length - 1
+      ]?.[1],
+    ).not.toHaveProperty('currentStepId');
   });
 
-  it('deduplicates a connection request against an in-flight withdrawal under the person lock', async () => {
+  it('waits when an outstanding invitation also has an in-flight withdrawal', async () => {
+    const now = new Date('2026-08-20T12:00:00.000Z');
+
+    jest.useFakeTimers({ now });
+
     const connectionStep = {
       id: 'connection-step-id',
       sequenceId: sequence.id,
@@ -4937,6 +5016,7 @@ describe('SequenceExecutorService', () => {
     } as PersonWorkspaceEntity;
     const {
       service,
+      enrollmentRepository,
       linkedinActionRepository,
       personRepository,
       reserveSlot,
@@ -4948,6 +5028,7 @@ describe('SequenceExecutorService', () => {
       },
       person,
       steps: [connectionStep],
+      sentInvitationCount: 1,
     });
 
     linkedinActionRepository.count.mockImplementation(async ({ where }) => {
@@ -4991,9 +5072,30 @@ describe('SequenceExecutorService', () => {
     );
     expect(linkedinActionRepository.insert).not.toHaveBeenCalled();
     expect(reserveSlot).not.toHaveBeenCalled();
+    expect(enrollmentRepository.update).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        currentStepPosition: enrollment.currentStepPosition,
+      }),
+      expect.objectContaining({
+        waitingOn: SEQUENCE_WAITING_ON.DELAY,
+        nextActionAt: new Date(
+          now.getTime() + SEQUENCE_SENDER_RETRY_DELAY_MILLISECONDS,
+        ),
+      }),
+      transactionManager,
+    );
+    expect(
+      enrollmentRepository.update.mock.calls[
+        enrollmentRepository.update.mock.calls.length - 1
+      ]?.[1],
+    ).not.toHaveProperty('currentStepId');
   });
 
   it('deduplicates a withdrawal against an in-flight connection request under the person lock', async () => {
+    const now = new Date('2026-08-20T12:00:00.000Z');
+
+    jest.useFakeTimers({ now });
+
     const withdrawStep = {
       id: 'withdraw-step-id',
       sequenceId: sequence.id,
@@ -5014,6 +5116,7 @@ describe('SequenceExecutorService', () => {
     } as PersonWorkspaceEntity;
     const {
       service,
+      enrollmentRepository,
       linkedinActionRepository,
       personRepository,
       reserveSlot,
@@ -5072,6 +5175,23 @@ describe('SequenceExecutorService', () => {
     );
     expect(linkedinActionRepository.insert).not.toHaveBeenCalled();
     expect(reserveSlot).not.toHaveBeenCalled();
+    expect(enrollmentRepository.update).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        currentStepPosition: enrollment.currentStepPosition,
+      }),
+      expect.objectContaining({
+        waitingOn: SEQUENCE_WAITING_ON.DELAY,
+        nextActionAt: new Date(
+          now.getTime() + SEQUENCE_SENDER_RETRY_DELAY_MILLISECONDS,
+        ),
+      }),
+      transactionManager,
+    );
+    expect(
+      enrollmentRepository.update.mock.calls[
+        enrollmentRepository.update.mock.calls.length - 1
+      ]?.[1],
+    ).not.toHaveProperty('currentStepId');
   });
 
   it('skips a person whose synced connection state is connected', async () => {
@@ -5194,6 +5314,7 @@ describe('SequenceExecutorService', () => {
         currentStepId: withdrawStep.id,
         waitingOn: SEQUENCE_WAITING_ON.DELAY,
       }),
+      expect.anything(),
     );
   });
 

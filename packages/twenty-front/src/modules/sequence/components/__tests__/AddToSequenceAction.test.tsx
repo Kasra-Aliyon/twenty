@@ -1,5 +1,9 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { type ReactNode } from 'react';
+import {
+  type SequenceStatus,
+  type SequenceStepSettings,
+} from 'twenty-shared/types';
 
 import { AddToSequenceAction } from '@/sequence/components/AddToSequenceAction';
 
@@ -15,7 +19,19 @@ let mockCurrentCommandMenuContext = {
   isSelectAll: true,
   numberOfSelectedRecords: 2,
 };
-let mockSequences = [
+type MockSequence = {
+  id: string;
+  name: string;
+  status: SequenceStatus;
+  senderConnectedAccountId: string | null;
+  settings: {
+    stopOnReply: boolean;
+    senderConnectedAccountIds: string[];
+  };
+  steps: Array<{ settings: SequenceStepSettings }>;
+};
+
+let mockSequences: MockSequence[] = [
   {
     id: 'sequence-id',
     name: 'First sequence',
@@ -25,6 +41,7 @@ let mockSequences = [
       stopOnReply: true,
       senderConnectedAccountIds: ['sender-id'],
     },
+    steps: [],
   },
 ];
 
@@ -206,6 +223,7 @@ describe('AddToSequenceAction', () => {
           stopOnReply: true,
           senderConnectedAccountIds: ['sender-id'],
         },
+        steps: [],
       },
     ];
     mockFetchAllTargetedPeople.mockResolvedValue([
@@ -313,6 +331,7 @@ describe('AddToSequenceAction', () => {
           stopOnReply: true,
           senderConnectedAccountIds: ['pooled-sender-id'],
         },
+        steps: [],
       },
     ];
 
@@ -331,5 +350,85 @@ describe('AddToSequenceAction', () => {
         ],
       });
     });
+  });
+
+  it('allows enrollment in a senderless sequence whose steps do not need a sender', async () => {
+    mockSequences = [
+      {
+        id: 'sequence-id',
+        name: 'First sequence',
+        status: 'ACTIVE',
+        senderConnectedAccountId: null,
+        settings: {
+          stopOnReply: true,
+          senderConnectedAccountIds: [],
+        },
+        steps: [
+          {
+            settings: {
+              type: 'DELAY',
+              days: 1,
+              hours: 0,
+              minutes: 0,
+            },
+          },
+          {
+            settings: {
+              type: 'CREATE_TASK',
+              taskType: 'TODO',
+              titleTemplate: 'Follow up',
+              notesTemplate: '',
+              priority: 'MEDIUM',
+              assigneeWorkspaceMemberId: null,
+              continueMode: 'ON_DONE',
+              deadlineDays: null,
+            },
+          },
+          {
+            settings: {
+              type: 'CONDITION',
+              condition: 'HAS_EMAIL_ADDRESS',
+            },
+          },
+        ],
+      },
+    ];
+
+    render(<AddToSequenceAction objectNameSingular="person" />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'First sequence' }));
+
+    await waitFor(() => {
+      expect(mockBatchCreateManyRecords).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('keeps a senderless sequence disabled when one of its steps needs a sender', () => {
+    mockSequences = [
+      {
+        id: 'sequence-id',
+        name: 'First sequence',
+        status: 'DRAFT',
+        senderConnectedAccountId: null,
+        settings: {
+          stopOnReply: true,
+          senderConnectedAccountIds: [],
+        },
+        steps: [
+          {
+            settings: {
+              type: 'CONDITION',
+              condition: 'ACCEPTED_LINKEDIN_INVITE',
+            },
+          },
+        ],
+      },
+    ];
+
+    render(<AddToSequenceAction objectNameSingular="person" />);
+
+    expect(
+      screen.getByRole('button', { name: 'First sequence' }),
+    ).toBeDisabled();
   });
 });

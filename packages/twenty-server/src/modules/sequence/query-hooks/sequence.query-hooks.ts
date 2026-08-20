@@ -99,13 +99,14 @@ export class SequenceCreateOnePreQueryHook implements WorkspacePreQueryHookInsta
 
     const data = payload.data as Partial<SequenceStepWorkspaceEntity>;
 
-    await this.mutationSerializationService.serializeStepCreates({
-      authContext,
-      sequenceIds: [data.sequenceId],
-      workspaceEntityManager,
-    });
+    const [serializedData] =
+      await this.mutationSerializationService.serializeStepCreates({
+        authContext,
+        data: [data],
+        workspaceEntityManager,
+      });
 
-    return payload;
+    return { ...payload, data: serializedData };
   }
 }
 
@@ -170,13 +171,14 @@ export class SequenceCreateManyPreQueryHook implements WorkspacePreQueryHookInst
 
     const data = payload.data as Partial<SequenceStepWorkspaceEntity>[];
 
-    await this.mutationSerializationService.serializeStepCreates({
-      authContext,
-      sequenceIds: data.map(({ sequenceId }) => sequenceId),
-      workspaceEntityManager,
-    });
+    const serializedData =
+      await this.mutationSerializationService.serializeStepCreates({
+        authContext,
+        data,
+        workspaceEntityManager,
+      });
 
-    return payload;
+    return { ...payload, data: serializedData };
   }
 }
 
@@ -239,19 +241,31 @@ export class SequenceUpdateOnePreQueryHook implements WorkspacePreQueryHookInsta
     }
 
     if (objectName === 'sequenceStep') {
-      await this.mutationSerializationService.serializeStepUpdate({
-        authContext,
-        stepId: payload.id,
-        nextSequenceId: (payload.data as Partial<SequenceStepWorkspaceEntity>)
-          .sequenceId,
-        requestedPosition: (
-          payload.data as Partial<SequenceStepWorkspaceEntity>
-        ).position,
-        requestedSettings: (
-          payload.data as Partial<SequenceStepWorkspaceEntity>
-        ).settings,
-        workspaceEntityManager,
-      });
+      const requestedSettings = (
+        payload.data as Partial<SequenceStepWorkspaceEntity>
+      ).settings;
+      const serializedSettings =
+        await this.mutationSerializationService.serializeStepUpdate({
+          authContext,
+          stepId: payload.id,
+          nextSequenceId: (payload.data as Partial<SequenceStepWorkspaceEntity>)
+            .sequenceId,
+          requestedPosition: (
+            payload.data as Partial<SequenceStepWorkspaceEntity>
+          ).position,
+          requestedSettings,
+          workspaceEntityManager,
+        });
+
+      if (requestedSettings !== undefined) {
+        return {
+          ...payload,
+          data: {
+            ...payload.data,
+            settings: serializedSettings,
+          },
+        };
+      }
     }
 
     return payload;

@@ -14,6 +14,7 @@ export type SequenceSentEmailMetadata = {
   threadExternalId: string;
   sentAt: string;
   connectedAccountId?: string;
+  stopOnReply?: boolean;
   variantId?: string;
   variantName?: string;
   repliedAt?: string;

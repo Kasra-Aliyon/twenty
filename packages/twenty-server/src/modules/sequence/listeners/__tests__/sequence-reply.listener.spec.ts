@@ -320,6 +320,93 @@ describe('SequenceReplyListener', () => {
     expect(stoppedEnrollmentIds).toEqual(['replied-enrollment-id']);
   });
 
+  it('does not stop for a historical email whose own policy disabled stop-on-reply', async () => {
+    const { enrollmentRepository, listener } = setup({
+      enrollments: [
+        {
+          id: 'historical-stop-disabled-enrollment-id',
+          personId: 'incoming-person-id',
+          status: SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
+          stopOnReply: true,
+          sentEmailsByStepId: {
+            'replied-email-step-id': {
+              headerMessageId: 'replied-header-message-id',
+              threadExternalId: 'replied-thread-id',
+              sentAt: '2026-08-15T10:00:00.000Z',
+              stopOnReply: false,
+            },
+            'later-email-step-id': {
+              headerMessageId: 'later-header-message-id',
+              threadExternalId: 'later-thread-id',
+              sentAt: '2026-08-16T10:00:00.000Z',
+              stopOnReply: true,
+            },
+          },
+        },
+      ],
+    });
+
+    await listener.handleMessageParticipantMatched(
+      buildBatchEvent([
+        participant({
+          messageId: 'incoming-message-id',
+          personId: 'incoming-person-id',
+          role: MessageParticipantRole.FROM,
+        }),
+      ]),
+    );
+
+    expect(enrollmentRepository.update).toHaveBeenCalledTimes(1);
+    expect(
+      enrollmentRepository.update.mock.calls[0][1].sentEmailsByStepId[
+        'replied-email-step-id'
+      ].repliedAt,
+    ).toEqual(expect.any(String));
+    expect(enrollmentRepository.update.mock.calls[0][1].status).toBeUndefined();
+  });
+
+  it('stops for a historical email whose own policy enabled stop-on-reply', async () => {
+    const { enrollmentRepository, listener } = setup({
+      enrollments: [
+        {
+          id: 'historical-stop-enabled-enrollment-id',
+          personId: 'incoming-person-id',
+          status: SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
+          stopOnReply: false,
+          sentEmailsByStepId: {
+            'replied-email-step-id': {
+              headerMessageId: 'replied-header-message-id',
+              threadExternalId: 'replied-thread-id',
+              sentAt: '2026-08-15T10:00:00.000Z',
+              stopOnReply: true,
+            },
+            'later-email-step-id': {
+              headerMessageId: 'later-header-message-id',
+              threadExternalId: 'later-thread-id',
+              sentAt: '2026-08-16T10:00:00.000Z',
+              stopOnReply: false,
+            },
+          },
+        },
+      ],
+    });
+
+    await listener.handleMessageParticipantMatched(
+      buildBatchEvent([
+        participant({
+          messageId: 'incoming-message-id',
+          personId: 'incoming-person-id',
+          role: MessageParticipantRole.FROM,
+        }),
+      ]),
+    );
+
+    expect(enrollmentRepository.update).toHaveBeenCalledTimes(2);
+    expect(enrollmentRepository.update.mock.calls[1][1]).toEqual(
+      expect.objectContaining({ status: SEQUENCE_ENROLLMENT_STATUSES.REPLIED }),
+    );
+  });
+
   it('does not attribute a matching thread received through another mailbox', async () => {
     const { enrollmentRepository, listener } = setup({
       enrollments: [
@@ -610,6 +697,48 @@ describe('SequenceReplyListener', () => {
         status: SEQUENCE_ENROLLMENT_STATUSES.REPLIED,
       }),
     );
+  });
+
+  it('uses the latest email policy for a reply received in a fresh thread', async () => {
+    const { enrollmentRepository, listener } = setup({
+      enrollments: [
+        {
+          id: 'fresh-thread-stop-disabled-enrollment-id',
+          personId: 'incoming-person-id',
+          senderConnectedAccountId: 'sender-account-id',
+          status: SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
+          stopOnReply: true,
+          sentEmailsByStepId: {
+            'email-step-id': {
+              headerMessageId: 'sent-header-message-id',
+              threadExternalId: 'original-thread-id',
+              sentAt: '2026-08-15T10:00:00.000Z',
+              connectedAccountId: 'sender-account-id',
+              stopOnReply: false,
+            },
+          },
+        },
+      ],
+      associations: [
+        {
+          messageId: 'incoming-message-id',
+          messageThreadExternalId: 'fresh-thread-id',
+          messageChannelId: 'message-channel-id',
+        },
+      ],
+    });
+
+    await listener.handleMessageParticipantMatched(
+      buildBatchEvent([
+        participant({
+          messageId: 'incoming-message-id',
+          personId: 'incoming-person-id',
+          role: MessageParticipantRole.FROM,
+        }),
+      ]),
+    );
+
+    expect(enrollmentRepository.update).not.toHaveBeenCalled();
   });
 
   it('does not stop an enrollment when a fresh-thread reply arrived in another mailbox', async () => {

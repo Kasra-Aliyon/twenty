@@ -206,8 +206,9 @@ still reach them.
   `completedCount`, `repliedCount`, `failedCount`, `position`; relations `steps`,
   `enrollments`.
   - `settings: SequenceSettings` = `{ activeDays[], windowStart, windowEnd, timezone,
-dailyStarts, staggerMinutes, linkedinDailyActions, linkedinDelayPatternMinutes[],
-stopOnReply }`.
+sendWindowTimezoneMode, dailyStartLimitEnabled, dailyStarts, staggerMinutes,
+linkedinDailyActionLimitEnabled, linkedinDailyActions, linkedinDelayPatternMinutes[],
+stopOnReply, senderConnectedAccountIds[] }`.
 - **sequenceStep** — `name`, `type`, `settings` (discriminated union), `position`,
   `sequence(Id)`. The canonical `settings.type` ∈ `SEND_EMAIL | DELAY | CREATE_TASK |
 SEND_CONNECTION_REQUEST | SEND_LINKEDIN_MESSAGE | WITHDRAW_CONNECTION_REQUEST |
@@ -215,19 +216,21 @@ CONDITION | ENRICH_PHONE_NUMBER`. Every step may include
   `branch: { conditionStepId, outcome: YES | NO }`; action steps may include
   `{ executionMode: AUTOMATED | MANUAL, manualTaskTitle, manualTaskDescription }`.
   Per-type settings:
-  - `SEND_EMAIL`: `{ subject, bodyHtml, threadAsReplyToPreviousEmail, stopOnReply, ...execution }`
+  - `SEND_EMAIL`: `{ subject, bodyHtml, variants?, threadAsReplyToPreviousEmail,
+stopOnReply, ...execution }`
   - `DELAY`: `{ days, hours, minutes, branch? }`
   - `CREATE_TASK`: `{ taskType, titleTemplate, notesTemplate, priority,
 assigneeWorkspaceMemberId, continueMode, deadlineDays, branch? }`
   - `SEND_CONNECTION_REQUEST`: `{ noteTemplate, ...execution }`
   - `SEND_LINKEDIN_MESSAGE`: `{ messageTemplate, ...execution }`
   - `WITHDRAW_CONNECTION_REQUEST`: `{ withdrawAfterDays, withdrawAfterHours, ...execution }`
-  - `CONDITION`: `{ condition, branch? }`; supported conditions cover LinkedIn network/
+  - `CONDITION`: `{ condition, expected?, branch? }`; supported conditions cover LinkedIn network/
     invite/message state and the presence of email, LinkedIn URL, or phone.
   - `ENRICH_PHONE_NUMBER`: `{ ...execution }`; automated execution uses Apollo.
 - **sequenceEnrollment** — `person(Id)`, `sequence(Id)`, `status`
   (`PENDING | ACTIVE | COMPLETED | REPLIED | FAILED | REMOVED`), `currentStepId/Position`,
-  `waitingOn` (`DELAY | EMAIL_SCHEDULED | TASK_DONE | TASK_DEADLINE | LINKEDIN_ACTION`),
+  `waitingOn` (`DELAY | EMAIL_SCHEDULED | TASK_DONE | TASK_DEADLINE | LINKEDIN_ACTION |
+APOLLO_ENRICHMENT_CLAIMED | APOLLO_ENRICHMENT_JOINED | APOLLO_ENRICHMENT`),
   `nextActionAt`, `senderConnectedAccountId`, `stopOnReply`, `startedAt`, `endedAt`,
   `errorMessage`, `lastSendAttempt`.
   - **Enrolling = creating a `sequenceEnrollment`.** `sequence-invariant.service` +
@@ -355,6 +358,8 @@ Notes:
 - `twenty_list_sequences` — name, status, metrics (enrolled/active/completed/replied/failed).
 - `twenty_get_sequence_capabilities` — current settings, step schemas, conditions, branch and
   merge semantics, execution modes, limits, and enrollment controls.
+- `twenty_validate_sequence` — read-only server activation readiness with exact blockers and
+  point-in-time condition timing warnings.
 - `twenty_get_sequence` — sequence + ordered steps + settings + metrics.
 - `twenty_list_sequence_steps` — exact global position and branch placement for all steps.
 - `twenty_create_sequence` — name, `settings` (with sane defaults), senderConnectedAccountId.
@@ -370,7 +375,8 @@ Notes:
   `nextActionAt`, `currentStepPosition`.
 - `twenty_mark_enrollment_replied`, `twenty_skip_enrollment_to_next_step`, and
   `twenty_stop_enrollment` — the supported enrollment controls; confirm each.
-- `twenty_get_sequence_metrics` — roll-up per sequence/step.
+- `twenty_get_sequence_metrics` — roll-up per sequence/step with a paginated REST analytics
+  fallback for servers that do not expose the custom analytics resolver.
 
 ### 4.9 LinkedIn (P1/P2)
 

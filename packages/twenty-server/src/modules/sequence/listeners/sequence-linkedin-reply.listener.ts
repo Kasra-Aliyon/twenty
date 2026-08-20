@@ -393,7 +393,13 @@ export class SequenceLinkedinReplyListener {
       }
 
       await enrollmentRepository.update(
-        { id: In(eligibleEnrollmentIds) },
+        {
+          id: In(eligibleEnrollmentIds),
+          status: In([
+            SEQUENCE_ENROLLMENT_STATUSES.PENDING,
+            SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
+          ]),
+        },
         {
           status: SEQUENCE_ENROLLMENT_STATUSES.REPLIED,
           waitingOn: null,

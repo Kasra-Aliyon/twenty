@@ -32,6 +32,7 @@ import {
 import { SequenceEnrollmentWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence-enrollment.workspace-entity';
 import { SequenceStepWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence-step.workspace-entity';
 import { SequenceWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence.workspace-entity';
+import { reconcileManualLinkedinInvitationActionConflicts } from 'src/modules/sequence/utils/reconcile-manual-linkedin-invitation-action-conflicts.util';
 import { TaskWorkspaceEntity } from 'src/modules/task/standard-objects/task.workspace-entity';
 
 type ManualLinkedinAction = {
@@ -148,9 +149,12 @@ export class SequenceTaskCompletionService {
 
       try {
         const manualLinkedinAction = this.getManualLinkedinAction(step);
+        let actionPersonRepository: WorkspaceRepository<PersonWorkspaceEntity> | null =
+          null;
         let actionInput:
           | (ManualLinkedinAction & {
               connectedAccountId: string;
+              ownerWorkspaceMemberId: string | null;
               person: PersonWorkspaceEntity;
             })
           | null = null;
@@ -176,13 +180,13 @@ export class SequenceTaskCompletionService {
             );
           }
 
-          const personRepository =
+          actionPersonRepository =
             await this.globalWorkspaceOrmManager.getRepository(
               workspaceId,
               PersonWorkspaceEntity,
               { shouldBypassPermissionChecks: true },
             );
-          const person = await personRepository.findOne({
+          const person = await actionPersonRepository.findOne({
             where: { id: enrollment.personId },
           });
 
@@ -192,9 +196,23 @@ export class SequenceTaskCompletionService {
             );
           }
 
+          const ownerWorkspaceMemberId =
+            manualLinkedinAction.type ===
+              LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST ||
+            manualLinkedinAction.type ===
+              LINKEDIN_ACTION_TYPES.WITHDRAW_CONNECTION_REQUEST
+              ? await this.sequenceSenderService.getSenderOwnerWorkspaceMemberIdOrThrow(
+                  {
+                    connectedAccountId: senderConnectedAccountId,
+                    workspaceId,
+                  },
+                )
+              : null;
+
           actionInput = {
             ...manualLinkedinAction,
             connectedAccountId: senderConnectedAccountId,
+            ownerWorkspaceMemberId,
             person,
           };
         }
@@ -206,6 +224,9 @@ export class SequenceTaskCompletionService {
           async (transactionManager) => {
             const workspaceTransactionManager =
               transactionManager as WorkspaceEntityManager;
+            let invitationActionRepository: WorkspaceRepository<LinkedinActionWorkspaceEntity> | null =
+              null;
+            let invitationOwnerWorkspaceMemberId: string | null = null;
 
             // Enrollment mutations use enrollment -> task locking. Keep task
             // completion on the same order so a manual skip cannot deadlock
@@ -251,6 +272,73 @@ export class SequenceTaskCompletionService {
               }
             }
 
+            if (
+              isDefined(actionInput) &&
+              (actionInput.type ===
+                LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST ||
+                actionInput.type ===
+                  LINKEDIN_ACTION_TYPES.WITHDRAW_CONNECTION_REQUEST)
+            ) {
+              // Automated invitation admission takes the same person lock
+              // after its enrollment lock. Manual completion must join that
+              // serialization before either path records an outcome.
+              const lockedPerson = await actionPersonRepository?.findOne(
+                {
+                  where: { id: actionInput.person.id },
+                  select: ['id'],
+                  lock: { mode: 'pessimistic_write' },
+                },
+                workspaceTransactionManager,
+              );
+
+              if (!isDefined(lockedPerson)) {
+                return false;
+              }
+
+              if (!isDefined(actionInput.ownerWorkspaceMemberId)) {
+                return false;
+              }
+
+              invitationActionRepository =
+                await this.globalWorkspaceOrmManager.getRepository(
+                  workspaceId,
+                  LinkedinActionWorkspaceEntity,
+                  { shouldBypassPermissionChecks: true },
+                );
+              const canCompleteInvitationAction =
+                await reconcileManualLinkedinInvitationActionConflicts({
+                  actionRepository: invitationActionRepository,
+                  ownerWorkspaceMemberId: actionInput.ownerWorkspaceMemberId,
+                  personId: actionInput.person.id,
+                  transactionManager: workspaceTransactionManager,
+                });
+
+              if (!canCompleteInvitationAction) {
+                return false;
+              }
+
+              // The runner locks an action before the owner throttle row. Keep
+              // that order here, then revalidate the pre-read owner while the
+              // conflicting actions remain locked until transaction commit.
+              invitationOwnerWorkspaceMemberId =
+                await this.sequenceSenderService.getSenderOwnerWorkspaceMemberIdOrThrow(
+                  {
+                    connectedAccountId: actionInput.connectedAccountId,
+                    workspaceEntityManager: workspaceTransactionManager,
+                    workspaceId,
+                  },
+                );
+
+              if (
+                invitationOwnerWorkspaceMemberId !==
+                actionInput.ownerWorkspaceMemberId
+              ) {
+                throw new Error(
+                  'Sequence sender owner changed during completion',
+                );
+              }
+            }
+
             const updateResult = await enrollmentRepository.update(
               {
                 id: enrollmentId,
@@ -277,19 +365,21 @@ export class SequenceTaskCompletionService {
               // same owner row. Keeping that order serializes manual history
               // against the account-wide daily cap without a lock inversion.
               const ownerWorkspaceMemberId =
-                await this.sequenceSenderService.getSenderOwnerWorkspaceMemberIdOrThrow(
+                invitationOwnerWorkspaceMemberId ??
+                (await this.sequenceSenderService.getSenderOwnerWorkspaceMemberIdOrThrow(
                   {
                     connectedAccountId: actionInput.connectedAccountId,
                     workspaceEntityManager: workspaceTransactionManager,
                     workspaceId,
                   },
-                );
+                ));
               const linkedinActionRepository =
-                await this.globalWorkspaceOrmManager.getRepository(
+                invitationActionRepository ??
+                (await this.globalWorkspaceOrmManager.getRepository(
                   workspaceId,
                   LinkedinActionWorkspaceEntity,
                   { shouldBypassPermissionChecks: true },
-                );
+                ));
               const now = new Date();
 
               await linkedinActionRepository.insert(

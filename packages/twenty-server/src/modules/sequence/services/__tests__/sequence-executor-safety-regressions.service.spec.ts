@@ -706,7 +706,7 @@ describe('SequenceExecutorService safety regressions', () => {
     },
   );
 
-  it('uses the sequence default after an earlier email step overrode stop-on-reply', async () => {
+  it('records the inherited email policy while restoring the sequence-wide reply policy', async () => {
     const inheritedEnrollment = {
       ...baseEnrollment,
       stopOnReply: false,
@@ -724,6 +724,44 @@ describe('SequenceExecutorService safety regressions', () => {
     expect(claimCall?.[1]).toEqual(
       expect.objectContaining({ stopOnReply: true }),
     );
+
+    const sentMetadataCall = enrollmentRepository.update.mock.calls.find(
+      ([, values]) => values.sentEmailsByStepId?.[emailStep.id],
+    );
+
+    expect(sentMetadataCall?.[1].sentEmailsByStepId[emailStep.id]).toEqual(
+      expect.objectContaining({ stopOnReply: true }),
+    );
+  });
+
+  it('keeps an email override out of the sequence-wide reply policy', async () => {
+    const stopDisabledEmailStep = {
+      ...emailStep,
+      settings: {
+        ...emailStep.settings,
+        stopOnReply: false,
+      },
+    } as SequenceStepWorkspaceEntity;
+    const { enrollmentRepository, service } = setup({
+      steps: [stopDisabledEmailStep],
+    });
+
+    await service.process({ workspaceId, enrollmentId });
+
+    const claimCall = enrollmentRepository.update.mock.calls.find(
+      ([, values]) => 'lastSendAttempt' in values && 'stopOnReply' in values,
+    );
+    const sentMetadataCall = enrollmentRepository.update.mock.calls.find(
+      ([, values]) =>
+        values.sentEmailsByStepId?.[stopDisabledEmailStep.id] !== undefined,
+    );
+
+    expect(claimCall?.[1]).toEqual(
+      expect.objectContaining({ stopOnReply: true }),
+    );
+    expect(
+      sentMetadataCall?.[1].sentEmailsByStepId[stopDisabledEmailStep.id],
+    ).toEqual(expect.objectContaining({ stopOnReply: false }));
   });
 
   it('records a delivered checkpoint without rewinding an ACTIVE cursor that already moved', async () => {

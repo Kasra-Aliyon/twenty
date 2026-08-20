@@ -396,7 +396,7 @@ From the terminal:
 codex mcp list
 ```
 
-Inside Codex, run `/mcp` and confirm that `twenty` is connected and exposes 113
+Inside Codex, run `/mcp` and confirm that `twenty` is connected and exposes 126
 tools. Then ask:
 
 ```text
@@ -865,7 +865,10 @@ Call the sequence capabilities tool, then create a draft sequence called July
 Follow-up. First branch on whether the contact has an email. On Yes, add an
 automated email; on No, add a manual task to find the right address. Merge both
 paths into a two-day delay. Do not activate or enroll anyone. Show me the final
-ordered draft, including branch placement and execution modes.
+ordered draft, including branch placement and execution modes. Then call the
+read-only sequence validation tool and show the feature-flag blocker, the first
+activation-invariant blocker, and timing warnings without changing the sequence
+status.
 ```
 
 Outbound example:
@@ -1005,10 +1008,14 @@ intentionally issued `TWENTY_USER_TOKEN`, or leave Apollo enrichment, connected
 accounts, email, drafts, record timelines, and Unibox unavailable.
 API-key-compatible tool families continue working.
 
-### Only 113 tools appear
+### Only 126 tools appear
 
-That is the normal safe configuration. Set `TWENTY_ENABLE_ADVANCED=true` and
-restart the server to expose the four advanced tools.
+That is the normal safe configuration for MCP `0.3.0` and sequence contract
+`2026-08-20.2`. Set `TWENTY_ENABLE_ADVANCED=true` and restart the server to
+expose 131 tools, including permanent-destroy operations. Call
+`twenty_get_sequence_capabilities` and inspect `contract_version` after every
+sequence-schema deployment; a missing or older value means the running MCP was
+not rebuilt/restarted.
 
 ### A change is not reflected
 

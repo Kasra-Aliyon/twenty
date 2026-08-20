@@ -7,6 +7,7 @@ import {
   SEQUENCE_STEP_TYPES,
   SEQUENCE_WAITING_ON,
 } from 'twenty-shared/types';
+import { type FindOperator } from 'typeorm';
 
 import { type WorkspaceEntityManager } from 'src/engine/twenty-orm/entity-manager/workspace-entity-manager';
 import { type GlobalWorkspaceOrmManager } from 'src/engine/twenty-orm/global-workspace-datasource/global-workspace-orm.manager';
@@ -42,10 +43,15 @@ describe('SequenceTaskCompletionService', () => {
     step,
     affected = 1,
     committedTask = { id: 'task-id' },
+    invitationActions = [],
   }: {
     step: SequenceStepWorkspaceEntity | null;
     affected?: number;
     committedTask?: Pick<TaskWorkspaceEntity, 'id'> | null;
+    invitationActions?: Pick<
+      LinkedinActionWorkspaceEntity,
+      'id' | 'status' | 'type'
+    >[];
   }) => {
     const enrollmentRepository = {
       findOne: jest.fn().mockResolvedValue(enrollment),
@@ -58,7 +64,9 @@ describe('SequenceTaskCompletionService', () => {
       findOne: jest.fn().mockResolvedValue(person),
     };
     const linkedinActionRepository = {
+      find: jest.fn().mockResolvedValue(invitationActions),
       insert: jest.fn(),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
     };
     const sequenceRepository = {
       findOne: jest.fn().mockResolvedValue({
@@ -106,6 +114,7 @@ describe('SequenceTaskCompletionService', () => {
       service,
       enrollmentRepository,
       stepRepository,
+      personRepository,
       linkedinActionRepository,
       transactionManager,
       enqueueProcess,
@@ -167,6 +176,251 @@ describe('SequenceTaskCompletionService', () => {
       enrollmentId: enrollment.id,
     });
   });
+
+  it('serializes a manual invitation outcome with automated invitation admission', async () => {
+    const step = {
+      id: 'step-id',
+      sequenceId: enrollment.sequenceId,
+      settings: {
+        type: SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST,
+        executionMode: SEQUENCE_ACTION_EXECUTION_MODES.MANUAL,
+        noteTemplate: '',
+      },
+    } as SequenceStepWorkspaceEntity;
+    const {
+      service,
+      enrollmentRepository,
+      personRepository,
+      linkedinActionRepository,
+      transactionManager,
+    } = setup({ step });
+
+    await service.completeTaskStep({
+      workspaceId,
+      enrollmentId: enrollment.id,
+      stepId: step.id,
+    });
+
+    expect(personRepository.findOne).toHaveBeenLastCalledWith(
+      {
+        where: { id: person.id },
+        select: ['id'],
+        lock: { mode: 'pessimistic_write' },
+      },
+      transactionManager,
+    );
+    expect(personRepository.findOne.mock.invocationCallOrder[1]).toBeLessThan(
+      enrollmentRepository.update.mock.invocationCallOrder[0],
+    );
+    expect(linkedinActionRepository.insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST,
+        status: LINKEDIN_ACTION_STATUSES.COMPLETED,
+        connectionState: LINKEDIN_CONNECTION_STATES.PENDING,
+      }),
+      transactionManager,
+    );
+  });
+
+  it.each([
+    {
+      scheduledActionId: 'scheduled-send-id',
+      scheduledActionType: LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST,
+      manualActionType: LINKEDIN_ACTION_TYPES.WITHDRAW_CONNECTION_REQUEST,
+      manualConnectionState: LINKEDIN_CONNECTION_STATES.WITHDRAWN,
+      manualStepType: SEQUENCE_STEP_TYPES.WITHDRAW_CONNECTION_REQUEST,
+    },
+    {
+      scheduledActionId: 'scheduled-withdraw-id',
+      scheduledActionType: LINKEDIN_ACTION_TYPES.WITHDRAW_CONNECTION_REQUEST,
+      manualActionType: LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST,
+      manualConnectionState: LINKEDIN_CONNECTION_STATES.PENDING,
+      manualStepType: SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST,
+    },
+    {
+      scheduledActionId: 'scheduled-send-id',
+      scheduledActionType: LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST,
+      manualActionType: LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST,
+      manualConnectionState: LINKEDIN_CONNECTION_STATES.PENDING,
+      manualStepType: SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST,
+    },
+    {
+      scheduledActionId: 'scheduled-withdraw-id',
+      scheduledActionType: LINKEDIN_ACTION_TYPES.WITHDRAW_CONNECTION_REQUEST,
+      manualActionType: LINKEDIN_ACTION_TYPES.WITHDRAW_CONNECTION_REQUEST,
+      manualConnectionState: LINKEDIN_CONNECTION_STATES.WITHDRAWN,
+      manualStepType: SEQUENCE_STEP_TYPES.WITHDRAW_CONNECTION_REQUEST,
+    },
+  ])(
+    'cancels an automated $scheduledActionType before recording a completed manual $manualActionType',
+    async ({
+      scheduledActionId,
+      scheduledActionType,
+      manualActionType,
+      manualConnectionState,
+      manualStepType,
+    }) => {
+      const step = {
+        id: 'step-id',
+        sequenceId: enrollment.sequenceId,
+        settings: {
+          type: manualStepType,
+          executionMode: SEQUENCE_ACTION_EXECUTION_MODES.MANUAL,
+          noteTemplate: '',
+        },
+      } as SequenceStepWorkspaceEntity;
+      const {
+        service,
+        linkedinActionRepository,
+        transactionManager,
+        enqueueProcess,
+        getSenderOwnerWorkspaceMemberIdOrThrow,
+      } = setup({
+        step,
+        invitationActions: [
+          {
+            id: scheduledActionId,
+            status: LINKEDIN_ACTION_STATUSES.SCHEDULED,
+            type: scheduledActionType,
+          },
+        ],
+      });
+
+      await service.completeTaskStep({
+        workspaceId,
+        enrollmentId: enrollment.id,
+        stepId: step.id,
+      });
+
+      expect(linkedinActionRepository.find).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            ownerWorkspaceMemberId: 'owner-id',
+            personId: person.id,
+            type: expect.anything(),
+          }),
+          select: ['id', 'status'],
+          order: { id: 'ASC' },
+          lock: { mode: 'pessimistic_write' },
+        }),
+        transactionManager,
+      );
+      const invitationActionTypes = (
+        linkedinActionRepository.find.mock.calls[0][0].where
+          .type as FindOperator<string[]>
+      ).value;
+
+      expect(invitationActionTypes).toEqual([
+        LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST,
+        LINKEDIN_ACTION_TYPES.WITHDRAW_CONNECTION_REQUEST,
+      ]);
+      expect(linkedinActionRepository.update).toHaveBeenCalledWith(
+        {
+          id: scheduledActionId,
+          status: LINKEDIN_ACTION_STATUSES.SCHEDULED,
+        },
+        expect.objectContaining({
+          status: LINKEDIN_ACTION_STATUSES.CANCELLED,
+          claimedAt: null,
+          claimedBy: null,
+          executedAt: null,
+          connectionState: LINKEDIN_CONNECTION_STATES.UNKNOWN,
+          errorMessage: expect.stringContaining('manual'),
+        }),
+        transactionManager,
+      );
+      expect(linkedinActionRepository.insert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: manualActionType,
+          status: LINKEDIN_ACTION_STATUSES.COMPLETED,
+          connectionState: manualConnectionState,
+        }),
+        transactionManager,
+      );
+      expect(
+        linkedinActionRepository.update.mock.invocationCallOrder[0],
+      ).toBeLessThan(
+        linkedinActionRepository.insert.mock.invocationCallOrder[0],
+      );
+      expect(
+        linkedinActionRepository.find.mock.invocationCallOrder[0],
+      ).toBeLessThan(
+        getSenderOwnerWorkspaceMemberIdOrThrow.mock.invocationCallOrder[1],
+      );
+      expect(enqueueProcess).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each([
+    {
+      claimedActionType: LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST,
+      manualStepType: SEQUENCE_STEP_TYPES.WITHDRAW_CONNECTION_REQUEST,
+    },
+    {
+      claimedActionType: LINKEDIN_ACTION_TYPES.WITHDRAW_CONNECTION_REQUEST,
+      manualStepType: SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST,
+    },
+    {
+      claimedActionType: LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST,
+      manualStepType: SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST,
+    },
+    {
+      claimedActionType: LINKEDIN_ACTION_TYPES.WITHDRAW_CONNECTION_REQUEST,
+      manualStepType: SEQUENCE_STEP_TYPES.WITHDRAW_CONNECTION_REQUEST,
+    },
+  ])(
+    'defers manual $manualStepType completion while an automated $claimedActionType is claimed',
+    async ({ claimedActionType, manualStepType }) => {
+      const step = {
+        id: 'step-id',
+        sequenceId: enrollment.sequenceId,
+        settings: {
+          type: manualStepType,
+          executionMode: SEQUENCE_ACTION_EXECUTION_MODES.MANUAL,
+          noteTemplate: '',
+        },
+      } as SequenceStepWorkspaceEntity;
+      const {
+        service,
+        enrollmentRepository,
+        linkedinActionRepository,
+        enqueueProcess,
+      } = setup({
+        step,
+        invitationActions: [
+          {
+            id: 'claimed-action-id',
+            status: LINKEDIN_ACTION_STATUSES.CLAIMED,
+            type: claimedActionType,
+          },
+        ],
+      });
+
+      await service.completeTaskStep({
+        workspaceId,
+        enrollmentId: enrollment.id,
+        stepId: step.id,
+      });
+
+      expect(linkedinActionRepository.find).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ type: expect.anything() }),
+          lock: { mode: 'pessimistic_write' },
+        }),
+        expect.anything(),
+      );
+      const invitationActionTypes = (
+        linkedinActionRepository.find.mock.calls[0][0].where
+          .type as FindOperator<string[]>
+      ).value;
+
+      expect(invitationActionTypes).toContain(claimedActionType);
+      expect(linkedinActionRepository.update).not.toHaveBeenCalled();
+      expect(linkedinActionRepository.insert).not.toHaveBeenCalled();
+      expect(enrollmentRepository.update).not.toHaveBeenCalled();
+      expect(enqueueProcess).not.toHaveBeenCalled();
+    },
+  );
 
   it('advances an ordinary task without inventing a LinkedIn action', async () => {
     const step = {

@@ -12,9 +12,10 @@ const mockUpdateOneRecord = jest.fn();
 const mockEnqueueErrorSnackBar = jest.fn();
 let mockSendWindowTimezoneMode: SequenceSettings['sendWindowTimezoneMode'] =
   SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.RECIPIENT;
+let mockActiveDays = [1, 2, 3, 4, 5];
 
 const mockBuildSettings = (): SequenceSettings => ({
-  activeDays: [1, 2, 3, 4, 5],
+  activeDays: mockActiveDays,
   windowStart: '09:00',
   windowEnd: '17:00',
   timezone: 'Not/A-Timezone',
@@ -101,6 +102,7 @@ describe('SettingsOutreachSequenceLimits', () => {
     jest.clearAllMocks();
     mockUpdateOneRecord.mockResolvedValue({});
     mockSendWindowTimezoneMode = SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.RECIPIENT;
+    mockActiveDays = [1, 2, 3, 4, 5];
   });
 
   it('allows recipient-local mode when the unused fixed timezone is invalid', async () => {
@@ -139,6 +141,21 @@ describe('SettingsOutreachSequenceLimits', () => {
     expect(mockUpdateOneRecord).not.toHaveBeenCalled();
     expect(mockEnqueueErrorSnackBar).toHaveBeenCalledWith({
       message: 'Enter a valid IANA timezone such as Europe/Helsinki.',
+    });
+  });
+
+  it('rejects a schedule without an active day', () => {
+    mockActiveDays = [];
+
+    render(<SettingsOutreachSequenceLimits />);
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Save schedule and limits' }),
+    );
+
+    expect(mockUpdateOneRecord).not.toHaveBeenCalled();
+    expect(mockEnqueueErrorSnackBar).toHaveBeenCalledWith({
+      message: 'Choose at least one active day.',
     });
   });
 });

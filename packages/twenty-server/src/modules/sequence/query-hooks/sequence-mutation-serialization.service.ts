@@ -29,6 +29,36 @@ const OPEN_LINKEDIN_ACTION_STATUSES = [
 ];
 const OPEN_TASK_STATUSES = ['TODO', 'IN_PROGRESS'] as const;
 
+// Dedicated sequence clients can opt into atomic JSON patch semantics while
+// the generic workspace API keeps its existing replacement semantics.
+export const SEQUENCE_SETTINGS_ATOMIC_PATCH_MARKER =
+  '__twentySequenceSettingsAtomicPatch';
+export const SEQUENCE_STEP_SETTINGS_PATCH_BASE_TYPE =
+  '__twentySequenceStepSettingsPatchBaseType';
+export const SEQUENCE_STEP_ATOMIC_APPEND_MARKER =
+  '__twentySequenceStepAtomicAppend';
+
+type UnknownRecord = Record<string, unknown>;
+
+const isRecord = (value: unknown): value is UnknownRecord =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const isAtomicSettingsPatch = (value: unknown): value is UnknownRecord =>
+  isRecord(value) && value[SEQUENCE_SETTINGS_ATOMIC_PATCH_MARKER] === true;
+
+const isAtomicStepAppend = (value: unknown): value is UnknownRecord =>
+  isRecord(value) && value[SEQUENCE_STEP_ATOMIC_APPEND_MARKER] === true;
+
+const withoutAtomicPatchMetadata = (value: UnknownRecord): UnknownRecord => {
+  const patch = { ...value };
+
+  delete patch[SEQUENCE_SETTINGS_ATOMIC_PATCH_MARKER];
+  delete patch[SEQUENCE_STEP_SETTINGS_PATCH_BASE_TYPE];
+  delete patch[SEQUENCE_STEP_ATOMIC_APPEND_MARKER];
+
+  return patch;
+};
+
 const areSequenceStepsInSameBranch = (
   firstStep: SequenceStepWorkspaceEntity,
   secondStep: SequenceStepWorkspaceEntity,
@@ -69,13 +99,28 @@ export class SequenceMutationSerializationService {
       sequenceIds: [sequenceId],
       workspaceEntityManager,
     });
+
+    const serializedData = isAtomicSettingsPatch(data.settings)
+      ? {
+          ...data,
+          settings: {
+            ...(await this.getLockedSequenceSettings({
+              authContext,
+              sequenceId,
+              workspaceEntityManager,
+            })),
+            ...withoutAtomicPatchMetadata(data.settings),
+          },
+        }
+      : data;
+
     await this.invariantService.assertSequenceUpdateAllowed({
       authContext,
       sequenceId,
-      data,
+      data: serializedData,
     });
 
-    return this.invariantService.normalizeSequenceUpdate(data);
+    return this.invariantService.normalizeSequenceUpdate(serializedData);
   }
 
   async serializeSequenceArchive({
@@ -140,13 +185,15 @@ export class SequenceMutationSerializationService {
 
   async serializeStepCreates({
     authContext,
-    sequenceIds,
+    data,
     workspaceEntityManager,
   }: {
     authContext: WorkspaceAuthContext;
-    sequenceIds: (string | undefined)[];
+    data: Partial<SequenceStepWorkspaceEntity>[];
     workspaceEntityManager: WorkspaceEntityManager;
-  }): Promise<void> {
+  }): Promise<Partial<SequenceStepWorkspaceEntity>[]> {
+    const sequenceIds = data.map(({ sequenceId }) => sequenceId);
+
     if (sequenceIds.some((sequenceId) => !isDefined(sequenceId))) {
       this.throwBadRequest('Every sequence step requires a sequence');
     }
@@ -159,6 +206,62 @@ export class SequenceMutationSerializationService {
     await this.invariantService.assertStepCreateAllowed({
       authContext,
       sequenceIds,
+    });
+
+    if (!data.some(({ settings }) => isAtomicStepAppend(settings))) {
+      return data;
+    }
+
+    const stepRepository = await this.globalWorkspaceOrmManager.getRepository(
+      authContext.workspace.id,
+      SequenceStepWorkspaceEntity,
+      { shouldBypassPermissionChecks: true },
+    );
+    const uniqueSequenceIds = [...new Set(sequenceIds.filter(isDefined))];
+    const existingSteps = await stepRepository.find(
+      {
+        where: { sequenceId: In(uniqueSequenceIds) },
+        select: ['sequenceId', 'position'],
+      },
+      workspaceEntityManager,
+    );
+    const maximumPositionBySequenceId = new Map<string, number>();
+
+    for (const step of [...existingSteps, ...data]) {
+      if (
+        !isDefined(step.sequenceId) ||
+        !isDefined(step.position) ||
+        !Number.isFinite(step.position)
+      ) {
+        continue;
+      }
+
+      maximumPositionBySequenceId.set(
+        step.sequenceId,
+        Math.max(
+          maximumPositionBySequenceId.get(step.sequenceId) ?? -1,
+          step.position,
+        ),
+      );
+    }
+
+    return data.map((step) => {
+      if (!isAtomicStepAppend(step.settings) || !isDefined(step.sequenceId)) {
+        return step;
+      }
+
+      const position =
+        (maximumPositionBySequenceId.get(step.sequenceId) ?? -1) + 1;
+
+      maximumPositionBySequenceId.set(step.sequenceId, position);
+
+      return {
+        ...step,
+        position,
+        settings: withoutAtomicPatchMetadata(step.settings) as
+          | SequenceStepWorkspaceEntity['settings']
+          | undefined,
+      };
     });
   }
 
@@ -258,7 +361,7 @@ export class SequenceMutationSerializationService {
     requestedSettings?: SequenceStepWorkspaceEntity['settings'] | null;
     stepId: string;
     workspaceEntityManager: WorkspaceEntityManager;
-  }): Promise<void> {
+  }): Promise<SequenceStepWorkspaceEntity['settings'] | null | undefined> {
     if (
       requestedPosition !== undefined &&
       (typeof requestedPosition !== 'number' ||
@@ -291,9 +394,18 @@ export class SequenceMutationSerializationService {
       nextSequenceId,
     });
 
+    const serializedSettings = isAtomicSettingsPatch(requestedSettings)
+      ? await this.mergeLockedStepSettingsPatch({
+          authContext,
+          requestedSettings,
+          stepId,
+          workspaceEntityManager,
+        })
+      : requestedSettings;
+
     if (
       isDefined(requestedPosition) ||
-      isDefined(requestedSettings) ||
+      isDefined(serializedSettings) ||
       (isDefined(nextSequenceId) && nextSequenceId !== currentSequenceId)
     ) {
       await this.swapStepAtRequestedPosition({
@@ -301,13 +413,106 @@ export class SequenceMutationSerializationService {
         currentSequenceId,
         nextSequenceId,
         requestedPosition,
-        requestedSettings: isDefined(requestedSettings)
-          ? requestedSettings
+        requestedSettings: isDefined(serializedSettings)
+          ? serializedSettings
           : undefined,
         stepId,
         workspaceEntityManager,
       });
     }
+
+    return serializedSettings;
+  }
+
+  private async getLockedSequenceSettings({
+    authContext,
+    sequenceId,
+    workspaceEntityManager,
+  }: {
+    authContext: WorkspaceAuthContext;
+    sequenceId: string;
+    workspaceEntityManager: WorkspaceEntityManager;
+  }): Promise<SequenceWorkspaceEntity['settings']> {
+    const repository = await this.globalWorkspaceOrmManager.getRepository(
+      authContext.workspace.id,
+      SequenceWorkspaceEntity,
+      { shouldBypassPermissionChecks: true },
+    );
+    const sequence = await repository.findOne(
+      {
+        where: { id: sequenceId },
+        select: ['id', 'settings'],
+        lock: { mode: 'pessimistic_write' },
+      },
+      workspaceEntityManager,
+    );
+
+    if (!isDefined(sequence)) {
+      this.throwBadRequest('The sequence was not found');
+    }
+
+    return sequence.settings;
+  }
+
+  private async mergeLockedStepSettingsPatch({
+    authContext,
+    requestedSettings,
+    stepId,
+    workspaceEntityManager,
+  }: {
+    authContext: WorkspaceAuthContext;
+    requestedSettings: UnknownRecord;
+    stepId: string;
+    workspaceEntityManager: WorkspaceEntityManager;
+  }): Promise<SequenceStepWorkspaceEntity['settings']> {
+    const repository = await this.globalWorkspaceOrmManager.getRepository(
+      authContext.workspace.id,
+      SequenceStepWorkspaceEntity,
+      { shouldBypassPermissionChecks: true },
+    );
+    const currentStep = await repository.findOne(
+      {
+        where: { id: stepId },
+        select: ['id', 'settings'],
+        lock: { mode: 'pessimistic_write' },
+      },
+      workspaceEntityManager,
+    );
+
+    if (!isDefined(currentStep)) {
+      this.throwBadRequest('The sequence step was not found');
+    }
+
+    const expectedBaseType =
+      requestedSettings[SEQUENCE_STEP_SETTINGS_PATCH_BASE_TYPE];
+    const currentType = currentStep.settings.type;
+
+    if (expectedBaseType !== currentType) {
+      this.throwBadRequest(
+        'The sequence step type changed while it was being patched; retry the change',
+      );
+    }
+
+    const patch = withoutAtomicPatchMetadata(requestedSettings);
+
+    if (patch.type !== currentType) {
+      return patch as SequenceStepWorkspaceEntity['settings'];
+    }
+
+    const mergedSettings: UnknownRecord = {
+      ...currentStep.settings,
+      ...patch,
+    };
+
+    if (patch.branch === null) {
+      delete mergedSettings.branch;
+    }
+
+    if (patch.variants === null) {
+      delete mergedSettings.variants;
+    }
+
+    return mergedSettings as SequenceStepWorkspaceEntity['settings'];
   }
 
   async serializeStepDeletion({
