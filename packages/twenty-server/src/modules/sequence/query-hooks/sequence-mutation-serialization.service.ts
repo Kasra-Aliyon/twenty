@@ -21,11 +21,30 @@ import { SequenceEnrollmentWorkspaceEntity } from 'src/modules/sequence/standard
 import { SequenceStepWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence-step.workspace-entity';
 import { SequenceWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence.workspace-entity';
 import { hasLiveSequenceEmailSendLease } from 'src/modules/sequence/utils/has-live-sequence-email-send-lease.util';
+import { TaskWorkspaceEntity } from 'src/modules/task/standard-objects/task.workspace-entity';
 
 const OPEN_LINKEDIN_ACTION_STATUSES = [
   LINKEDIN_ACTION_STATUSES.SCHEDULED,
   LINKEDIN_ACTION_STATUSES.CLAIMED,
 ];
+const OPEN_TASK_STATUSES = ['TODO', 'IN_PROGRESS'] as const;
+
+const areSequenceStepsInSameBranch = (
+  firstStep: SequenceStepWorkspaceEntity,
+  secondStep: SequenceStepWorkspaceEntity,
+): boolean => {
+  const firstBranch = firstStep.settings.branch;
+  const secondBranch = secondStep.settings.branch;
+
+  if (!isDefined(firstBranch) || !isDefined(secondBranch)) {
+    return !isDefined(firstBranch) && !isDefined(secondBranch);
+  }
+
+  return (
+    firstBranch.conditionStepId === secondBranch.conditionStepId &&
+    firstBranch.outcome === secondBranch.outcome
+  );
+};
 
 @Injectable()
 export class SequenceMutationSerializationService {
@@ -228,14 +247,27 @@ export class SequenceMutationSerializationService {
   async serializeStepUpdate({
     authContext,
     nextSequenceId,
+    requestedPosition,
+    requestedSettings,
     stepId,
     workspaceEntityManager,
   }: {
     authContext: WorkspaceAuthContext;
     nextSequenceId?: string;
+    requestedPosition?: number | null;
+    requestedSettings?: SequenceStepWorkspaceEntity['settings'] | null;
     stepId: string;
     workspaceEntityManager: WorkspaceEntityManager;
   }): Promise<void> {
+    if (
+      requestedPosition !== undefined &&
+      (typeof requestedPosition !== 'number' ||
+        !Number.isFinite(requestedPosition) ||
+        requestedPosition < 0)
+    ) {
+      this.throwBadRequest('The sequence step position must be non-negative');
+    }
+
     const currentSequenceId = await this.getStepSequenceId({
       authContext,
       stepId,
@@ -258,6 +290,24 @@ export class SequenceMutationSerializationService {
       stepId,
       nextSequenceId,
     });
+
+    if (
+      isDefined(requestedPosition) ||
+      isDefined(requestedSettings) ||
+      (isDefined(nextSequenceId) && nextSequenceId !== currentSequenceId)
+    ) {
+      await this.swapStepAtRequestedPosition({
+        authContext,
+        currentSequenceId,
+        nextSequenceId,
+        requestedPosition,
+        requestedSettings: isDefined(requestedSettings)
+          ? requestedSettings
+          : undefined,
+        stepId,
+        workspaceEntityManager,
+      });
+    }
   }
 
   async serializeStepDeletion({
@@ -385,6 +435,103 @@ export class SequenceMutationSerializationService {
     return step.sequenceId;
   }
 
+  private async swapStepAtRequestedPosition({
+    authContext,
+    currentSequenceId,
+    nextSequenceId,
+    requestedPosition,
+    requestedSettings,
+    stepId,
+    workspaceEntityManager,
+  }: {
+    authContext: WorkspaceAuthContext;
+    currentSequenceId: string;
+    nextSequenceId?: string;
+    requestedPosition?: number;
+    requestedSettings?: SequenceStepWorkspaceEntity['settings'];
+    stepId: string;
+    workspaceEntityManager: WorkspaceEntityManager;
+  }): Promise<void> {
+    const repository = await this.globalWorkspaceOrmManager.getRepository(
+      authContext.workspace.id,
+      SequenceStepWorkspaceEntity,
+      { shouldBypassPermissionChecks: true },
+    );
+    const currentStep = await repository.findOne(
+      {
+        where: { id: stepId, sequenceId: currentSequenceId },
+        select: ['id', 'position', 'settings', 'sequenceId'],
+        lock: { mode: 'pessimistic_write' },
+      },
+      workspaceEntityManager,
+    );
+
+    if (!isDefined(currentStep)) {
+      this.throwBadRequest(
+        'The sequence step changed while its position was being serialized; retry the change',
+      );
+    }
+
+    const targetSequenceId = nextSequenceId ?? currentSequenceId;
+    const targetPosition = requestedPosition ?? currentStep.position;
+    const projectedStep = isDefined(requestedSettings)
+      ? { ...currentStep, settings: requestedSettings }
+      : currentStep;
+    const changesBranch = !areSequenceStepsInSameBranch(
+      currentStep,
+      projectedStep,
+    );
+
+    if (
+      currentStep.position === targetPosition &&
+      targetSequenceId === currentSequenceId &&
+      !changesBranch
+    ) {
+      return;
+    }
+
+    const targetPositionSteps = await repository.find(
+      {
+        where: { sequenceId: targetSequenceId, position: targetPosition },
+        select: ['id', 'position', 'settings', 'sequenceId'],
+        order: { id: 'ASC' },
+        lock: { mode: 'pessimistic_write' },
+      },
+      workspaceEntityManager,
+    );
+    const occupyingStep = targetPositionSteps.find(
+      (candidateStep) =>
+        candidateStep.id !== currentStep.id &&
+        areSequenceStepsInSameBranch(candidateStep, projectedStep),
+    );
+
+    if (!isDefined(occupyingStep)) {
+      return;
+    }
+
+    if (targetSequenceId !== currentSequenceId || changesBranch) {
+      this.throwBadRequest(
+        'The target sequence branch already has a step at that position; choose an unused position before moving the step',
+      );
+    }
+
+    const swapResult = await repository.update(
+      {
+        id: occupyingStep.id,
+        sequenceId: targetSequenceId,
+        position: targetPosition,
+      },
+      { position: currentStep.position },
+      workspaceEntityManager,
+    );
+
+    if (swapResult.affected !== 1) {
+      throw new Error(
+        `Failed to serialize sequence step position swap for ${stepId}`,
+      );
+    }
+  }
+
   private async assertStepStillBelongsToSequence({
     authContext,
     expectedSequenceId,
@@ -433,6 +580,7 @@ export class SequenceMutationSerializationService {
           'id',
           'sequenceId',
           'status',
+          'currentStepId',
           'waitingOn',
           'nextActionAt',
           'lastSendAttempt',
@@ -471,6 +619,18 @@ export class SequenceMutationSerializationService {
     workspaceEntityManager: WorkspaceEntityManager;
   }): Promise<void> {
     const now = new Date();
+    const sendAttempt = enrollment.lastSendAttempt;
+    const hasUnresolvedEmailSendClaim =
+      isDefined(sendAttempt) &&
+      enrollment.waitingOn === SEQUENCE_WAITING_ON.EMAIL_SCHEDULED &&
+      enrollment.currentStepId === sendAttempt.stepId &&
+      !isDefined(enrollment.sentEmailsByStepId?.[sendAttempt.stepId]);
+
+    if (hasUnresolvedEmailSendClaim) {
+      this.throwBadRequest(
+        'Wait for the interrupted sequence email to recover before advancing the enrollment',
+      );
+    }
 
     if (hasLiveSequenceEmailSendLease({ enrollment, now })) {
       this.throwBadRequest(
@@ -511,30 +671,52 @@ export class SequenceMutationSerializationService {
       .filter(({ status }) => status === LINKEDIN_ACTION_STATUSES.SCHEDULED)
       .map(({ id }) => id);
 
-    if (scheduledActionIds.length === 0) {
+    if (scheduledActionIds.length > 0) {
+      const cancellationResult = await linkedinActionRepository.update(
+        {
+          id: In(scheduledActionIds),
+          status: LINKEDIN_ACTION_STATUSES.SCHEDULED,
+        },
+        {
+          status: LINKEDIN_ACTION_STATUSES.CANCELLED,
+          claimedAt: null,
+          claimedBy: null,
+          executedAt: now,
+          errorMessage: 'Sequence enrollment advanced manually',
+        },
+        workspaceEntityManager,
+      );
+
+      if (cancellationResult.affected !== scheduledActionIds.length) {
+        throw new Error(
+          `Failed to cancel queued LinkedIn actions before advancing sequence enrollment ${enrollment.id}`,
+        );
+      }
+    }
+
+    if (
+      !isDefined(enrollment.currentStepId) ||
+      (enrollment.waitingOn !== SEQUENCE_WAITING_ON.TASK_DONE &&
+        enrollment.waitingOn !== SEQUENCE_WAITING_ON.TASK_DEADLINE)
+    ) {
       return;
     }
 
-    const cancellationResult = await linkedinActionRepository.update(
-      {
-        id: In(scheduledActionIds),
-        status: LINKEDIN_ACTION_STATUSES.SCHEDULED,
-      },
-      {
-        status: LINKEDIN_ACTION_STATUSES.CANCELLED,
-        claimedAt: null,
-        claimedBy: null,
-        executedAt: now,
-        errorMessage: 'Sequence enrollment advanced manually',
-      },
-      workspaceEntityManager,
+    const taskRepository = await this.globalWorkspaceOrmManager.getRepository(
+      authContext.workspace.id,
+      TaskWorkspaceEntity,
+      { shouldBypassPermissionChecks: true },
     );
 
-    if (cancellationResult.affected !== scheduledActionIds.length) {
-      throw new Error(
-        `Failed to cancel queued LinkedIn actions before advancing sequence enrollment ${enrollment.id}`,
-      );
-    }
+    await taskRepository.update(
+      {
+        sequenceEnrollmentId: enrollment.id,
+        sequenceStepId: enrollment.currentStepId,
+        status: In(OPEN_TASK_STATUSES),
+      },
+      { status: 'DONE' },
+      workspaceEntityManager,
+    );
   }
 
   private throwBadRequest(message: string): never {

@@ -13,6 +13,7 @@ import {
   TASK_PRIORITIES,
   type SequenceConditionType,
   type SequenceEnrollmentStatus,
+  type SequenceSettings,
   type SequenceStatus,
 } from 'twenty-shared/types';
 import { validateSpintax } from 'twenty-shared/utils';
@@ -102,6 +103,31 @@ const KNOWN_TASK_CONTINUE_MODES: ReadonlySet<string> = new Set([
 
 const isNonNegativeFiniteNumber = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0;
+
+const MILLISECONDS_PER_MINUTE = 60 * 1000;
+const MILLISECONDS_PER_HOUR = 60 * MILLISECONDS_PER_MINUTE;
+const MILLISECONDS_PER_DAY = 24 * MILLISECONDS_PER_HOUR;
+const MAXIMUM_DATE_TIMESTAMP = 8_640_000_000_000_000;
+
+const isSupportedFutureDuration = ({
+  days = 0,
+  hours = 0,
+  minutes = 0,
+}: {
+  days?: number;
+  hours?: number;
+  minutes?: number;
+}): boolean => {
+  const durationMilliseconds =
+    days * MILLISECONDS_PER_DAY +
+    hours * MILLISECONDS_PER_HOUR +
+    minutes * MILLISECONDS_PER_MINUTE;
+
+  return (
+    Number.isFinite(durationMilliseconds) &&
+    durationMilliseconds <= MAXIMUM_DATE_TIMESTAMP - Date.now()
+  );
+};
 
 @Injectable()
 export class SequenceInvariantService {
@@ -445,7 +471,7 @@ export class SequenceInvariantService {
         );
       }
 
-      this.assertSequenceStepsValid(steps);
+      this.assertSequenceStepsValid(steps, nextSettings);
 
       const hasAutomatedEmailStep = steps.some(
         ({ settings }) =>
@@ -507,11 +533,39 @@ export class SequenceInvariantService {
     }
   }
 
-  private assertSequenceStepsValid(steps: SequenceStepWorkspaceEntity[]): void {
+  private assertSequenceStepsValid(
+    steps: SequenceStepWorkspaceEntity[],
+    sequenceSettings: SequenceSettings,
+  ): void {
     const stepById = new Map(steps.map((step) => [step.id, step]));
+    const occupiedSiblingPositions = new Set<string>();
 
     for (const step of steps) {
       const settings = step.settings;
+
+      if (
+        step.position !== undefined &&
+        (!Number.isFinite(step.position) || step.position < 0)
+      ) {
+        this.throwBadRequest(
+          `Sequence step ${step.id} has an invalid position`,
+        );
+      }
+
+      if (step.position !== undefined) {
+        const branch = settings.branch;
+        const siblingPositionKey = branch
+          ? `${branch.conditionStepId}:${branch.outcome}:${step.position}`
+          : `ROOT:${step.position}`;
+
+        if (occupiedSiblingPositions.has(siblingPositionKey)) {
+          this.throwBadRequest(
+            `Sequence step ${step.id} has a duplicate position in its branch`,
+          );
+        }
+
+        occupiedSiblingPositions.add(siblingPositionKey);
+      }
 
       if (!KNOWN_STEP_TYPES.has(settings.type)) {
         this.throwBadRequest(`Sequence step ${step.id} has an unknown type`);
@@ -541,7 +595,12 @@ export class SequenceInvariantService {
           if (
             !isNonNegativeFiniteNumber(settings.days) ||
             !isNonNegativeFiniteNumber(settings.hours) ||
-            !isNonNegativeFiniteNumber(settings.minutes)
+            !isNonNegativeFiniteNumber(settings.minutes) ||
+            !isSupportedFutureDuration({
+              days: settings.days,
+              hours: settings.hours,
+              minutes: settings.minutes,
+            })
           ) {
             this.throwBadRequest(
               `Sequence delay ${step.id} has an invalid duration`,
@@ -557,7 +616,10 @@ export class SequenceInvariantService {
             !KNOWN_TASK_PRIORITIES.has(settings.priority) ||
             !KNOWN_TASK_CONTINUE_MODES.has(settings.continueMode) ||
             (settings.deadlineDays !== null &&
-              !isNonNegativeFiniteNumber(settings.deadlineDays)) ||
+              (!isNonNegativeFiniteNumber(settings.deadlineDays) ||
+                !isSupportedFutureDuration({
+                  days: settings.deadlineDays,
+                }))) ||
             (settings.continueMode === 'ON_DEADLINE' &&
               settings.deadlineDays === null)
           ) {
@@ -581,10 +643,25 @@ export class SequenceInvariantService {
             typeof settings.subject !== 'string' ||
             settings.subject.trim().length === 0 ||
             typeof settings.bodyHtml !== 'string' ||
-            settings.bodyHtml.trim().length === 0
+            settings.bodyHtml.trim().length === 0 ||
+            (settings.threadAsReplyToPreviousEmail !== undefined &&
+              typeof settings.threadAsReplyToPreviousEmail !== 'boolean') ||
+            (settings.stopOnReply !== undefined &&
+              settings.stopOnReply !== null &&
+              typeof settings.stopOnReply !== 'boolean')
           ) {
             this.throwBadRequest(
               `Sequence email step ${step.id} is not fully configured`,
+            );
+          }
+
+          if (
+            settings.executionMode === SEQUENCE_ACTION_EXECUTION_MODES.MANUAL &&
+            (settings.threadAsReplyToPreviousEmail === true ||
+              (settings.stopOnReply ?? sequenceSettings.stopOnReply))
+          ) {
+            this.throwBadRequest(
+              `Manual email step ${step.id} cannot use reply threading or automatic stop-on-reply`,
             );
           }
 
@@ -647,7 +724,11 @@ export class SequenceInvariantService {
         case SEQUENCE_STEP_TYPES.WITHDRAW_CONNECTION_REQUEST:
           if (
             !isNonNegativeFiniteNumber(settings.withdrawAfterDays) ||
-            !isNonNegativeFiniteNumber(settings.withdrawAfterHours)
+            !isNonNegativeFiniteNumber(settings.withdrawAfterHours) ||
+            !isSupportedFutureDuration({
+              days: settings.withdrawAfterDays,
+              hours: settings.withdrawAfterHours,
+            })
           ) {
             this.throwBadRequest(
               `LinkedIn withdrawal step ${step.id} has an invalid delay`,

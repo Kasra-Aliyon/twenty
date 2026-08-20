@@ -244,6 +244,12 @@ export class SequenceUpdateOnePreQueryHook implements WorkspacePreQueryHookInsta
         stepId: payload.id,
         nextSequenceId: (payload.data as Partial<SequenceStepWorkspaceEntity>)
           .sequenceId,
+        requestedPosition: (
+          payload.data as Partial<SequenceStepWorkspaceEntity>
+        ).position,
+        requestedSettings: (
+          payload.data as Partial<SequenceStepWorkspaceEntity>
+        ).settings,
         workspaceEntityManager,
       });
     }
