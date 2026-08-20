@@ -504,6 +504,33 @@ export class SequenceExecutorService {
         return;
       }
 
+      const sequenceSettings = parseSequenceSettings(sequence.settings);
+      const isAutomatedEmail =
+        nextStep.settings.type === SEQUENCE_STEP_TYPES.SEND_EMAIL &&
+        !this.isManualExecution(nextStep.settings);
+
+      // The scheduler normally enforces the fixed sequence window before it
+      // queues work other than automated email. Queue retries and immediate
+      // continuations can enter the executor without passing through that
+      // scheduler gate, so apply the same CAS-backed deferral here. Finishing
+      // an Apollo request that has already crossed its paid provider boundary
+      // is recovery rather than new work and must remain eligible at its lease
+      // deadline.
+      if (!isAutomatedEmail && !isWaitingForApolloEnrichment) {
+        const now = new Date();
+
+        if (!isWithinSendingWindow(now, sequenceSettings)) {
+          await this.deferNewWorkUntilSequenceWindow({
+            enrollmentRepository,
+            enrollment,
+            now,
+            settings: sequenceSettings,
+          });
+
+          return;
+        }
+      }
+
       if (!isDefined(person)) {
         person = await personRepository.findOne({
           where: { id: enrollment.personId },
@@ -569,7 +596,7 @@ export class SequenceExecutorService {
             enrollment,
             person,
             pausedLinkedinRetryActionId,
-            sequenceSettings: parseSequenceSettings(sequence.settings),
+            sequenceSettings,
             sequenceSenderConnectedAccountId: sequence.senderConnectedAccountId,
             step: nextStep,
             settings: nextStep.settings,
@@ -600,7 +627,7 @@ export class SequenceExecutorService {
             enrollment,
             person,
             pausedLinkedinRetryActionId,
-            sequenceSettings: parseSequenceSettings(sequence.settings),
+            sequenceSettings,
             sequenceSenderConnectedAccountId: sequence.senderConnectedAccountId,
             step: nextStep,
             settings: nextStep.settings,
@@ -631,7 +658,7 @@ export class SequenceExecutorService {
             enrollment,
             person,
             pausedLinkedinRetryActionId,
-            sequenceSettings: parseSequenceSettings(sequence.settings),
+            sequenceSettings,
             sequenceSenderConnectedAccountId: sequence.senderConnectedAccountId,
             step: nextStep,
             settings: nextStep.settings,
@@ -684,7 +711,7 @@ export class SequenceExecutorService {
             enrollmentRepository,
             enrollment: emailEnrollment,
             person,
-            sequenceSettings: parseSequenceSettings(sequence.settings),
+            sequenceSettings,
             sequenceSenderConnectedAccountId: sequence.senderConnectedAccountId,
             step: nextStep,
             settings: nextStep.settings,
@@ -758,6 +785,35 @@ export class SequenceExecutorService {
       workspaceId,
       enrollmentId,
     });
+  }
+
+  private async deferNewWorkUntilSequenceWindow({
+    enrollmentRepository,
+    enrollment,
+    now,
+    settings,
+  }: {
+    enrollmentRepository: WorkspaceRepository<SequenceEnrollmentWorkspaceEntity>;
+    enrollment: SequenceEnrollmentWorkspaceEntity;
+    now: Date;
+    settings: SequenceSettings;
+  }): Promise<void> {
+    await enrollmentRepository.update(
+      {
+        id: enrollment.id,
+        sequenceId: enrollment.sequenceId,
+        status: SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
+        currentStepPosition: enrollment.currentStepPosition,
+        currentStepId: isDefined(enrollment.currentStepId)
+          ? enrollment.currentStepId
+          : IsNull(),
+        waitingOn: isDefined(enrollment.waitingOn)
+          ? enrollment.waitingOn
+          : IsNull(),
+        nextActionAt: LessThanOrEqual(now),
+      },
+      { nextActionAt: nextWindowOpen(now, settings) },
+    );
   }
 
   // A task step that continues on its deadline stays parked on TASK_DEADLINE
@@ -3174,7 +3230,14 @@ export class SequenceExecutorService {
         : []),
     ];
 
-    const [observedConnectedCount, syncedConnectionCount] = await Promise.all([
+    const observationCutoff = new Date(
+      Date.now() - LINKEDIN_CONNECTION_OBSERVATION_MAX_AGE_MS,
+    );
+    const [
+      executedConnectedCount,
+      preProviderConnectedCount,
+      syncedConnectionCount,
+    ] = await Promise.all([
       linkedinActionRepository.count({
         where: {
           personId: person.id,
@@ -3184,9 +3247,17 @@ export class SequenceExecutorService {
             LINKEDIN_ACTION_STATUSES.SKIPPED,
           ]),
           connectionState: LINKEDIN_CONNECTION_STATES.CONNECTED,
-          executedAt: MoreThanOrEqual(
-            new Date(Date.now() - LINKEDIN_CONNECTION_OBSERVATION_MAX_AGE_MS),
-          ),
+          executedAt: MoreThanOrEqual(observationCutoff),
+        },
+      }),
+      linkedinActionRepository.count({
+        where: {
+          personId: person.id,
+          ownerWorkspaceMemberId,
+          status: LINKEDIN_ACTION_STATUSES.SKIPPED,
+          connectionState: LINKEDIN_CONNECTION_STATES.CONNECTED,
+          executedAt: IsNull(),
+          updatedAt: MoreThanOrEqual(observationCutoff.toISOString()),
         },
       }),
       connectionRepository.count({ where }),
@@ -3195,7 +3266,11 @@ export class SequenceExecutorService {
     // The browser runner can observe a first-degree connection before the
     // connector has synced its connection row. Keep that sender-scoped,
     // positive observation available to the very next sequence condition.
-    return observedConnectedCount > 0 || syncedConnectionCount > 0;
+    return (
+      executedConnectedCount > 0 ||
+      preProviderConnectedCount > 0 ||
+      syncedConnectionCount > 0
+    );
   }
 
   private hasLinkedinProfileUrl(person: PersonWorkspaceEntity): boolean {
@@ -3239,32 +3314,65 @@ export class SequenceExecutorService {
         LinkedinActionWorkspaceEntity,
         { shouldBypassPermissionChecks: true },
       );
-    const latestCompletedInvitationAction =
-      await linkedinActionRepository.findOne({
-        where: {
-          personId: person.id,
-          ownerWorkspaceMemberId,
-          type: In([
-            LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST,
-            LINKEDIN_ACTION_TYPES.WITHDRAW_CONNECTION_REQUEST,
-          ]),
-          status: LINKEDIN_ACTION_STATUSES.COMPLETED,
-          executedAt: Not(IsNull()),
-        },
-        order: { executedAt: 'DESC' },
-      });
+    const invitationActionScope = {
+      personId: person.id,
+      ownerWorkspaceMemberId,
+    };
+    const [latestExecutedAction, latestPreProviderInvitationAction] =
+      await Promise.all([
+        linkedinActionRepository.findOne({
+          where: {
+            ...invitationActionScope,
+            type: In([
+              LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST,
+              LINKEDIN_ACTION_TYPES.WITHDRAW_CONNECTION_REQUEST,
+            ]),
+            status: LINKEDIN_ACTION_STATUSES.COMPLETED,
+            executedAt: Not(IsNull()),
+          },
+          order: { executedAt: 'DESC', id: 'DESC' },
+        }),
+        linkedinActionRepository.findOne({
+          where: [
+            {
+              ...invitationActionScope,
+              type: LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST,
+              status: LINKEDIN_ACTION_STATUSES.SKIPPED,
+              connectionState: LINKEDIN_CONNECTION_STATES.PENDING,
+              executedAt: IsNull(),
+            },
+            {
+              ...invitationActionScope,
+              type: LINKEDIN_ACTION_TYPES.WITHDRAW_CONNECTION_REQUEST,
+              status: LINKEDIN_ACTION_STATUSES.SKIPPED,
+              connectionState: In([
+                LINKEDIN_CONNECTION_STATES.NOT_CONNECTED,
+                LINKEDIN_CONNECTION_STATES.WITHDRAWN,
+              ]),
+              executedAt: IsNull(),
+            },
+          ],
+          order: { updatedAt: 'DESC', id: 'DESC' },
+        }),
+      ]);
+    const latestInvitationAction = this.latestLinkedinActionObservation(
+      latestExecutedAction,
+      latestPreProviderInvitationAction,
+    );
 
-    if (isDefined(latestCompletedInvitationAction)) {
+    if (isDefined(latestInvitationAction)) {
       if (
-        latestCompletedInvitationAction.type ===
+        latestInvitationAction.type ===
         LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST
       ) {
         return true;
       }
 
-      const withdrawalExecutedAt = latestCompletedInvitationAction.executedAt;
+      const withdrawalObservedAt =
+        latestInvitationAction.executedAt ??
+        new Date(latestInvitationAction.updatedAt);
 
-      if (!isDefined(withdrawalExecutedAt)) {
+      if (!isDefined(withdrawalObservedAt)) {
         return false;
       }
 
@@ -3291,7 +3399,7 @@ export class SequenceExecutorService {
             ownerWorkspaceMemberId,
             handle,
             direction: 'SENT',
-            sentAt: MoreThan(withdrawalExecutedAt),
+            sentAt: MoreThan(withdrawalObservedAt),
           },
         })) > 0
       );
@@ -3350,38 +3458,83 @@ export class SequenceExecutorService {
       return true;
     }
 
-    const latestTerminalAction = await linkedinActionRepository.findOne({
-      where: {
-        personId: person.id,
-        ownerWorkspaceMemberId,
-        type: In([
-          LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST,
-          LINKEDIN_ACTION_TYPES.WITHDRAW_CONNECTION_REQUEST,
-        ]),
-        status: In([
-          LINKEDIN_ACTION_STATUSES.COMPLETED,
-          LINKEDIN_ACTION_STATUSES.SKIPPED,
-        ]),
-        executedAt: Not(IsNull()),
-      },
-      order: { executedAt: 'DESC' },
-    });
+    const observationCutoff = new Date(
+      Date.now() - LINKEDIN_CONNECTION_OBSERVATION_MAX_AGE_MS,
+    );
+    const terminalActionScope = {
+      personId: person.id,
+      ownerWorkspaceMemberId,
+    };
+    const [latestExecutedAction, latestPreProviderInvitationAction] =
+      await Promise.all([
+        linkedinActionRepository.findOne({
+          where: {
+            ...terminalActionScope,
+            type: In([
+              LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST,
+              LINKEDIN_ACTION_TYPES.WITHDRAW_CONNECTION_REQUEST,
+            ]),
+            status: In([
+              LINKEDIN_ACTION_STATUSES.COMPLETED,
+              LINKEDIN_ACTION_STATUSES.SKIPPED,
+            ]),
+            executedAt: Not(IsNull()),
+          },
+          order: { executedAt: 'DESC', id: 'DESC' },
+        }),
+        linkedinActionRepository.findOne({
+          where: [
+            {
+              ...terminalActionScope,
+              type: LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST,
+              status: LINKEDIN_ACTION_STATUSES.SKIPPED,
+              connectionState: LINKEDIN_CONNECTION_STATES.PENDING,
+              executedAt: IsNull(),
+              updatedAt: MoreThanOrEqual(observationCutoff.toISOString()),
+            },
+            {
+              ...terminalActionScope,
+              type: LINKEDIN_ACTION_TYPES.WITHDRAW_CONNECTION_REQUEST,
+              status: LINKEDIN_ACTION_STATUSES.SKIPPED,
+              connectionState: In([
+                LINKEDIN_CONNECTION_STATES.NOT_CONNECTED,
+                LINKEDIN_CONNECTION_STATES.WITHDRAWN,
+              ]),
+              executedAt: IsNull(),
+            },
+          ],
+          order: { updatedAt: 'DESC', id: 'DESC' },
+        }),
+      ]);
+    const latestTerminalAction = this.latestLinkedinActionObservation(
+      latestExecutedAction,
+      latestPreProviderInvitationAction,
+    );
 
     if (isDefined(latestTerminalAction)) {
+      if (
+        latestTerminalAction.type ===
+          LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST &&
+        latestTerminalAction.connectionState ===
+          LINKEDIN_CONNECTION_STATES.PENDING
+      ) {
+        return true;
+      }
+
       if (
         latestTerminalAction.type ===
         LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST
       ) {
         return (
-          latestTerminalAction.status === LINKEDIN_ACTION_STATUSES.COMPLETED ||
-          latestTerminalAction.connectionState ===
-            LINKEDIN_CONNECTION_STATES.PENDING
+          latestTerminalAction.status === LINKEDIN_ACTION_STATUSES.COMPLETED
         );
       }
 
-      const withdrawalExecutedAt = latestTerminalAction.executedAt;
+      const withdrawalObservedAt =
+        latestTerminalAction.executedAt ??
+        new Date(latestTerminalAction.updatedAt);
 
-      if (!isDefined(withdrawalExecutedAt)) {
+      if (!isDefined(withdrawalObservedAt)) {
         return false;
       }
 
@@ -3408,7 +3561,7 @@ export class SequenceExecutorService {
             ownerWorkspaceMemberId,
             handle,
             direction: 'SENT',
-            sentAt: MoreThan(withdrawalExecutedAt),
+            sentAt: MoreThan(withdrawalObservedAt),
           },
         })) > 0
       );
@@ -3432,6 +3585,48 @@ export class SequenceExecutorService {
         where: { ownerWorkspaceMemberId, handle, direction: 'SENT' },
       })) > 0
     );
+  }
+
+  private latestLinkedinActionObservation(
+    ...actions: Array<LinkedinActionWorkspaceEntity | null>
+  ): LinkedinActionWorkspaceEntity | null {
+    let latestAction: LinkedinActionWorkspaceEntity | null = null;
+
+    for (const action of actions) {
+      if (!isDefined(action)) {
+        continue;
+      }
+
+      if (!isDefined(latestAction)) {
+        latestAction = action;
+        continue;
+      }
+
+      const actionObservedAt = this.linkedinActionObservedAt(action);
+      const latestActionObservedAt =
+        this.linkedinActionObservedAt(latestAction);
+
+      if (
+        actionObservedAt > latestActionObservedAt ||
+        (actionObservedAt === latestActionObservedAt &&
+          action.id > latestAction.id)
+      ) {
+        latestAction = action;
+      }
+    }
+
+    return latestAction;
+  }
+
+  private linkedinActionObservedAt(
+    action: LinkedinActionWorkspaceEntity,
+  ): number {
+    const observedAt = action.executedAt ?? new Date(action.updatedAt);
+    const observedAtTimestamp = observedAt.getTime();
+
+    return Number.isNaN(observedAtTimestamp)
+      ? Number.NEGATIVE_INFINITY
+      : observedAtTimestamp;
   }
 
   // Resolving the LinkedIn owner must not depend on the mailbox being synced:
@@ -3826,6 +4021,48 @@ export class SequenceExecutorService {
               settings,
               connectedAccountId,
               onProviderStart: async () => {
+                const ownsMailboxSendLock =
+                  await this.sequenceMailboxThrottleService.renewSendLock({
+                    workspaceId,
+                    mailboxId: connectedAccountId,
+                    token: sendLockToken,
+                  });
+
+                if (!ownsMailboxSendLock) {
+                  throw new SequenceEmailClaimLostError();
+                }
+
+                const stoppedForEmailReply =
+                  await this.sequenceEmailReplyReconciliationService.reconcileBeforeEnrollmentProgress(
+                    {
+                      workspaceId,
+                      enrollment,
+                      enrollmentRepository,
+                    },
+                  );
+                const stoppedForLinkedinReply = stoppedForEmailReply
+                  ? false
+                  : await this.sequenceLinkedinReplyListener.reconcileEnrollmentBeforeProviderStart(
+                      {
+                        sequenceEnrollmentId: enrollment.id,
+                        workspaceId,
+                      },
+                    );
+
+                if (stoppedForEmailReply || stoppedForLinkedinReply) {
+                  await this.releaseReservationAndClearTerminalEmailClaim({
+                    workspaceId,
+                    enrollmentRepository,
+                    enrollment: {
+                      ...enrollment,
+                      status: SEQUENCE_ENROLLMENT_STATUSES.REPLIED,
+                    },
+                    sendAttempt: claimedSend.sendAttempt,
+                  });
+
+                  throw new SequenceEmailClaimLostError();
+                }
+
                 const providerStartedAt = new Date().toISOString();
 
                 providerStartedAttempt = {
@@ -3840,6 +4077,7 @@ export class SequenceExecutorService {
                     step,
                     workspaceId,
                     claimedSendAttempt: claimedSend.sendAttempt,
+                    expectedPrimaryEmail: person.emails.primaryEmail,
                     providerStartedAttempt,
                     settings: effectiveSequenceSettings,
                   },
@@ -4497,6 +4735,7 @@ export class SequenceExecutorService {
     enrollment,
     step,
     claimedSendAttempt,
+    expectedPrimaryEmail,
     providerStartedAttempt,
     settings,
   }: {
@@ -4505,6 +4744,7 @@ export class SequenceExecutorService {
     enrollment: SequenceEnrollmentWorkspaceEntity;
     step: SequenceStepWorkspaceEntity;
     claimedSendAttempt: SequenceLastSendAttempt;
+    expectedPrimaryEmail: string;
     providerStartedAttempt: SequenceLastSendAttempt;
     settings: SequenceSettings;
   }): Promise<boolean> {
@@ -4531,6 +4771,11 @@ export class SequenceExecutorService {
         SequenceWorkspaceEntity,
         { shouldBypassPermissionChecks: true },
       );
+    const personRepository = await this.globalWorkspaceOrmManager.getRepository(
+      workspaceId,
+      PersonWorkspaceEntity,
+      { shouldBypassPermissionChecks: true },
+    );
 
     return workspaceDataSource.transaction(async (transactionManager) => {
       const workspaceTransactionManager =
@@ -4548,6 +4793,23 @@ export class SequenceExecutorService {
       );
 
       if (!isDefined(activeSequence)) {
+        return false;
+      }
+
+      const currentPerson = await personRepository.findOne(
+        {
+          where: { id: enrollment.personId },
+          select: ['id', 'emailOptOut', 'emails'],
+          lock: { mode: 'pessimistic_write' },
+        },
+        workspaceTransactionManager,
+      );
+
+      if (
+        !isDefined(currentPerson) ||
+        currentPerson.emailOptOut ||
+        currentPerson.emails?.primaryEmail !== expectedPrimaryEmail
+      ) {
         return false;
       }
 
@@ -4811,7 +5073,15 @@ export class SequenceExecutorService {
 
       expectedSentEmailsByStepId = currentEnrollment.sentEmailsByStepId ?? {};
 
-      if (currentEnrollment.status !== SEQUENCE_ENROLLMENT_STATUSES.ACTIVE) {
+      const cursorNoLongerMatchesDeliveredStep =
+        currentEnrollment.currentStepId !== step.id ||
+        currentEnrollment.currentStepPosition !==
+          enrollment.currentStepPosition;
+
+      if (
+        currentEnrollment.status !== SEQUENCE_ENROLLMENT_STATUSES.ACTIVE ||
+        cursorNoLongerMatchesDeliveredStep
+      ) {
         const nextMetadataOnlySentEmailsByStepId = {
           ...expectedSentEmailsByStepId,
           [step.id]: sentEmailMetadata,
