@@ -2,7 +2,7 @@ import {
   type FieldMetadataType,
   type ObjectsPermissions,
 } from 'twenty-shared/types';
-import { EntityManager } from 'typeorm';
+import { EntityManager, type QueryRunner } from 'typeorm';
 import { EntityPersistExecutor } from 'typeorm/persistence/EntityPersistExecutor';
 import { PlainObjectToDatabaseEntityTransformer } from 'typeorm/query-builder/transformer/PlainObjectToDatabaseEntityTransformer';
 
@@ -424,6 +424,42 @@ describe('WorkspaceEntityManager', () => {
   });
 
   describe('Query Method', () => {
+    it('should preserve the transaction query runner when building queries', async () => {
+      const transactionQueryRunner = {} as QueryRunner;
+      const createQueryBuilder = jest.fn().mockReturnValue({});
+      const transactionalDataSource = {
+        ...mockDataSource,
+        createQueryBuilder,
+      } as unknown as GlobalWorkspaceDataSource;
+      const transactionalEntityManager = new WorkspaceEntityManager(
+        transactionalDataSource,
+        transactionQueryRunner,
+      );
+
+      await withWorkspaceContext(mockWorkspaceContext, () =>
+        transactionalEntityManager.createQueryBuilder(
+          'test-entity',
+          'testEntity',
+        ),
+      );
+
+      expect(createQueryBuilder).toHaveBeenCalledWith(
+        'test-entity',
+        'testEntity',
+        transactionQueryRunner,
+        { calledByWorkspaceEntityManager: true },
+      );
+
+      createQueryBuilder.mockClear();
+      await withWorkspaceContext(mockWorkspaceContext, () =>
+        transactionalEntityManager.createQueryBuilder(),
+      );
+
+      expect(createQueryBuilder).toHaveBeenCalledWith(transactionQueryRunner, {
+        calledByWorkspaceEntityManager: true,
+      });
+    });
+
     it('should call validatePermissions and validateOperationIsPermittedOrThrow for find', async () => {
       await withWorkspaceContext(mockWorkspaceContext, () =>
         entityManager.find('test-entity', {}, mockPermissionOptions),

@@ -26,6 +26,7 @@ import { BackstopSequenceEmailLimitColumnsCommand } from 'src/database/commands/
 import { AddPersonTimeZoneCommand } from 'src/database/commands/upgrade-version-command/2-15/2-15-workspace-command-1800000022000-add-person-time-zone.command';
 import { AddLinkedinNavigationItemCommand } from 'src/database/commands/upgrade-version-command/2-15/2-15-workspace-command-1800000023000-add-linkedin-navigation-item.command';
 import { RecomputeSequenceCountersCommand } from 'src/database/commands/upgrade-version-command/2-15/2-15-workspace-command-1800000024000-recompute-sequence-counters.command';
+import { AddSequenceApolloWaitingStatesCommand } from 'src/database/commands/upgrade-version-command/2-15/2-15-workspace-command-1800000027000-add-sequence-apollo-waiting-states.command';
 import { ApplicationModule } from 'src/engine/core-modules/application/application.module';
 import { FeatureFlagModule } from 'src/engine/core-modules/feature-flag/feature-flag.module';
 import { UserWorkspaceEntity } from 'src/engine/core-modules/user-workspace/user-workspace.entity';
@@ -79,6 +80,7 @@ import { SequenceMetricsService } from 'src/modules/sequence/services/sequence-m
     AddPersonTimeZoneCommand,
     AddLinkedinNavigationItemCommand,
     RecomputeSequenceCountersCommand,
+    AddSequenceApolloWaitingStatesCommand,
     SequenceMetricsService,
   ],
 })
