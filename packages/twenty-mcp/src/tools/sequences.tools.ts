@@ -277,7 +277,7 @@ const taskSettingsSchema = z.object({
 
 const connectionRequestSettingsSchema = z.object({
   ...actionExecutionSettingsShape,
-  noteTemplate: z.string().default(''),
+  noteTemplate: z.string().max(200).default(''),
 });
 
 const linkedinMessageSettingsSchema = z.object({
@@ -294,7 +294,10 @@ const withdrawSettingsSchema = z.object({
 const conditionSettingsSchema = z.object({
   ...placementSettingsShape,
   condition: z.enum(SEQUENCE_CONDITION_TYPES),
+  expected: z.boolean().optional(),
 });
+
+const sequenceStepPositionSchema = z.number().nonnegative();
 
 const enrichPhoneNumberSettingsSchema = z.object({
   ...actionExecutionSettingsShape,
@@ -361,6 +364,20 @@ const stepInputSchema = z
     }
 
     if (
+      input.type === 'SEND_EMAIL' &&
+      input.settings.executionMode === 'MANUAL' &&
+      (input.settings.threadAsReplyToPreviousEmail ||
+        input.settings.stopOnReply === true)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message:
+          'Manual email tasks do not support reply threading or automatic stop-on-reply.',
+        path: ['settings', 'stopOnReply'],
+      });
+    }
+
+    if (
       input.type === 'CONDITION' &&
       input.settings.branch !== undefined &&
       input.settings.branch !== null
@@ -410,10 +427,20 @@ const normalizedStepSettings = (
   input: SequenceStepInput,
 ): Record<string, unknown> => {
   const { branch, ...settings } = input.settings;
+  const normalizedSettings =
+    input.type === 'SEND_EMAIL' &&
+    'executionMode' in settings &&
+    settings.executionMode === 'MANUAL'
+      ? {
+          ...settings,
+          threadAsReplyToPreviousEmail: false,
+          stopOnReply: false,
+        }
+      : settings;
 
   return {
     type: input.type,
-    ...settings,
+    ...normalizedSettings,
     ...(branch === undefined || branch === null ? {} : { branch }),
   };
 };
@@ -453,31 +480,41 @@ const getStepSequenceId = (step: unknown): string => {
   return step.sequenceId;
 };
 
-const withPreservedStepBranch = ({
+const withPreservedStepSettings = ({
   currentStep,
   input,
 }: {
   currentStep: unknown;
   input: SequenceStepInput;
 }): SequenceStepInput => {
-  if (input.settings.branch !== undefined) {
-    return input;
-  }
-
-  const currentBranch = getStepSettings(currentStep).branch;
-
-  if (!isRecord(currentBranch)) {
-    return input;
-  }
+  const currentSettings = getStepSettings(currentStep);
+  const currentBranch = currentSettings.branch;
+  const preservedBranch =
+    input.settings.branch !== undefined || !isRecord(currentBranch)
+      ? input.settings.branch
+      : (currentBranch as z.infer<typeof sequenceStepBranchSchema>);
+  const preservedExpected =
+    input.type === SEQUENCE_STEP_TYPES[6] &&
+    input.settings.expected === undefined &&
+    typeof currentSettings.expected === 'boolean'
+      ? currentSettings.expected
+      : input.type === SEQUENCE_STEP_TYPES[6]
+        ? input.settings.expected
+        : undefined;
 
   return {
     ...input,
     settings: {
       ...input.settings,
-      branch: currentBranch as z.infer<typeof sequenceStepBranchSchema>,
+      ...(preservedBranch === undefined ? {} : { branch: preservedBranch }),
+      ...(preservedExpected === undefined
+        ? {}
+        : { expected: preservedExpected }),
     },
   } as SequenceStepInput;
 };
+
+const withPreservedStepBranch = withPreservedStepSettings;
 
 const assertBranchTarget = async ({
   branch,
@@ -623,7 +660,7 @@ const SEQUENCE_CAPABILITIES = {
       outcome: SEQUENCE_CONDITION_BRANCHES,
     },
     semantics:
-      'A matching contact enters YES and a non-matching contact enters NO. Each lane runs by global position, then merges into the next root step. Nested conditions are not supported by the builder.',
+      'The raw condition result is compared with settings.expected (default true). The resulting match enters YES and the opposite result enters NO. Each lane runs by global position, then merges into the next root step. Nested conditions are not supported by the builder.',
   },
   execution_modes: {
     values: SEQUENCE_ACTION_EXECUTION_MODES,
@@ -650,7 +687,8 @@ const SEQUENCE_CAPABILITIES = {
       ],
       automated:
         'Sends through the enrollment mailbox. When variants are present, Twenty makes a deterministic weighted assignment and keeps attribution for reply-rate analytics. Subject and body support deterministic spintax such as {Hi|Hello}; template variables remain {{variableName}}.',
-      manual: 'Creates an EMAIL task and waits for completion.',
+      manual:
+        'Creates an EMAIL task and waits for completion. Manual sends do not create trusted sent-message or thread metadata, so threadAsReplyToPreviousEmail and stopOnReply must be false; handle replies and stopping manually.',
     },
     DELAY: {
       fields: ['days', 'hours', 'minutes'],
@@ -697,7 +735,9 @@ const SEQUENCE_CAPABILITIES = {
         'Creates a CUSTOM task due after the configured withdrawal delay.',
     },
     CONDITION: {
-      fields: ['condition'],
+      fields: ['condition', 'expected'],
+      expectation:
+        'expected defaults to true. Set it to false when the Yes path should be selected when the condition does not match.',
       conditions: {
         IS_IN_LINKEDIN_NETWORK:
           'True for a synced or recorded first-degree LinkedIn connection.',
@@ -1161,7 +1201,7 @@ export const registerSequenceTools = (
           id: step_id,
         });
         const input = stepInputSchema.parse(
-          withPreservedStepBranch({ currentStep, input: step }),
+          withPreservedStepSettings({ currentStep, input: step }),
         );
 
         await assertBranchTarget({
@@ -1186,7 +1226,7 @@ export const registerSequenceTools = (
         'Changes the position of one sequence step. The sequence must not be active.',
       inputSchema: z.object({
         step_id: recordIdSchema,
-        position: z.number(),
+        position: sequenceStepPositionSchema,
         response_format: responseFormatSchema,
       }),
       outputSchema: TOOL_OUTPUT_SCHEMA,
@@ -1564,7 +1604,9 @@ export const sequencesToolsTesting = {
   isSequenceSenderAccount,
   normalizedStepSettings,
   sequenceSettingsSchema,
+  sequenceStepPositionSchema,
   stepData,
   stepInputSchema,
   withPreservedStepBranch,
+  withPreservedStepSettings,
 };
