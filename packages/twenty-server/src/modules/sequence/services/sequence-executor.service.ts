@@ -357,6 +357,21 @@ export class SequenceExecutorService {
         return;
       }
 
+      // Every step transition below claims the enrollment out of the neutral
+      // DELAY wait. A task whose deadline elapsed is still parked on
+      // TASK_DEADLINE, so its claim would match no row and the enrollment
+      // would stall on a cursor that never moves. Normalise the wait the same
+      // way a completed task does, then re-enter on the fresh state.
+      if (enrollment.waitingOn === SEQUENCE_WAITING_ON.TASK_DEADLINE) {
+        await this.continueFromElapsedTaskDeadline({
+          workspaceId,
+          enrollmentRepository,
+          enrollment,
+        });
+
+        return;
+      }
+
       const stepRepository = await this.globalWorkspaceOrmManager.getRepository(
         workspaceId,
         SequenceStepWorkspaceEntity,
@@ -466,6 +481,25 @@ export class SequenceExecutorService {
             endedAt: new Date(),
           },
         );
+
+        return;
+      }
+
+      // A send slot claimed for a branch can outlive the branch itself: most
+      // conditions are time-varying, so an outcome can flip before the slot is
+      // spent. The step now selected no longer claims out of EMAIL_SCHEDULED,
+      // so hand the slot back rather than let its claim match no row.
+      if (
+        enrollment.waitingOn === SEQUENCE_WAITING_ON.EMAIL_SCHEDULED &&
+        currentStep?.settings.type === SEQUENCE_STEP_TYPES.CONDITION &&
+        (nextStep.settings.type !== SEQUENCE_STEP_TYPES.SEND_EMAIL ||
+          this.isManualExecution(nextStep.settings))
+      ) {
+        await this.releaseEmailSendSlot({
+          workspaceId,
+          enrollmentRepository,
+          enrollment,
+        });
 
         return;
       }
@@ -605,7 +639,7 @@ export class SequenceExecutorService {
           await enqueueContinuationIfDue();
 
           return;
-        case SEQUENCE_STEP_TYPES.SEND_EMAIL:
+        case SEQUENCE_STEP_TYPES.SEND_EMAIL: {
           if (this.isManualExecution(nextStep.settings)) {
             await this.processManualEmailStep({
               workspaceId,
@@ -620,14 +654,35 @@ export class SequenceExecutorService {
             return;
           }
 
+          // Automated sends normally wait for the scheduler to allocate a
+          // mailbox slot. The scheduler resolves the next step without a
+          // condition outcome, so an enrollment parked on a condition can never
+          // be recognised as due for email and would wait forever. Claim the
+          // slot here for that one case; every other cursor is resolvable, so
+          // it keeps deferring to the scheduler's cross-enrollment pacing.
+          let emailEnrollment = enrollment;
+
           if (enrollment.waitingOn !== SEQUENCE_WAITING_ON.EMAIL_SCHEDULED) {
-            return;
+            if (currentStep?.settings.type !== SEQUENCE_STEP_TYPES.CONDITION) {
+              return;
+            }
+
+            const scheduledEnrollment = await this.scheduleEmailSendSlot({
+              enrollmentRepository,
+              enrollment,
+            });
+
+            if (!isDefined(scheduledEnrollment)) {
+              return;
+            }
+
+            emailEnrollment = scheduledEnrollment;
           }
 
           await this.processSendEmailStep({
             workspaceId,
             enrollmentRepository,
-            enrollment,
+            enrollment: emailEnrollment,
             person,
             sequenceSettings: parseSequenceSettings(sequence.settings),
             sequenceSenderConnectedAccountId: sequence.senderConnectedAccountId,
@@ -637,6 +692,7 @@ export class SequenceExecutorService {
           await enqueueContinuationIfDue();
 
           return;
+        }
         case SEQUENCE_STEP_TYPES.CONDITION:
           await this.processConditionStep({
             enrollmentRepository,
@@ -701,6 +757,123 @@ export class SequenceExecutorService {
     await this.sequenceQueueService.enqueueProcess({
       workspaceId,
       enrollmentId,
+    });
+  }
+
+  // A task step that continues on its deadline stays parked on TASK_DEADLINE
+  // until something moves it, exactly like one that continues on completion.
+  // Completion has the task listener; the deadline has only this, so mirror the
+  // same transition and let the requeued run resolve the next step normally.
+  private async continueFromElapsedTaskDeadline({
+    workspaceId,
+    enrollmentRepository,
+    enrollment,
+  }: {
+    workspaceId: string;
+    enrollmentRepository: WorkspaceRepository<SequenceEnrollmentWorkspaceEntity>;
+    enrollment: SequenceEnrollmentWorkspaceEntity;
+  }): Promise<void> {
+    const now = new Date();
+    const continuedResult = await enrollmentRepository.update(
+      {
+        id: enrollment.id,
+        status: SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
+        waitingOn: SEQUENCE_WAITING_ON.TASK_DEADLINE,
+        currentStepPosition: enrollment.currentStepPosition,
+        currentStepId: isDefined(enrollment.currentStepId)
+          ? enrollment.currentStepId
+          : IsNull(),
+        nextActionAt: LessThanOrEqual(now),
+      },
+      {
+        waitingOn: SEQUENCE_WAITING_ON.DELAY,
+        nextActionAt: now,
+      },
+    );
+
+    if (continuedResult.affected !== 1) {
+      return;
+    }
+
+    await this.sequenceQueueService.enqueueProcess({
+      workspaceId,
+      enrollmentId: enrollment.id,
+    });
+  }
+
+  // Only ever used for a cursor the scheduler cannot resolve. Reserving the
+  // slot does not bypass any limit: processSendEmailStep still takes the
+  // mailbox send lock, re-checks the sending window, applies the stagger
+  // against the mailbox's last send, and reserves the daily quota.
+  private async scheduleEmailSendSlot({
+    enrollmentRepository,
+    enrollment,
+  }: {
+    enrollmentRepository: WorkspaceRepository<SequenceEnrollmentWorkspaceEntity>;
+    enrollment: SequenceEnrollmentWorkspaceEntity;
+  }): Promise<SequenceEnrollmentWorkspaceEntity | null> {
+    const nextActionAt = new Date();
+    const scheduleResult = await enrollmentRepository.update(
+      {
+        id: enrollment.id,
+        status: SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
+        waitingOn: isDefined(enrollment.waitingOn)
+          ? enrollment.waitingOn
+          : IsNull(),
+        currentStepPosition: enrollment.currentStepPosition,
+        currentStepId: isDefined(enrollment.currentStepId)
+          ? enrollment.currentStepId
+          : IsNull(),
+        nextActionAt: LessThanOrEqual(nextActionAt),
+      },
+      {
+        waitingOn: SEQUENCE_WAITING_ON.EMAIL_SCHEDULED,
+        nextActionAt,
+      },
+    );
+
+    return scheduleResult.affected === 1
+      ? {
+          ...enrollment,
+          waitingOn: SEQUENCE_WAITING_ON.EMAIL_SCHEDULED,
+          nextActionAt,
+        }
+      : null;
+  }
+
+  private async releaseEmailSendSlot({
+    workspaceId,
+    enrollmentRepository,
+    enrollment,
+  }: {
+    workspaceId: string;
+    enrollmentRepository: WorkspaceRepository<SequenceEnrollmentWorkspaceEntity>;
+    enrollment: SequenceEnrollmentWorkspaceEntity;
+  }): Promise<void> {
+    const now = new Date();
+    const releaseResult = await enrollmentRepository.update(
+      {
+        id: enrollment.id,
+        status: SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
+        waitingOn: SEQUENCE_WAITING_ON.EMAIL_SCHEDULED,
+        currentStepPosition: enrollment.currentStepPosition,
+        currentStepId: isDefined(enrollment.currentStepId)
+          ? enrollment.currentStepId
+          : IsNull(),
+      },
+      {
+        waitingOn: SEQUENCE_WAITING_ON.DELAY,
+        nextActionAt: now,
+      },
+    );
+
+    if (releaseResult.affected !== 1) {
+      return;
+    }
+
+    await this.sequenceQueueService.enqueueProcess({
+      workspaceId,
+      enrollmentId: enrollment.id,
     });
   }
 

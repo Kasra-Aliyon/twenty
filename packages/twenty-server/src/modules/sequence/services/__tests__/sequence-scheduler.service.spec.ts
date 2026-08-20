@@ -2628,4 +2628,41 @@ describe('SequenceSchedulerService', () => {
       releaseSendLock.mock.invocationCallOrder[0],
     );
   });
+
+  it('leaves an enrollment recovering a phone enrichment on its own step', async () => {
+    const enrichStep = {
+      id: 'enrich-step-id',
+      sequenceId: sequence.id,
+      position: 0,
+      type: SEQUENCE_STEP_TYPES.ENRICH_PHONE_NUMBER,
+      settings: { type: SEQUENCE_STEP_TYPES.ENRICH_PHONE_NUMBER },
+    } as SequenceStepWorkspaceEntity;
+    const emailStep = { ...step, position: 1 } as SequenceStepWorkspaceEntity;
+    // Due on the enrichment lease, not because the step finished. Scheduling
+    // the following step here would drop the enrichment the executor still owns.
+    const enrichmentWaiter = {
+      ...buildEnrollment('enrichment-waiter-id'),
+      currentStepId: enrichStep.id,
+      currentStepPosition: enrichStep.position,
+      waitingOn: SEQUENCE_WAITING_ON.APOLLO_ENRICHMENT,
+    } as SequenceEnrollmentWorkspaceEntity;
+    const { service, enrollmentRepository, enqueueProcess } = setup({
+      startedToday: 2,
+      dueEnrollments: [enrichmentWaiter],
+      steps: [enrichStep, emailStep],
+    });
+
+    await service.tick(workspaceId, now);
+
+    expect(enrollmentRepository.update).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        waitingOn: SEQUENCE_WAITING_ON.EMAIL_SCHEDULED,
+      }),
+    );
+    expect(enqueueProcess).toHaveBeenCalledWith({
+      workspaceId,
+      enrollmentId: enrichmentWaiter.id,
+    });
+  });
 });

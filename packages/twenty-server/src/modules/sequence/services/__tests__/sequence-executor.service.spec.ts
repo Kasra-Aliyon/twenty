@@ -2663,6 +2663,222 @@ describe('SequenceExecutorService', () => {
     );
   });
 
+  it('sends an automated email that a condition branch selects', async () => {
+    const conditionStep = {
+      id: 'condition-step-id',
+      sequenceId: sequence.id,
+      position: 0,
+      type: SEQUENCE_STEP_TYPES.CONDITION,
+      settings: {
+        type: SEQUENCE_STEP_TYPES.CONDITION,
+        condition: SEQUENCE_CONDITION_TYPES.HAS_EMAIL_ADDRESS,
+      },
+    } as SequenceStepWorkspaceEntity;
+    const branchEmailStep = {
+      id: 'branch-email-step-id',
+      sequenceId: sequence.id,
+      position: 1,
+      type: SEQUENCE_STEP_TYPES.SEND_EMAIL,
+      settings: {
+        ...step.settings,
+        branch: {
+          conditionStepId: conditionStep.id,
+          outcome: SEQUENCE_CONDITION_BRANCHES.YES,
+        },
+      },
+    } as SequenceStepWorkspaceEntity;
+    // The scheduler resolves the next step without a condition outcome, so it
+    // can never recognise this enrollment as due for email. The executor has to
+    // claim the send slot itself or the branch is never reached.
+    const { service, enrollmentRepository, send } = setup({
+      currentEnrollment: {
+        ...enrollment,
+        currentStepId: conditionStep.id,
+        currentStepPosition: conditionStep.position,
+        waitingOn: SEQUENCE_WAITING_ON.DELAY,
+      },
+      steps: [conditionStep, branchEmailStep],
+    });
+
+    await service.process({ workspaceId, enrollmentId });
+
+    expect(enrollmentRepository.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: enrollmentId,
+        waitingOn: SEQUENCE_WAITING_ON.DELAY,
+        currentStepId: conditionStep.id,
+      }),
+      expect.objectContaining({
+        waitingOn: SEQUENCE_WAITING_ON.EMAIL_SCHEDULED,
+      }),
+    );
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('hands back a branch send slot when the condition outcome flips', async () => {
+    const conditionStep = {
+      id: 'condition-step-id',
+      sequenceId: sequence.id,
+      position: 0,
+      type: SEQUENCE_STEP_TYPES.CONDITION,
+      settings: {
+        type: SEQUENCE_STEP_TYPES.CONDITION,
+        condition: SEQUENCE_CONDITION_TYPES.HAS_PHONE_NUMBER,
+      },
+    } as SequenceStepWorkspaceEntity;
+    const yesEmailStep = {
+      id: 'yes-email-step-id',
+      sequenceId: sequence.id,
+      position: 1,
+      type: SEQUENCE_STEP_TYPES.SEND_EMAIL,
+      settings: {
+        ...step.settings,
+        branch: {
+          conditionStepId: conditionStep.id,
+          outcome: SEQUENCE_CONDITION_BRANCHES.YES,
+        },
+      },
+    } as SequenceStepWorkspaceEntity;
+    const noTaskStep = {
+      id: 'no-task-step-id',
+      sequenceId: sequence.id,
+      position: 2,
+      type: SEQUENCE_STEP_TYPES.CREATE_TASK,
+      settings: {
+        type: SEQUENCE_STEP_TYPES.CREATE_TASK,
+        branch: {
+          conditionStepId: conditionStep.id,
+          outcome: SEQUENCE_CONDITION_BRANCHES.NO,
+        },
+        taskType: SEQUENCE_TASK_TYPES.CUSTOM,
+        titleTemplate: 'Find a number',
+        notesTemplate: '',
+        priority: TASK_PRIORITIES.MEDIUM,
+        assigneeWorkspaceMemberId: null,
+        continueMode: 'ON_DONE',
+        deadlineDays: null,
+      },
+    } as SequenceStepWorkspaceEntity;
+    // The slot was claimed while the contact still had a phone number; the
+    // number is gone by the time the send is retried.
+    const { service, enrollmentRepository, send, createTask, enqueueProcess } =
+      setup({
+        currentEnrollment: {
+          ...enrollment,
+          currentStepId: conditionStep.id,
+          currentStepPosition: conditionStep.position,
+          waitingOn: SEQUENCE_WAITING_ON.EMAIL_SCHEDULED,
+        },
+        steps: [conditionStep, yesEmailStep, noTaskStep],
+      });
+
+    await service.process({ workspaceId, enrollmentId });
+
+    expect(send).not.toHaveBeenCalled();
+    expect(createTask).not.toHaveBeenCalled();
+    expect(enrollmentRepository.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: enrollmentId,
+        waitingOn: SEQUENCE_WAITING_ON.EMAIL_SCHEDULED,
+        currentStepId: conditionStep.id,
+      }),
+      expect.objectContaining({ waitingOn: SEQUENCE_WAITING_ON.DELAY }),
+    );
+    expect(enqueueProcess).toHaveBeenCalledWith({ workspaceId, enrollmentId });
+  });
+
+  it('leaves an unresolvable email cursor to the scheduler', async () => {
+    const delayStep = {
+      id: 'delay-step-id',
+      sequenceId: sequence.id,
+      position: 0,
+      type: SEQUENCE_STEP_TYPES.DELAY,
+      settings: {
+        type: SEQUENCE_STEP_TYPES.DELAY,
+        days: 0,
+        hours: 0,
+        minutes: 0,
+      },
+    } as SequenceStepWorkspaceEntity;
+    const emailStep = {
+      ...step,
+      position: 1,
+    } as SequenceStepWorkspaceEntity;
+    // This cursor is resolvable, so the scheduler still owns the pacing for it.
+    const { service, enrollmentRepository, send } = setup({
+      currentEnrollment: {
+        ...enrollment,
+        currentStepId: delayStep.id,
+        currentStepPosition: delayStep.position,
+        waitingOn: SEQUENCE_WAITING_ON.DELAY,
+      },
+      steps: [delayStep, emailStep],
+    });
+
+    await service.process({ workspaceId, enrollmentId });
+
+    expect(send).not.toHaveBeenCalled();
+    expect(enrollmentRepository.update).not.toHaveBeenCalled();
+  });
+
+  it('continues past a task step whose deadline elapsed', async () => {
+    const taskStep = {
+      id: 'task-step-id',
+      sequenceId: sequence.id,
+      position: 0,
+      type: SEQUENCE_STEP_TYPES.CREATE_TASK,
+      settings: {
+        type: SEQUENCE_STEP_TYPES.CREATE_TASK,
+        taskType: SEQUENCE_TASK_TYPES.CALL,
+        titleTemplate: 'Call {{ fullName }}',
+        notesTemplate: '',
+        priority: TASK_PRIORITIES.MEDIUM,
+        assigneeWorkspaceMemberId: null,
+        continueMode: 'ON_DEADLINE',
+        deadlineDays: 1,
+      },
+    } as SequenceStepWorkspaceEntity;
+    const nextDelayStep = {
+      id: 'delay-step-id',
+      sequenceId: sequence.id,
+      position: 1,
+      type: SEQUENCE_STEP_TYPES.DELAY,
+      settings: {
+        type: SEQUENCE_STEP_TYPES.DELAY,
+        days: 1,
+        hours: 0,
+        minutes: 0,
+      },
+    } as SequenceStepWorkspaceEntity;
+    const { service, enrollmentRepository, enqueueProcess } = setup({
+      currentEnrollment: {
+        ...enrollment,
+        currentStepId: taskStep.id,
+        currentStepPosition: taskStep.position,
+        waitingOn: SEQUENCE_WAITING_ON.TASK_DEADLINE,
+      },
+      steps: [taskStep, nextDelayStep],
+    });
+
+    await service.process({ workspaceId, enrollmentId });
+
+    // Every step claim below expects the neutral DELAY wait, so the elapsed
+    // deadline has to be normalised before the next step is attempted.
+    expect(enrollmentRepository.update).toHaveBeenCalledTimes(1);
+    expect(enrollmentRepository.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: enrollmentId,
+        waitingOn: SEQUENCE_WAITING_ON.TASK_DEADLINE,
+        currentStepId: taskStep.id,
+      }),
+      expect.objectContaining({ waitingOn: SEQUENCE_WAITING_ON.DELAY }),
+    );
+    expect(enqueueProcess).toHaveBeenCalledWith({
+      workspaceId,
+      enrollmentId,
+    });
+  });
+
   it('scopes LinkedIn read and reply conditions to the sender and recipient thread', async () => {
     const conditionStep = {
       id: 'condition-step-id',

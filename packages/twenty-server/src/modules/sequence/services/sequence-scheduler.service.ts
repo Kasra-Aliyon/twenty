@@ -9,6 +9,7 @@ import {
   SEQUENCE_STEP_TYPES,
   SEQUENCE_WAITING_ON,
   type SequenceSettings,
+  type SequenceWaitingOn,
 } from 'twenty-shared/types';
 import { isDefined } from 'twenty-shared/utils';
 import {
@@ -69,6 +70,12 @@ type DueEmail = {
   enrollment: SequenceEnrollmentWorkspaceEntity;
   settings: SequenceSettings;
 };
+
+const APOLLO_ENRICHMENT_WAITING_STATES: readonly SequenceWaitingOn[] = [
+  SEQUENCE_WAITING_ON.APOLLO_ENRICHMENT_CLAIMED,
+  SEQUENCE_WAITING_ON.APOLLO_ENRICHMENT_JOINED,
+  SEQUENCE_WAITING_ON.APOLLO_ENRICHMENT,
+];
 
 @Injectable()
 export class SequenceSchedulerService {
@@ -269,13 +276,28 @@ export class SequenceSchedulerService {
       for (const enrollment of dueEnrollments) {
         const sequenceSteps =
           stepsBySequenceId.get(enrollment.sequenceId) ?? [];
-        const nextStep = pausedLinkedinRetryEnrollmentIds.has(enrollment.id)
-          ? sequenceSteps.find((step) => step.id === enrollment.currentStepId)
-          : findNextSequenceStep({
-              steps: sequenceSteps,
-              currentStepId: enrollment.currentStepId,
-              currentStepPosition: enrollment.currentStepPosition,
-            });
+        const currentStep = sequenceSteps.find(
+          (step) => step.id === enrollment.currentStepId,
+        );
+        // An enrollment waiting on phone enrichment is due on a lease deadline,
+        // not because the step finished. Resolving past it here would schedule
+        // the following step and silently drop the enrichment the executor is
+        // still responsible for finishing, timing out or failing.
+        const isRecoveringApolloEnrichment =
+          currentStep?.settings.type ===
+            SEQUENCE_STEP_TYPES.ENRICH_PHONE_NUMBER &&
+          APOLLO_ENRICHMENT_WAITING_STATES.some(
+            (waitingOn) => enrollment.waitingOn === waitingOn,
+          );
+        const nextStep =
+          pausedLinkedinRetryEnrollmentIds.has(enrollment.id) ||
+          isRecoveringApolloEnrichment
+            ? currentStep
+            : findNextSequenceStep({
+                steps: sequenceSteps,
+                currentStepId: enrollment.currentStepId,
+                currentStepPosition: enrollment.currentStepPosition,
+              });
         const settings = settingsBySequenceId.get(enrollment.sequenceId);
         const isAutomatedEmail =
           isDefined(nextStep) &&
@@ -284,7 +306,13 @@ export class SequenceSchedulerService {
             SEQUENCE_ACTION_EXECUTION_MODES.MANUAL;
 
         if (!isAutomatedEmail) {
-          if (!fixedWindowEligibleSequenceIds.has(enrollment.sequenceId)) {
+          // Finishing an enrichment already paid for is repair, not outreach:
+          // deferring it to the next window would also push out the lease it is
+          // due on and keep the enrollment parked for another whole window.
+          if (
+            !isRecoveringApolloEnrichment &&
+            !fixedWindowEligibleSequenceIds.has(enrollment.sequenceId)
+          ) {
             if (isDefined(settings) && isDefined(enrollment.waitingOn)) {
               await enrollmentRepository.update(
                 {
