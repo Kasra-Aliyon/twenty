@@ -65,7 +65,7 @@ const SequenceCreatePageContent = () => {
     objectNameSingular: 'sequence',
     skipPostOptimisticEffect: true,
   });
-  const { accounts } = useMyConnectedAccounts();
+  const { accounts, loading: accountsLoading } = useMyConnectedAccounts();
 
   const accountOptions: SelectOption<string>[] = accounts
     .filter(isSequenceSenderAccount)
@@ -76,10 +76,10 @@ const SequenceCreatePageContent = () => {
       value: account.id,
     }));
   const senderConnectedAccountId =
-    selectedAccountId || accountOptions[0]?.value || '';
+    selectedAccountId || accountOptions[0]?.value || null;
 
   const createSequence = async () => {
-    if (!senderConnectedAccountId) {
+    if (accountsLoading) {
       return;
     }
 
@@ -90,7 +90,9 @@ const SequenceCreatePageContent = () => {
         senderConnectedAccountId,
         settings: {
           ...getDefaultSequenceSettings(),
-          senderConnectedAccountIds: [senderConnectedAccountId],
+          senderConnectedAccountIds: senderConnectedAccountId
+            ? [senderConnectedAccountId]
+            : [],
         },
       });
 
@@ -132,18 +134,22 @@ const SequenceCreatePageContent = () => {
               />
             </StyledField>
 
-            {accountOptions.length > 0 ? (
+            {accountsLoading ? (
+              <StyledMailboxHint>
+                {t`Checking connected sender accounts…`}
+              </StyledMailboxHint>
+            ) : accountOptions.length > 0 ? (
               <Select
                 dropdownId="new-sequence-sender-account"
                 label={t`Sender account`}
                 fullWidth
-                value={senderConnectedAccountId}
+                value={senderConnectedAccountId ?? ''}
                 options={accountOptions}
                 onChange={setSelectedAccountId}
               />
             ) : (
               <StyledMailboxHint>
-                {t`Connect an email account before creating a sequence.`}
+                {t`You can create this draft without a sender. Add a sender before activating automated email, LinkedIn, or sender-dependent condition steps.`}
               </StyledMailboxHint>
             )}
             {accountOptions.length > 0 && (
@@ -164,11 +170,11 @@ const SequenceCreatePageContent = () => {
               title={t`Create sequence`}
               type="submit"
               disabled={
+                accountsLoading ||
                 name.trim().length === 0 ||
-                !senderConnectedAccountId ||
                 !sequencePermissions.canUpdateObjectRecords
               }
-              isLoading={loading}
+              isLoading={loading || accountsLoading}
             />
           </StyledActions>
         </StyledCreateContent>

@@ -25,6 +25,7 @@ import { themeCssVariables } from 'twenty-ui/theme-constants';
 import { SequenceActionsMenu } from './components/SequenceActionsMenu';
 import { StyledEmptyState, StyledPill } from './components/SequencePageStyles';
 import { type SequenceRecord } from './types/SequenceRecords';
+import { getSequenceStatusErrorMessage } from './utils/get-sequence-status-error-message';
 
 const SEQUENCES_PAGE_SIZE = 50;
 
@@ -164,9 +165,12 @@ const SequencesPageContent = () => {
         },
       });
       await refetch();
-    } catch {
+    } catch (error) {
       enqueueErrorSnackBar({
-        message: t`The sequence status could not be updated.`,
+        message: getSequenceStatusErrorMessage({
+          error,
+          fallbackMessage: t`The sequence status could not be updated.`,
+        }),
       });
     }
   };

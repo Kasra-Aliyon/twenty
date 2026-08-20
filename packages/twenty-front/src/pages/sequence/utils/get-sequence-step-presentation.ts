@@ -39,7 +39,7 @@ export const getSequenceConditionLabel = (
     case SEQUENCE_CONDITION_TYPES.ACCEPTED_LINKEDIN_INVITE:
       return t`Accepted LinkedIn invite`;
     case SEQUENCE_CONDITION_TYPES.OPENED_LINKEDIN_MESSAGE:
-      return t`Received LinkedIn reply`;
+      return t`Read or replied to LinkedIn message`;
     case SEQUENCE_CONDITION_TYPES.HAS_PHONE_NUMBER:
       return t`Has phone number`;
   }

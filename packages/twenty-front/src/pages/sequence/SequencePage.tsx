@@ -34,6 +34,7 @@ import {
   type SequenceEnrollmentRecord,
   type SequenceRecord,
 } from './types/SequenceRecords';
+import { getSequenceStatusErrorMessage } from './utils/get-sequence-status-error-message';
 
 type SequenceTab = 'steps' | 'contacts' | 'analytics' | 'settings';
 
@@ -170,9 +171,12 @@ const SequencePageContent = () => {
         },
       });
       await refetch();
-    } catch {
+    } catch (error) {
       enqueueErrorSnackBar({
-        message: t`The sequence status could not be updated.`,
+        message: getSequenceStatusErrorMessage({
+          error,
+          fallbackMessage: t`The sequence status could not be updated.`,
+        }),
       });
     }
   };

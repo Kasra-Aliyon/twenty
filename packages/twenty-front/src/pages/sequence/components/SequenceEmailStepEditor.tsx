@@ -99,6 +99,11 @@ const StyledToggleRow = styled.label`
   justify-content: space-between;
 `;
 
+const StyledManualEmailLimitation = styled.div`
+  color: ${themeCssVariables.font.color.tertiary};
+  font-size: ${themeCssVariables.font.size.sm};
+`;
+
 const StyledSelect = styled.select`
   background: ${themeCssVariables.background.transparent.lighter};
   border: 1px solid ${themeCssVariables.border.color.medium};
@@ -264,6 +269,13 @@ export const SequenceEmailStepEditor = ({
   };
 
   const updateExecutionMode = (mode: SequenceActionExecutionMode) => {
+    if (
+      executionMode === SEQUENCE_ACTION_EXECUTION_MODES.MANUAL &&
+      mode === SEQUENCE_ACTION_EXECUTION_MODES.AUTOMATED
+    ) {
+      setStopOnReply(null);
+    }
+
     setExecutionMode(mode);
 
     if (mode === SEQUENCE_ACTION_EXECUTION_MODES.MANUAL) {
@@ -306,8 +318,14 @@ export const SequenceEmailStepEditor = ({
               variants.length > 1
                 ? variants
                 : undefined,
-            threadAsReplyToPreviousEmail,
-            stopOnReply,
+            threadAsReplyToPreviousEmail:
+              executionMode === SEQUENCE_ACTION_EXECUTION_MODES.AUTOMATED
+                ? threadAsReplyToPreviousEmail
+                : false,
+            stopOnReply:
+              executionMode === SEQUENCE_ACTION_EXECUTION_MODES.AUTOMATED
+                ? stopOnReply
+                : false,
             executionMode,
             manualTaskTitle,
             manualTaskDescription,
@@ -488,32 +506,40 @@ export const SequenceEmailStepEditor = ({
         </StyledSpintaxError>
       )}
 
-      <StyledToggleRow>
-        <span>{t`Thread as a reply to the previous sequence email`}</span>
-        <Toggle
-          value={threadAsReplyToPreviousEmail}
-          onChange={setThreadAsReplyToPreviousEmail}
-          toggleSize="small"
-        />
-      </StyledToggleRow>
+      {executionMode === SEQUENCE_ACTION_EXECUTION_MODES.AUTOMATED ? (
+        <>
+          <StyledToggleRow>
+            <span>{t`Thread as a reply to the previous sequence email`}</span>
+            <Toggle
+              value={threadAsReplyToPreviousEmail}
+              onChange={setThreadAsReplyToPreviousEmail}
+              toggleSize="small"
+            />
+          </StyledToggleRow>
 
-      <StyledField>
-        <span>{t`Stop on reply`}</span>
-        <StyledSelect
-          value={stopOnReply === null ? 'INHERIT' : String(stopOnReply)}
-          onChange={(event) =>
-            setStopOnReply(
-              event.target.value === 'INHERIT'
-                ? null
-                : event.target.value === 'true',
-            )
-          }
-        >
-          <option value="INHERIT">{t`Use sequence setting`}</option>
-          <option value="true">{t`Always stop`}</option>
-          <option value="false">{t`Do not stop`}</option>
-        </StyledSelect>
-      </StyledField>
+          <StyledField>
+            <span>{t`Stop on reply`}</span>
+            <StyledSelect
+              value={stopOnReply === null ? 'INHERIT' : String(stopOnReply)}
+              onChange={(event) =>
+                setStopOnReply(
+                  event.target.value === 'INHERIT'
+                    ? null
+                    : event.target.value === 'true',
+                )
+              }
+            >
+              <option value="INHERIT">{t`Use sequence setting`}</option>
+              <option value="true">{t`Always stop`}</option>
+              <option value="false">{t`Do not stop`}</option>
+            </StyledSelect>
+          </StyledField>
+        </>
+      ) : (
+        <StyledManualEmailLimitation>
+          {t`Manual email tasks do not record a sent-message thread. Threading and automatic stop-on-reply are available only for automated email steps; stop the enrollment manually after a reply.`}
+        </StyledManualEmailLimitation>
+      )}
 
       <StyledActions>
         <Button

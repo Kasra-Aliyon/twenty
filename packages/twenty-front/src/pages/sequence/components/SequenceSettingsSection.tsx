@@ -194,12 +194,9 @@ export const SequenceSettingsSection = ({
       }
     }
 
-    if (
-      senderConnectedAccountIds.length === 0 ||
-      settings.activeDays.length === 0
-    ) {
+    if (settings.activeDays.length === 0) {
       enqueueErrorSnackBar({
-        message: t`Choose a sender and at least one active day.`,
+        message: t`Choose at least one active day.`,
       });
       return;
     }
@@ -216,7 +213,7 @@ export const SequenceSettingsSection = ({
             linkedinDelayPatternMinutes,
             senderConnectedAccountIds,
           },
-          senderConnectedAccountId: senderConnectedAccountIds[0],
+          senderConnectedAccountId: senderConnectedAccountIds[0] ?? null,
         },
       });
       enqueueSuccessSnackBar({ message: t`Sequence settings saved.` });
@@ -383,7 +380,9 @@ export const SequenceSettingsSection = ({
       {mailboxOptions.length === 0 && (
         <StyledField>
           <span>{t`Sender account pool`}</span>
-          <span>{t`Connect an email account before activating this sequence.`}</span>
+          <span>
+            {t`You can save these settings without a sender. Add a sender before activating automated email, LinkedIn, or sender-dependent condition steps.`}
+          </span>
         </StyledField>
       )}
 
