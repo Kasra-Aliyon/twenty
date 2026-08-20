@@ -56,6 +56,23 @@ const LINKEDIN_SELECTORS = {
     'textarea[name="message"]',
     'textarea',
   ],
+  outboundMessage: [
+    '[data-message-direction="outbound"]',
+    '[data-direction="outbound"]',
+    '[data-is-self="true"]',
+    '[data-sender-is-self="true"]',
+    '.msg-s-message-group--is-self',
+    '.msg-s-message-list__event--from-me',
+    '[class*="outbound-message"]',
+    '[class*="message--outgoing"]',
+  ],
+  messageBody: [
+    '[data-message-body]',
+    '.msg-s-event-listitem__body',
+    '.msg-s-message-group__message-bubble',
+    '[data-view-name*="message-bubble"]',
+    'p',
+  ],
 } as const;
 
 // Recommendation rails ("More profiles for you", "People also viewed") render
@@ -169,6 +186,9 @@ const querySelectorAllAcrossRoots = <TElement extends Element>(
 
 const normalizedText = (element: Element): string =>
   (element.textContent ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+
+const normalizeTextValue = (value: string): string =>
+  value.replace(/\s+/g, ' ').trim().toLowerCase();
 
 const accessibleLabel = (element: Element): string =>
   (element.getAttribute('aria-label') ?? '')
@@ -582,28 +602,157 @@ const waitForInvitationFlow = async (): Promise<InvitationFlowResult> => {
   };
 };
 
-const hasInvitationSentConfirmation = (): boolean => {
+const getInvitationSentConfirmations = (): Set<HTMLElement> => {
   const confirmationPattern =
     /(?:invitation|connection request).{0,80}\b(?:sent|submitted)\b/i;
   const failurePattern =
     /(?:not|failed|unable|couldn['’]?t).{0,40}\b(?:sent|submitted)\b/i;
+  const confirmations = new Set<HTMLElement>();
 
-  return getAccessibleLinkedInRoots().some((currentRoot) =>
-    LINKEDIN_SELECTORS.confirmation.some((selector) =>
-      [...currentRoot.querySelectorAll<HTMLElement>(selector)].some(
-        (element) => {
-          const confirmationText = normalizedText(element);
+  for (const currentRoot of getAccessibleLinkedInRoots()) {
+    for (const selector of LINKEDIN_SELECTORS.confirmation) {
+      for (const element of currentRoot.querySelectorAll<HTMLElement>(
+        selector,
+      )) {
+        const confirmationText = normalizedText(element);
 
-          return (
-            isVisible(element) &&
-            confirmationPattern.test(confirmationText) &&
-            !failurePattern.test(confirmationText)
-          );
-        },
-      ),
-    ),
-  );
+        if (
+          isVisible(element) &&
+          confirmationPattern.test(confirmationText) &&
+          !failurePattern.test(confirmationText)
+        ) {
+          confirmations.add(element);
+        }
+      }
+    }
+  }
+
+  return confirmations;
 };
+
+const getMessageSentConfirmations = (): Set<HTMLElement> => {
+  const confirmationPattern = /\bmessage (?:was )?sent\b/i;
+  const failurePattern =
+    /(?:not|failed|unable|couldn['’]?t).{0,40}\b(?:sent|send)\b/i;
+  const confirmations = new Set<HTMLElement>();
+
+  for (const currentRoot of getAccessibleLinkedInRoots()) {
+    for (const selector of LINKEDIN_SELECTORS.confirmation) {
+      for (const element of currentRoot.querySelectorAll<HTMLElement>(
+        selector,
+      )) {
+        const confirmationText = normalizedText(element);
+
+        if (
+          isVisible(element) &&
+          confirmationPattern.test(confirmationText) &&
+          !failurePattern.test(confirmationText)
+        ) {
+          confirmations.add(element);
+        }
+      }
+    }
+  }
+
+  return confirmations;
+};
+
+const getMatchingOutboundMessageIdentities = (
+  messageText: string,
+): Set<string> => {
+  const normalizedMessageText = normalizeTextValue(messageText);
+  const matchingMessageIdentities = new Set<string>();
+  const stableMessageContainerSelector = [
+    '[data-event-urn]',
+    '[data-message-id]',
+    '[data-entity-urn]',
+    '[data-urn]',
+  ].join(',');
+
+  for (const currentRoot of getAccessibleLinkedInRoots()) {
+    for (const selector of LINKEDIN_SELECTORS.outboundMessage) {
+      for (const outboundElement of currentRoot.querySelectorAll<HTMLElement>(
+        selector,
+      )) {
+        if (!isVisible(outboundElement)) {
+          continue;
+        }
+
+        const hasMatchingBody = LINKEDIN_SELECTORS.messageBody.some(
+          (bodySelector) =>
+            [
+              ...outboundElement.querySelectorAll<HTMLElement>(bodySelector),
+            ].some(
+              (bodyElement) =>
+                isVisible(bodyElement) &&
+                normalizedText(bodyElement) === normalizedMessageText,
+            ),
+        );
+
+        if (
+          !hasMatchingBody &&
+          normalizedText(outboundElement) !== normalizedMessageText
+        ) {
+          continue;
+        }
+
+        const stableMessageContainer = outboundElement.closest<HTMLElement>(
+          stableMessageContainerSelector,
+        );
+
+        if (!stableMessageContainer) {
+          continue;
+        }
+
+        for (const attributeName of [
+          'data-event-urn',
+          'data-message-id',
+          'data-entity-urn',
+          'data-urn',
+        ] as const) {
+          const attributeValue =
+            stableMessageContainer.getAttribute(attributeName);
+
+          if (attributeValue) {
+            matchingMessageIdentities.add(`${attributeName}:${attributeValue}`);
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  return matchingMessageIdentities;
+};
+
+const getInvitationWithdrawnConfirmations = (): Set<HTMLElement> => {
+  const confirmations = new Set<HTMLElement>();
+
+  for (const currentRoot of getAccessibleLinkedInRoots()) {
+    for (const selector of LINKEDIN_SELECTORS.confirmation) {
+      for (const element of currentRoot.querySelectorAll<HTMLElement>(
+        selector,
+      )) {
+        if (
+          isVisible(element) &&
+          /\binvitation (?:was )?withdrawn\b/i.test(normalizedText(element))
+        ) {
+          confirmations.add(element);
+        }
+      }
+    }
+  }
+
+  return confirmations;
+};
+
+const hasNewConfirmation = (
+  confirmations: ReadonlySet<HTMLElement>,
+  confirmationsBeforeProviderOperation: ReadonlySet<HTMLElement>,
+): boolean =>
+  [...confirmations].some(
+    (confirmation) => !confirmationsBeforeProviderOperation.has(confirmation),
+  );
 
 const waitForElement = async <TElement extends Element>(
   findElement: () => TElement | null,
@@ -770,6 +919,7 @@ export const getLinkedInAutomationBlockReason = (): string | null => {
 const confirmInvitationSent = async (
   dialog: HTMLElement,
   connectSource: 'DIRECT' | 'MENU',
+  invitationSentConfirmationsBeforeSend: ReadonlySet<HTMLElement>,
 ): Promise<{ confirmed: boolean; reason: string | null }> => {
   const deadline = Date.now() + SEND_CONFIRMATION_TIMEOUT_MILLISECONDS;
   let didInspectOverflowMenu = false;
@@ -792,7 +942,10 @@ const confirmInvitationSent = async (
       if (
         controls.pending ||
         detectConnectionDegree() === 'FIRST' ||
-        hasInvitationSentConfirmation()
+        hasNewConfirmation(
+          getInvitationSentConfirmations(),
+          invitationSentConfirmationsBeforeSend,
+        )
       ) {
         return { confirmed: true, reason: null };
       }
@@ -933,6 +1086,7 @@ export const sendConnectionRequest = async (
   }
 
   let currentDialog = dialog;
+  let invitationSentConfirmationsBeforeSend = new Set<HTMLElement>();
 
   if (normalizedNoteText.length > 0) {
     // Some invitation dialogs expose the note field directly, so a missing
@@ -975,6 +1129,8 @@ export const sendConnectionRequest = async (
       };
     }
 
+    invitationSentConfirmationsBeforeSend = getInvitationSentConfirmations();
+
     if (
       !(await runProviderOperation({
         authorizeProviderOperation,
@@ -1002,6 +1158,8 @@ export const sendConnectionRequest = async (
       };
     }
 
+    invitationSentConfirmationsBeforeSend = getInvitationSentConfirmations();
+
     if (
       !(await runProviderOperation({
         authorizeProviderOperation,
@@ -1015,6 +1173,7 @@ export const sendConnectionRequest = async (
   const { confirmed, reason } = await confirmInvitationSent(
     dialog,
     connectSource,
+    invitationSentConfirmationsBeforeSend,
   );
 
   if (!confirmed) {
@@ -1140,6 +1299,10 @@ export const sendDirectMessage = async (
     };
   }
 
+  const matchingOutboundMessageIdentitiesBeforeSend =
+    getMatchingOutboundMessageIdentities(messageText);
+  const messageSentConfirmationsBeforeSend = getMessageSentConfirmations();
+
   if (
     !(await runProviderOperation({
       authorizeProviderOperation,
@@ -1162,25 +1325,20 @@ export const sendDirectMessage = async (
       };
     }
 
-    const currentInputText =
-      input instanceof HTMLTextAreaElement
-        ? input.value.trim()
-        : (input.textContent ?? '').trim();
-    const didComposerClose =
-      !composer.isConnected || !input.isConnected || !isVisible(composer);
-    const didInputClear = currentInputText.length === 0;
-    const hasMessageSentToast = getAccessibleLinkedInRoots().some(
-      (currentRoot) =>
-        LINKEDIN_SELECTORS.confirmation.some((selector) =>
-          [...currentRoot.querySelectorAll<HTMLElement>(selector)].some(
-            (element) =>
-              isVisible(element) &&
-              /message (?:was )?sent/i.test(normalizedText(element)),
-          ),
-        ),
+    const hasNewMatchingOutboundMessage = [
+      ...getMatchingOutboundMessageIdentities(messageText),
+    ].some(
+      (messageIdentity) =>
+        !matchingOutboundMessageIdentitiesBeforeSend.has(messageIdentity),
     );
 
-    if (didComposerClose || didInputClear || hasMessageSentToast) {
+    if (
+      hasNewConfirmation(
+        getMessageSentConfirmations(),
+        messageSentConfirmationsBeforeSend,
+      ) ||
+      hasNewMatchingOutboundMessage
+    ) {
       return { status: 'COMPLETED', connectionState: 'CONNECTED' };
     }
 
@@ -1248,6 +1406,7 @@ export const withdrawConnectionRequest = async (
 
   const controls = getProfileActionControls();
   let pendingControl = controls.pending;
+  let pendingControlWasInMenu = false;
 
   if (!pendingControl && controls.more) {
     const controlsBeforeOpening = new Set(findControls('pending'));
@@ -1256,6 +1415,7 @@ export const withdrawConnectionRequest = async (
     pendingControl = await waitForElement(() =>
       findControlInOpenMenu('pending', controlsBeforeOpening),
     );
+    pendingControlWasInMenu = pendingControl !== null;
   }
 
   if (!pendingControl) {
@@ -1315,6 +1475,9 @@ export const withdrawConnectionRequest = async (
     };
   }
 
+  const withdrawalConfirmationsBeforeSend =
+    getInvitationWithdrawnConfirmations();
+
   if (
     !(await runProviderOperation({
       authorizeProviderOperation,
@@ -1326,6 +1489,9 @@ export const withdrawConnectionRequest = async (
 
   const confirmationDeadline =
     Date.now() + SEND_CONFIRMATION_TIMEOUT_MILLISECONDS;
+  let postWithdrawalMenuWasOpened = false;
+  let connectControlsBeforeOpening = new Set<HTMLElement>();
+  let pendingControlsBeforeOpening = new Set<HTMLElement>();
 
   while (Date.now() < confirmationDeadline) {
     const postWithdrawBlockReason = getLinkedInAutomationBlockReason();
@@ -1338,23 +1504,42 @@ export const withdrawConnectionRequest = async (
       };
     }
 
-    const hasWithdrawalToast = getAccessibleLinkedInRoots().some(
-      (currentRoot) =>
-        LINKEDIN_SELECTORS.confirmation.some((selector) =>
-          [...currentRoot.querySelectorAll<HTMLElement>(selector)].some(
-            (element) =>
-              isVisible(element) &&
-              /invitation (?:was )?withdrawn/i.test(normalizedText(element)),
-          ),
-        ),
-    );
     const didDialogClose = !dialog.isConnected || !isVisible(dialog);
-    const hasPendingControl = Boolean(
-      findControl('pending', document, { profileLevelOnly: true }),
-    );
 
-    if (hasWithdrawalToast || (didDialogClose && !hasPendingControl)) {
+    if (
+      hasNewConfirmation(
+        getInvitationWithdrawnConfirmations(),
+        withdrawalConfirmationsBeforeSend,
+      )
+    ) {
       return { status: 'COMPLETED', connectionState: 'WITHDRAWN' };
+    }
+
+    if (didDialogClose) {
+      const postWithdrawalControls = getProfileActionControls();
+
+      if (postWithdrawalControls.connect) {
+        return { status: 'COMPLETED', connectionState: 'WITHDRAWN' };
+      }
+
+      if (
+        !postWithdrawalMenuWasOpened &&
+        postWithdrawalControls.more &&
+        (pendingControlWasInMenu || !postWithdrawalControls.pending)
+      ) {
+        connectControlsBeforeOpening = new Set(findControls('connect'));
+        pendingControlsBeforeOpening = new Set(findControls('pending'));
+        postWithdrawalControls.more.click();
+        postWithdrawalMenuWasOpened = true;
+      }
+
+      if (
+        postWithdrawalMenuWasOpened &&
+        findControlInOpenMenu('connect', connectControlsBeforeOpening) &&
+        !findControlInOpenMenu('pending', pendingControlsBeforeOpening)
+      ) {
+        return { status: 'COMPLETED', connectionState: 'WITHDRAWN' };
+      }
     }
 
     await wait(150);

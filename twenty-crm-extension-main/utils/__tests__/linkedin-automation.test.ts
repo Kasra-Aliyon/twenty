@@ -858,7 +858,8 @@ describe('LinkedIn message and withdrawal automation', () => {
     });
   });
 
-  it('reports a direct message only after the composer confirms the send', async () => {
+  it('does not treat composer clearing alone as a sent-message confirmation', async () => {
+    vi.useFakeTimers();
     renderProfile(`
       <main>
         <section class="pv-top-card">
@@ -889,9 +890,16 @@ describe('LinkedIn message and withdrawal automation', () => {
         });
       });
 
-    expect(await sendDirectMessage('Hello Ada')).toEqual({
-      status: 'COMPLETED',
+    const resultPromise = sendDirectMessage('Hello Ada');
+
+    await vi.runAllTimersAsync();
+
+    await expect(resultPromise).resolves.toMatchObject({
+      status: 'FAILED',
       connectionState: 'CONNECTED',
+      errorMessage: expect.stringContaining(
+        'will not be retried automatically',
+      ),
     });
     expect(didClickSend).toBe(true);
   });
