@@ -14,11 +14,12 @@ export type ApolloEnrichPersonJobData = {
   trigger: ApolloEnrichmentTrigger;
 };
 
-type ApolloPhoneEnrichmentPollJobData = {
+type ApolloEnrichmentPollJobData = {
   matchFingerprint: string;
   personId: string;
   requestId: string;
   requestToken: string;
+  target?: 'email' | 'phone';
   workspaceId: string;
 };
 
@@ -55,14 +56,12 @@ export class ApolloEnrichPersonJob {
   }
 
   @Process(APOLLO_PHONE_ENRICHMENT_POLL_JOB_NAME)
-  async handlePhoneEnrichmentPoll(
-    data: ApolloPhoneEnrichmentPollJobData,
-  ): Promise<void> {
-    const result = await this.apolloEnrichmentService.pollPhoneEnrichment(data);
+  async handleEnrichmentPoll(data: ApolloEnrichmentPollJobData): Promise<void> {
+    const result = await this.apolloEnrichmentService.pollEnrichment(data);
 
     if (result === 'pending') {
       throw new ApolloEnrichmentError(
-        'Apollo phone enrichment result is still pending',
+        'Apollo enrichment result is still pending',
         true,
         404,
       );

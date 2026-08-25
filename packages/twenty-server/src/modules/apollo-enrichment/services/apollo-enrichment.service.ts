@@ -47,7 +47,7 @@ import {
   type ApolloOrganization,
   type ApolloPerson,
   type ApolloPersonMatchInput,
-  type ApolloPhoneEnrichmentWebhookPayload,
+  type ApolloEnrichmentWebhookPayload,
   type ApolloPersonEnrichmentOptions,
 } from 'src/modules/apollo-enrichment/types/apollo-api.type';
 import {
@@ -66,6 +66,7 @@ export type ApolloEnrichmentResult =
   | 'skipped'
   | 'not-found'
   | 'not-matched'
+  | 'updated-pending'
   | 'updated';
 
 export type ApolloPersonEnrichmentMode = 'automatic' | 'general' | 'phone';
@@ -88,16 +89,20 @@ const APOLLO_PHONE_WEBHOOK_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 const APOLLO_PHONE_ENRICHMENT_LOCK_KEY_PREFIX =
   'apollo-phone-enrichment-request';
 
+type ApolloAsyncEnrichmentTarget = 'email' | 'phone';
+
 type ApolloPhoneWebhookTokenPayload = {
   expiresAt: number;
   matchFingerprint?: string;
   personId: string;
   requestToken?: string;
+  target?: ApolloAsyncEnrichmentTarget;
   workspaceId: string;
 };
 
 type ApolloPhoneEnrichmentLock = {
   key: string;
+  target: ApolloAsyncEnrichmentTarget;
   token: string;
 };
 
@@ -109,7 +114,7 @@ type ApolloPhonePersistenceOutcome =
   | 'ownership-lost'
   | 'updated';
 
-export type ApolloPhoneEnrichmentPollOutcome = 'pending' | 'resolved' | 'stale';
+export type ApolloEnrichmentPollOutcome = 'pending' | 'resolved' | 'stale';
 
 @Injectable()
 export class ApolloEnrichmentService {
@@ -167,30 +172,35 @@ export class ApolloEnrichmentService {
           return 'skipped';
         }
 
-        let matchInput =
-          this.apolloEnrichmentMapperService.buildPersonMatchInput(person);
+        let matchInput = await this.buildPersonMatchInputWithCompanyContext({
+          person,
+          rolePermissionConfig,
+          workspaceId,
+        });
 
         if (!isDefined(matchInput)) {
           return 'skipped';
         }
 
-        const phoneRequestToken = randomUUID();
+        const requestToken = randomUUID();
         let enrichmentOptions = this.getPersonEnrichmentOptions({
           matchFingerprint: this.buildPersonMatchFingerprint(matchInput),
           mode,
           personId,
-          phoneRequestToken,
+          requestToken,
           workspaceId,
         });
-        let phoneRequestLock = enrichmentOptions.revealPhoneNumber
+        let asyncTarget = this.getAsyncEnrichmentTarget(enrichmentOptions);
+        let requestLock = isDefined(asyncTarget)
           ? await this.tryAcquirePhoneEnrichmentLock({
               personId,
-              requestToken: phoneRequestToken,
+              requestToken,
+              target: asyncTarget,
               workspaceId,
             })
           : undefined;
 
-        if (phoneRequestLock === null) {
+        if (requestLock === null) {
           if (mode !== 'automatic') {
             return 'pending';
           }
@@ -201,36 +211,41 @@ export class ApolloEnrichmentService {
           enrichmentOptions = {
             ...enrichmentOptions,
             revealPhoneNumber: false,
+            runWaterfallEmail: false,
+            runWaterfallPhone: false,
             webhookUrl: undefined,
           };
-          phoneRequestLock = undefined;
+          asyncTarget = undefined;
+          requestLock = undefined;
         }
 
-        if (isDefined(phoneRequestLock)) {
+        if (isDefined(requestLock)) {
           try {
             const latestPerson = await personRepository.findOne({
               where: { id: personId },
             });
 
             if (!isDefined(latestPerson)) {
-              await this.releasePhoneEnrichmentLock(phoneRequestLock);
+              await this.releasePhoneEnrichmentLock(requestLock);
 
               return 'not-found';
             }
 
             if (!this.shouldEnrichPersonForMode(latestPerson, mode)) {
-              await this.releasePhoneEnrichmentLock(phoneRequestLock);
+              await this.releasePhoneEnrichmentLock(requestLock);
 
               return 'skipped';
             }
 
             const latestMatchInput =
-              this.apolloEnrichmentMapperService.buildPersonMatchInput(
-                latestPerson,
-              );
+              await this.buildPersonMatchInputWithCompanyContext({
+                person: latestPerson,
+                rolePermissionConfig,
+                workspaceId,
+              });
 
             if (!isDefined(latestMatchInput)) {
-              await this.releasePhoneEnrichmentLock(phoneRequestLock);
+              await this.releasePhoneEnrichmentLock(requestLock);
 
               return 'skipped';
             }
@@ -245,11 +260,12 @@ export class ApolloEnrichmentService {
                 this.buildPersonMatchFingerprint(latestMatchInput),
               mode,
               personId,
-              phoneRequestToken,
+              requestToken,
               workspaceId,
             });
+            asyncTarget = this.getAsyncEnrichmentTarget(enrichmentOptions);
           } catch (error) {
-            await this.releasePhoneEnrichmentLock(phoneRequestLock);
+            await this.releasePhoneEnrichmentLock(requestLock);
 
             throw error;
           }
@@ -262,10 +278,10 @@ export class ApolloEnrichmentService {
 
         try {
           const providerStartCallback =
-            enrichmentOptions.revealPhoneNumber || isDefined(onProviderStart)
+            isDefined(asyncTarget) || isDefined(onProviderStart)
               ? async () => {
                   await onProviderStart?.();
-                  await this.renewPhoneEnrichmentLock(phoneRequestLock);
+                  await this.renewPhoneEnrichmentLock(requestLock);
                   providerStarted = true;
                 }
               : undefined;
@@ -282,7 +298,7 @@ export class ApolloEnrichmentService {
               );
         } catch (error) {
           if (!providerStarted) {
-            await this.releasePhoneEnrichmentLock(phoneRequestLock);
+            await this.releasePhoneEnrichmentLock(requestLock);
           }
 
           if (
@@ -292,7 +308,7 @@ export class ApolloEnrichmentService {
             error.statusCode >= 400 &&
             error.statusCode <= 499
           ) {
-            await this.releasePhoneEnrichmentLock(phoneRequestLock);
+            await this.releasePhoneEnrichmentLock(requestLock);
 
             throw new ApolloEnrichmentProviderRejectedError(
               error.message,
@@ -304,26 +320,50 @@ export class ApolloEnrichmentService {
           throw error;
         }
 
-        const apolloPerson = apolloResponse.person;
+        if (apolloResponse.waterfall?.status === 'failed') {
+          await this.releasePhoneEnrichmentLock(requestLock);
 
-        if (!isDefined(apolloPerson)) {
-          await this.releasePhoneEnrichmentLock(phoneRequestLock);
-
-          return 'not-matched';
+          throw new ApolloEnrichmentProviderRejectedError(
+            apolloResponse.waterfall.message ??
+              'Apollo waterfall enrichment was rejected',
+            false,
+            400,
+          );
         }
 
-        const phoneRequestId = this.normalizeApolloPhoneRequestId(
+        const requestId = this.normalizeApolloPhoneRequestId(
           apolloResponse.request_id,
         );
 
-        if (isDefined(phoneRequestLock) && isDefined(phoneRequestId)) {
+        if (
+          isDefined(requestLock) &&
+          isDefined(asyncTarget) &&
+          isDefined(requestId)
+        ) {
           await this.enqueuePhoneEnrichmentPoll({
             matchFingerprint: this.buildPersonMatchFingerprint(matchInput),
             personId: person.id,
-            requestId: phoneRequestId,
-            requestToken: phoneRequestLock.token,
+            requestId,
+            requestToken: requestLock.token,
+            target: asyncTarget,
             workspaceId,
           });
+        }
+
+        const apolloPerson = apolloResponse.person;
+
+        if (!isDefined(apolloPerson)) {
+          if (
+            isDefined(requestLock) &&
+            (apolloResponse.waterfall?.status === 'accepted' ||
+              isDefined(requestId))
+          ) {
+            return 'pending';
+          }
+
+          await this.releasePhoneEnrichmentLock(requestLock);
+
+          return 'not-matched';
         }
 
         if (mode === 'phone') {
@@ -340,7 +380,7 @@ export class ApolloEnrichmentService {
             return 'pending';
           }
 
-          await this.releasePhoneEnrichmentLock(phoneRequestLock);
+          await this.releasePhoneEnrichmentLock(requestLock);
 
           if (phonePersistenceOutcome === 'not-found') {
             return 'not-found';
@@ -396,7 +436,7 @@ export class ApolloEnrichmentService {
         }
 
         if (shouldPersistPhone) {
-          await this.releasePhoneEnrichmentLock(phoneRequestLock);
+          await this.releasePhoneEnrichmentLock(requestLock);
         }
 
         if (phonePersistenceOutcome === 'not-found') {
@@ -407,22 +447,26 @@ export class ApolloEnrichmentService {
           return hasGeneralUpdate ? 'updated' : 'skipped';
         }
 
+        if (asyncTarget === 'email') {
+          return hasGeneralUpdate ? 'updated-pending' : 'pending';
+        }
+
         if (phonePersistenceOutcome === 'updated' || hasGeneralUpdate) {
           return 'updated';
         }
 
-        return enrichmentOptions.revealPhoneNumber ? 'pending' : 'skipped';
+        return isDefined(asyncTarget) ? 'pending' : 'skipped';
       },
       authContext,
     );
   }
 
-  async handlePhoneEnrichmentWebhook({
+  async handleEnrichmentWebhook({
     token,
     payload,
   }: {
     token: string;
-    payload: ApolloPhoneEnrichmentWebhookPayload;
+    payload: ApolloEnrichmentWebhookPayload;
   }): Promise<void> {
     const tokenPayload = this.verifyPhoneWebhookToken(token);
 
@@ -434,13 +478,14 @@ export class ApolloEnrichmentService {
       ? this.getPhoneEnrichmentLock({
           personId: tokenPayload.personId,
           requestToken: tokenPayload.requestToken,
+          target: tokenPayload.target ?? 'phone',
           workspaceId: tokenPayload.workspaceId,
         })
       : undefined;
 
     // Pre-generation tokens cannot prove current ownership or match identity.
-    // Dropping a rolling-upgrade callback is safer than writing a stale phone
-    // onto a person now owned by a newer request.
+    // Dropping a rolling-upgrade callback is safer than writing stale contact
+    // data onto a person now owned by a newer request.
     if (!isDefined(phoneRequestLock)) {
       return;
     }
@@ -475,7 +520,7 @@ export class ApolloEnrichmentService {
         return;
       }
 
-      const phonePersistenceOutcome =
+      const persistenceOutcome =
         await this.globalWorkspaceOrmManager.executeInWorkspaceContext(
           async () => {
             const personRepository =
@@ -487,22 +532,65 @@ export class ApolloEnrichmentService {
                 },
               );
 
-            return this.persistApolloPhoneIfStillMissing({
+            const beforeWrite = async () =>
+              this.confirmPhoneWebhookProcessingOwnership({
+                phoneRequestLock,
+                webhookProcessingLock,
+              });
+
+            if (phoneRequestLock.target === 'phone') {
+              return this.persistApolloPhoneIfStillMissing({
+                apolloPerson,
+                beforePhoneWrite: beforeWrite,
+                expectedMatchFingerprint: tokenPayload.matchFingerprint,
+                personId: tokenPayload.personId,
+                personRepository,
+              });
+            }
+
+            // Phone does not participate in the match fingerprint. Persist it
+            // first so an email update from the same webhook cannot make the
+            // subsequent phone write look like an unrelated identity change.
+            const phoneOutcome = await this.persistApolloPhoneIfStillMissing({
               apolloPerson,
-              beforePhoneWrite: async () =>
-                this.confirmPhoneWebhookProcessingOwnership({
-                  phoneRequestLock,
-                  webhookProcessingLock,
-                }),
+              beforePhoneWrite: beforeWrite,
               expectedMatchFingerprint: tokenPayload.matchFingerprint,
               personId: tokenPayload.personId,
               personRepository,
             });
+
+            if (
+              phoneOutcome === 'identity-changed' ||
+              phoneOutcome === 'not-found' ||
+              phoneOutcome === 'ownership-lost'
+            ) {
+              return phoneOutcome;
+            }
+
+            const emailOutcome = await this.persistApolloEmailIfAllowed({
+              apolloPerson,
+              beforeEmailWrite: beforeWrite,
+              expectedMatchFingerprint: tokenPayload.matchFingerprint,
+              personId: tokenPayload.personId,
+              personRepository,
+            });
+
+            if (
+              emailOutcome === 'identity-changed' ||
+              emailOutcome === 'not-found' ||
+              emailOutcome === 'ownership-lost'
+            ) {
+              return emailOutcome;
+            }
+
+            return emailOutcome === 'updated' || phoneOutcome === 'updated'
+              ? 'updated'
+              : emailOutcome;
           },
           authContext,
         );
 
-      if (phonePersistenceOutcome === 'ownership-lost') {
+      if (persistenceOutcome === 'ownership-lost') {
         return;
       }
 
@@ -511,7 +599,7 @@ export class ApolloEnrichmentService {
         phoneRequestLock,
         personId: tokenPayload.personId,
         requestOwnershipConfirmed,
-        retryWithNewIdentity: phonePersistenceOutcome === 'identity-changed',
+        retryWithNewIdentity: persistenceOutcome === 'identity-changed',
         webhookProcessingLock,
         workspaceId: tokenPayload.workspaceId,
       });
@@ -520,22 +608,25 @@ export class ApolloEnrichmentService {
     }
   }
 
-  async pollPhoneEnrichment({
+  async pollEnrichment({
     matchFingerprint,
     personId,
     requestId,
     requestToken,
+    target = 'phone',
     workspaceId,
   }: {
     matchFingerprint: string;
     personId: string;
     requestId: string;
     requestToken: string;
+    target?: ApolloAsyncEnrichmentTarget;
     workspaceId: string;
-  }): Promise<ApolloPhoneEnrichmentPollOutcome> {
+  }): Promise<ApolloEnrichmentPollOutcome> {
     const phoneRequestLock = this.getPhoneEnrichmentLock({
       personId,
       requestToken,
+      target,
       workspaceId,
     });
     const requestOwnershipConfirmed =
@@ -545,8 +636,7 @@ export class ApolloEnrichmentService {
       return 'stale';
     }
 
-    const pollResult =
-      await this.apolloClientService.pollPhoneEnrichment(requestId);
+    const pollResult = await this.apolloClientService.pollEnrichment(requestId);
 
     if (pollResult.status === 'pending') {
       return 'pending';
@@ -556,10 +646,11 @@ export class ApolloEnrichmentService {
       matchFingerprint,
       personId,
       requestToken,
+      target,
       workspaceId,
     });
 
-    await this.handlePhoneEnrichmentWebhook({
+    await this.handleEnrichmentWebhook({
       token,
       payload:
         pollResult.status === 'ready'
@@ -1027,14 +1118,20 @@ export class ApolloEnrichmentService {
   private getPhoneEnrichmentLock({
     personId,
     requestToken,
+    target,
     workspaceId,
   }: {
     personId: string;
     requestToken: string;
+    target: ApolloAsyncEnrichmentTarget;
     workspaceId: string;
   }): ApolloPhoneEnrichmentLock {
     return {
-      key: `${APOLLO_PHONE_ENRICHMENT_LOCK_KEY_PREFIX}:${workspaceId}:${personId}`,
+      key:
+        target === 'phone'
+          ? `${APOLLO_PHONE_ENRICHMENT_LOCK_KEY_PREFIX}:${workspaceId}:${personId}`
+          : `${APOLLO_PHONE_ENRICHMENT_LOCK_KEY_PREFIX}:email:${workspaceId}:${personId}`,
+      target,
       token: requestToken,
     };
   }
@@ -1106,6 +1203,78 @@ export class ApolloEnrichmentService {
       await personRepository.update(
         personId,
         phoneUpdate,
+        workspaceTransactionManager,
+      );
+
+      return 'updated';
+    });
+  }
+
+  private async persistApolloEmailIfAllowed({
+    apolloPerson,
+    beforeEmailWrite,
+    expectedMatchFingerprint,
+    personId,
+    personRepository,
+  }: {
+    apolloPerson: ApolloPerson;
+    beforeEmailWrite?: () => Promise<boolean>;
+    expectedMatchFingerprint?: string;
+    personId: string;
+    personRepository: WorkspaceRepository<PersonWorkspaceEntity>;
+  }): Promise<ApolloPhonePersistenceOutcome> {
+    const workspaceDataSource =
+      await this.globalWorkspaceOrmManager.getGlobalWorkspaceDataSource();
+
+    return workspaceDataSource.transaction(async (transactionManager) => {
+      const workspaceTransactionManager =
+        transactionManager as WorkspaceEntityManager;
+      const committedPerson = await personRepository.findOne(
+        {
+          where: { id: personId },
+          lock: { mode: 'pessimistic_write' },
+        },
+        workspaceTransactionManager,
+      );
+
+      if (!isDefined(committedPerson)) {
+        return 'not-found';
+      }
+
+      if (isDefined(beforeEmailWrite) && !(await beforeEmailWrite())) {
+        return 'ownership-lost';
+      }
+
+      if (hasText(expectedMatchFingerprint)) {
+        const committedMatchInput =
+          this.apolloEnrichmentMapperService.buildPersonMatchInput(
+            committedPerson,
+          );
+
+        if (
+          !isDefined(committedMatchInput) ||
+          this.buildPersonMatchFingerprint(committedMatchInput) !==
+            expectedMatchFingerprint
+        ) {
+          return 'identity-changed';
+        }
+      }
+
+      const emailUpdate =
+        this.apolloEnrichmentMapperService.mapApolloPersonEmailToTwentyUpdate({
+          person: committedPerson,
+          apolloPerson,
+        });
+
+      if (Object.keys(emailUpdate).length === 0) {
+        return hasText(committedPerson.emails?.primaryEmail)
+          ? 'already-present'
+          : 'missing';
+      }
+
+      await personRepository.update(
+        personId,
+        emailUpdate,
         workspaceTransactionManager,
       );
 
@@ -1208,7 +1377,7 @@ export class ApolloEnrichmentService {
   }): Promise<void> {
     // Keep the exact-token lock while moving the matching provider-started
     // cohort due. A delayed webhook cannot wake a newer request generation.
-    if (requestOwnershipConfirmed) {
+    if (requestOwnershipConfirmed && phoneRequestLock.target === 'phone') {
       const stillOwnsWebhook = await this.wakeSequenceApolloWaiters({
         authContext,
         personId,
@@ -1221,6 +1390,17 @@ export class ApolloEnrichmentService {
       if (!stillOwnsWebhook) {
         return;
       }
+    }
+
+    if (
+      requestOwnershipConfirmed &&
+      phoneRequestLock.target === 'email' &&
+      !(await this.confirmPhoneWebhookProcessingOwnership({
+        phoneRequestLock,
+        webhookProcessingLock,
+      }))
+    ) {
+      return;
     }
 
     await this.releasePhoneEnrichmentLock(phoneRequestLock, {
@@ -1243,7 +1423,7 @@ export class ApolloEnrichmentService {
       );
     } catch (error) {
       throw new ApolloEnrichmentError(
-        `Apollo phone enrichment completion could not confirm its request lease: ${error instanceof Error ? error.message : String(error)}`,
+        `Apollo asynchronous enrichment completion could not confirm its request lease: ${error instanceof Error ? error.message : String(error)}`,
         true,
       );
     }
@@ -1252,15 +1432,18 @@ export class ApolloEnrichmentService {
   private async tryAcquirePhoneEnrichmentLock({
     personId,
     requestToken,
+    target,
     workspaceId,
   }: {
     personId: string;
     requestToken: string;
+    target: ApolloAsyncEnrichmentTarget;
     workspaceId: string;
   }): Promise<ApolloPhoneEnrichmentLock | null> {
     const lock = this.getPhoneEnrichmentLock({
       personId,
       requestToken,
+      target,
       workspaceId,
     });
 
@@ -1274,7 +1457,7 @@ export class ApolloEnrichmentService {
       return acquired ? lock : null;
     } catch (error) {
       throw new ApolloEnrichmentError(
-        `Apollo phone enrichment is temporarily unavailable because request coordination failed: ${error instanceof Error ? error.message : String(error)}`,
+        `Apollo asynchronous enrichment is temporarily unavailable because request coordination failed: ${error instanceof Error ? error.message : String(error)}`,
         true,
       );
     }
@@ -1285,6 +1468,7 @@ export class ApolloEnrichmentService {
   ): Promise<ApolloPhoneEnrichmentLock> {
     const processingLock = {
       key: `${requestLock.key}:webhook:${requestLock.token}`,
+      target: requestLock.target,
       token: randomUUID(),
     };
 
@@ -1297,7 +1481,7 @@ export class ApolloEnrichmentService {
 
       if (!acquired) {
         throw new ApolloEnrichmentError(
-          'Apollo phone enrichment webhook processing is already in progress',
+          'Apollo enrichment webhook processing is already in progress',
           true,
         );
       }
@@ -1309,7 +1493,7 @@ export class ApolloEnrichmentService {
       }
 
       throw new ApolloEnrichmentError(
-        `Apollo phone enrichment webhook coordination failed: ${error instanceof Error ? error.message : String(error)}`,
+        `Apollo enrichment webhook coordination failed: ${error instanceof Error ? error.message : String(error)}`,
         true,
       );
     }
@@ -1341,7 +1525,7 @@ export class ApolloEnrichmentService {
       }
 
       throw new ApolloEnrichmentError(
-        `Apollo phone enrichment webhook ownership could not be confirmed: ${error instanceof Error ? error.message : String(error)}`,
+        `Apollo enrichment webhook ownership could not be confirmed: ${error instanceof Error ? error.message : String(error)}`,
         true,
       );
     }
@@ -1384,7 +1568,7 @@ export class ApolloEnrichmentService {
       }
     } catch (error) {
       throw new ApolloEnrichmentProviderNotStartedError(
-        `Apollo phone enrichment is temporarily unavailable because its request lease could not be renewed: ${error instanceof Error ? error.message : String(error)}`,
+        `Apollo asynchronous enrichment is temporarily unavailable because its request lease could not be renewed: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
   }
@@ -1429,13 +1613,13 @@ export class ApolloEnrichmentService {
     } catch (error) {
       if (options.throwOnFailure) {
         throw new ApolloEnrichmentError(
-          `Apollo phone enrichment completion could not release its request lease: ${error instanceof Error ? error.message : String(error)}`,
+          `Apollo asynchronous enrichment completion could not release its request lease: ${error instanceof Error ? error.message : String(error)}`,
           true,
         );
       }
 
       this.logger.warn(
-        `Could not release Apollo phone-enrichment lock ${lock.key}: ${error instanceof Error ? error.message : String(error)}`,
+        `Could not release Apollo asynchronous enrichment lock ${lock.key}: ${error instanceof Error ? error.message : String(error)}`,
       );
 
       return false;
@@ -1460,17 +1644,72 @@ export class ApolloEnrichmentService {
     }
   }
 
+  private async buildPersonMatchInputWithCompanyContext({
+    person,
+    rolePermissionConfig,
+    workspaceId,
+  }: {
+    person: PersonWorkspaceEntity;
+    rolePermissionConfig: RolePermissionConfig | undefined;
+    workspaceId: string;
+  }): Promise<ApolloPersonMatchInput | undefined> {
+    const matchInput =
+      this.apolloEnrichmentMapperService.buildPersonMatchInput(person);
+
+    if (!isDefined(matchInput) || !hasText(person.companyId)) {
+      return matchInput;
+    }
+
+    let company: CompanyWorkspaceEntity | null;
+
+    try {
+      const companyRepository =
+        await this.globalWorkspaceOrmManager.getRepository(
+          workspaceId,
+          CompanyWorkspaceEntity,
+          rolePermissionConfig,
+        );
+
+      company = await companyRepository.findOne({
+        where: { id: person.companyId },
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Could not add company context to Apollo person match for ${person.id}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+
+      return matchInput;
+    }
+
+    if (!isDefined(company)) {
+      return matchInput;
+    }
+
+    const organizationDomain = this.apolloEnrichmentMapperService.cleanDomain(
+      company.domainName?.primaryLinkUrl,
+    );
+    const organizationName = company.name?.trim();
+
+    return {
+      ...matchInput,
+      ...(hasText(organizationDomain) ? { organizationDomain } : {}),
+      ...(hasText(organizationName) ? { organizationName } : {}),
+    };
+  }
+
   private async enqueuePhoneEnrichmentPoll({
     matchFingerprint,
     personId,
     requestId,
     requestToken,
+    target,
     workspaceId,
   }: {
     matchFingerprint: string;
     personId: string;
     requestId: string;
     requestToken: string;
+    target: ApolloAsyncEnrichmentTarget;
     workspaceId: string;
   }): Promise<void> {
     await this.messageQueueService.add(
@@ -1480,6 +1719,7 @@ export class ApolloEnrichmentService {
         personId,
         requestId,
         requestToken,
+        target,
         workspaceId,
       },
       {
@@ -1488,7 +1728,10 @@ export class ApolloEnrichmentService {
           delay: APOLLO_PHONE_ENRICHMENT_POLL_INTERVAL_MS,
         },
         delay: APOLLO_PHONE_ENRICHMENT_POLL_INTERVAL_MS,
-        id: `${APOLLO_PHONE_ENRICHMENT_POLL_JOB_ID_PREFIX}:${workspaceId}:${personId}:${requestToken}`,
+        id:
+          target === 'phone'
+            ? `${APOLLO_PHONE_ENRICHMENT_POLL_JOB_ID_PREFIX}:${workspaceId}:${personId}:${requestToken}`
+            : `${APOLLO_PHONE_ENRICHMENT_POLL_JOB_ID_PREFIX}:email:${workspaceId}:${personId}:${requestToken}`,
         retryLimit: APOLLO_PHONE_ENRICHMENT_POLL_RETRY_LIMIT,
       },
     );
@@ -1501,34 +1744,49 @@ export class ApolloEnrichmentService {
       return undefined;
     }
 
-    const normalizedRequestId = String(requestId);
+    const normalizedRequestId = String(requestId).trim();
 
-    return /^-?\d+$/.test(normalizedRequestId)
-      ? normalizedRequestId
-      : undefined;
+    return hasText(normalizedRequestId) ? normalizedRequestId : undefined;
+  }
+
+  private getAsyncEnrichmentTarget(
+    options: ApolloPersonEnrichmentOptions,
+  ): ApolloAsyncEnrichmentTarget | undefined {
+    if (options.runWaterfallEmail) {
+      return 'email';
+    }
+
+    if (options.runWaterfallPhone || options.revealPhoneNumber) {
+      return 'phone';
+    }
+
+    return undefined;
   }
 
   private getPersonEnrichmentOptions({
     matchFingerprint,
     mode,
     personId,
-    phoneRequestToken,
+    requestToken,
     workspaceId,
   }: {
     matchFingerprint: string;
     mode: ApolloPersonEnrichmentMode;
     personId: string;
-    phoneRequestToken: string;
+    requestToken: string;
     workspaceId: string;
   }): ApolloPersonEnrichmentOptions {
     if (mode === 'phone') {
       return {
         revealPersonalEmails: false,
-        revealPhoneNumber: true,
+        revealPhoneNumber: false,
+        runWaterfallEmail: false,
+        runWaterfallPhone: true,
         webhookUrl: this.buildPhoneEnrichmentWebhookUrl({
           matchFingerprint,
           personId,
-          requestToken: phoneRequestToken,
+          requestToken,
+          target: 'phone',
           workspaceId,
         }),
       };
@@ -1536,10 +1794,17 @@ export class ApolloEnrichmentService {
 
     if (mode === 'general') {
       return {
-        revealPersonalEmails:
-          this.twentyConfigService.get('APOLLO_REVEAL_PERSONAL_EMAILS') ??
-          false,
+        revealPersonalEmails: false,
         revealPhoneNumber: false,
+        runWaterfallEmail: true,
+        runWaterfallPhone: true,
+        webhookUrl: this.buildPhoneEnrichmentWebhookUrl({
+          matchFingerprint,
+          personId,
+          requestToken,
+          target: 'email',
+          workspaceId,
+        }),
       };
     }
 
@@ -1550,12 +1815,15 @@ export class ApolloEnrichmentService {
       revealPersonalEmails:
         this.twentyConfigService.get('APOLLO_REVEAL_PERSONAL_EMAILS') ?? false,
       revealPhoneNumber,
+      runWaterfallEmail: false,
+      runWaterfallPhone: false,
       ...(revealPhoneNumber
         ? {
             webhookUrl: this.buildPhoneEnrichmentWebhookUrl({
               matchFingerprint,
               personId,
-              requestToken: phoneRequestToken,
+              requestToken,
+              target: 'phone',
               workspaceId,
             }),
           }
@@ -1567,11 +1835,13 @@ export class ApolloEnrichmentService {
     matchFingerprint,
     personId,
     requestToken,
+    target,
     workspaceId,
   }: {
     matchFingerprint: string;
     personId: string;
     requestToken: string;
+    target: ApolloAsyncEnrichmentTarget;
     workspaceId: string;
   }): string {
     const webhookBaseUrl =
@@ -1582,7 +1852,7 @@ export class ApolloEnrichmentService {
 
     if (serverUrl.protocol !== 'https:') {
       throw new ApolloEnrichmentError(
-        'Apollo phone enrichment requires APOLLO_PHONE_ENRICHMENT_WEBHOOK_BASE_URL or SERVER_URL to use public HTTPS',
+        'Apollo asynchronous enrichment requires APOLLO_PHONE_ENRICHMENT_WEBHOOK_BASE_URL or SERVER_URL to use public HTTPS',
         false,
       );
     }
@@ -1591,6 +1861,7 @@ export class ApolloEnrichmentService {
       matchFingerprint,
       personId,
       requestToken,
+      target,
       workspaceId,
     });
 
@@ -1604,11 +1875,13 @@ export class ApolloEnrichmentService {
     matchFingerprint,
     personId,
     requestToken,
+    target,
     workspaceId,
   }: {
     matchFingerprint: string;
     personId: string;
     requestToken: string;
+    target: ApolloAsyncEnrichmentTarget;
     workspaceId: string;
   }): string {
     const tokenPayload: ApolloPhoneWebhookTokenPayload = {
@@ -1616,6 +1889,7 @@ export class ApolloEnrichmentService {
       matchFingerprint,
       personId,
       requestToken,
+      target,
       workspaceId,
     };
     const encodedPayload = Buffer.from(JSON.stringify(tokenPayload)).toString(
@@ -1674,6 +1948,7 @@ export class ApolloEnrichmentService {
         ...(hasText(payload.requestToken)
           ? { requestToken: payload.requestToken }
           : {}),
+        target: payload.target === 'email' ? 'email' : 'phone',
         workspaceId: payload.workspaceId,
       };
     } catch {
@@ -1697,7 +1972,6 @@ export class ApolloEnrichmentService {
           firstName: matchInput.firstName ?? null,
           lastName: matchInput.lastName ?? null,
           linkedinUrl: matchInput.linkedinUrl ?? null,
-          organizationName: matchInput.organizationName ?? null,
         }),
       )
       .digest('base64url');
@@ -1745,6 +2019,10 @@ export class ApolloEnrichmentService {
       switch (result.value) {
         case 'updated':
           summary.updatedCount += 1;
+          break;
+        case 'updated-pending':
+          summary.updatedCount += 1;
+          summary.pendingCount += 1;
           break;
         case 'pending':
           summary.pendingCount += 1;

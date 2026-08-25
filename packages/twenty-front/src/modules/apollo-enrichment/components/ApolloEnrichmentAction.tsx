@@ -196,8 +196,8 @@ export const ApolloEnrichmentAction = ({
       enqueueErrorSnackBar({
         message:
           kind === 'phone'
-            ? t`${result.failedCount} phone enrichment requests failed. Verify that the Apollo webhook base URL is public HTTPS and that the API key can reveal phone numbers.`
-            : t`${result.updatedCount} of ${result.requestedCount} records were enriched. ${result.failedCount} failed.`,
+            ? t`${result.failedCount} phone waterfall requests failed. Verify that the Apollo webhook base URL is public HTTPS and that the API key can run phone waterfall enrichment.`
+            : t`${result.failedCount} Apollo email and phone waterfall requests failed. ${result.updatedCount} updated now and ${result.pendingCount} remain pending.`,
       });
 
       return;
@@ -209,8 +209,10 @@ export const ApolloEnrichmentAction = ({
     enqueueSuccessSnackBar({
       message:
         kind === 'phone'
-          ? t`Phone enrichment requested: ${result.updatedCount} updated now, ${result.pendingCount} pending asynchronous delivery.`
-          : t`Apollo enrichment finished: ${result.updatedCount} updated, ${unchangedCount} unchanged.`,
+          ? t`Phone waterfall requested: ${result.updatedCount} updated now, ${result.pendingCount} pending asynchronous delivery.`
+          : isPerson
+            ? t`Email and phone waterfall requested: ${result.updatedCount} updated now, ${result.pendingCount} pending asynchronous delivery, ${unchangedCount} unchanged.`
+            : t`Apollo enrichment finished: ${result.updatedCount} updated, ${unchangedCount} unchanged.`,
     });
   };
 
@@ -296,12 +298,12 @@ export const ApolloEnrichmentAction = ({
               <DropdownMenuItemsContainer>
                 <MenuItem
                   LeftIcon={IconSparkles}
-                  text={t`Enrich data and emails with Apollo`}
+                  text={t`Enrich data, emails, and phones with Apollo waterfall`}
                   onClick={() => openConfirmation('general')}
                 />
                 <MenuItem
                   LeftIcon={IconPhone}
-                  text={t`Enrich phone numbers with Apollo`}
+                  text={t`Enrich phone numbers with Apollo waterfall`}
                   onClick={() => openConfirmation('phone')}
                 />
               </DropdownMenuItemsContainer>
@@ -314,7 +316,11 @@ export const ApolloEnrichmentAction = ({
       <ConfirmationModal
         modalInstanceId={APOLLO_GENERAL_ENRICHMENT_MODAL_ID}
         title={t`Enrich with Apollo`}
-        subtitle={t`This will enrich ${contextStoreNumberOfSelectedRecords} records and can consume up to ${contextStoreNumberOfSelectedRecords} Apollo credits (no charge for unmatched records). Phone numbers are excluded.`}
+        subtitle={
+          isPerson
+            ? t`This requests Apollo email and phone waterfall enrichment for ${contextStoreNumberOfSelectedRecords} people. Credit usage depends on the configured waterfall providers, and results can take several minutes.`
+            : t`This will enrich ${contextStoreNumberOfSelectedRecords} companies and can consume Apollo credits for matched records.`
+        }
         onConfirmClick={() => void runEnrichment('general')}
         confirmButtonText={t`Enrich records`}
         confirmButtonAccent="blue"
@@ -322,8 +328,8 @@ export const ApolloEnrichmentAction = ({
       {isPerson && (
         <ConfirmationModal
           modalInstanceId={APOLLO_PHONE_ENRICHMENT_MODAL_ID}
-          title={t`Enrich phone numbers with Apollo`}
-          subtitle={t`This will enrich ${contextStoreNumberOfSelectedRecords} people and can consume up to 9 Apollo credits per person when data is found. Phone verification can take several minutes.`}
+          title={t`Enrich phone numbers with Apollo waterfall`}
+          subtitle={t`This requests Apollo phone waterfall enrichment for ${contextStoreNumberOfSelectedRecords} people. Credit usage depends on the configured waterfall providers, and results can take several minutes.`}
           onConfirmClick={() => void runEnrichment('phone')}
           confirmButtonText={t`Enrich phone numbers`}
           confirmButtonAccent="blue"

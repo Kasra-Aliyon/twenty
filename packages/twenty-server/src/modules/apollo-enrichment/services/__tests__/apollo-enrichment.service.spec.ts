@@ -81,7 +81,7 @@ describe('ApolloEnrichmentService', () => {
   const apolloClientService = {
     enrichPerson: jest.fn(),
     enrichOrganization: jest.fn(),
-    pollPhoneEnrichment: jest.fn(),
+    pollEnrichment: jest.fn(),
   };
   const messageQueueService = {
     add: jest.fn(),
@@ -197,7 +197,7 @@ describe('ApolloEnrichmentService', () => {
     apolloClientService.enrichOrganization.mockResolvedValue({
       organization: null,
     });
-    apolloClientService.pollPhoneEnrichment.mockResolvedValue({
+    apolloClientService.pollEnrichment.mockResolvedValue({
       status: 'pending',
     });
     messageQueueService.add.mockResolvedValue(undefined);
@@ -277,7 +277,7 @@ describe('ApolloEnrichmentService', () => {
     );
   });
 
-  it('excludes phone numbers from general person enrichment', async () => {
+  it('uses email and phone waterfall for general enrichment', async () => {
     apolloClientService.enrichPerson.mockResolvedValue({
       person: {
         email: 'jane@example.com',
@@ -291,15 +291,21 @@ describe('ApolloEnrichmentService', () => {
       mode: 'general',
     });
 
-    expect(result).toBe('updated');
+    expect(result).toBe('updated-pending');
     expect(apolloClientService.enrichPerson).toHaveBeenCalledWith(
       {
         linkedinUrl: 'https://www.linkedin.com/in/jane',
       },
-      {
+      expect.objectContaining({
         revealPersonalEmails: false,
         revealPhoneNumber: false,
-      },
+        runWaterfallEmail: true,
+        runWaterfallPhone: true,
+        webhookUrl: expect.stringMatching(
+          /^https:\/\/hooks\.example\.com\/webhooks\/apollo\/enrichment\//,
+        ),
+      }),
+      expect.any(Function),
     );
     expect(personRepository.update).toHaveBeenCalledWith(personId, {
       emails: {
@@ -307,6 +313,99 @@ describe('ApolloEnrichmentService', () => {
         additionalEmails: null,
       },
     });
+  });
+
+  it('includes the linked company domain and name in person matching', async () => {
+    personRepository.findOne.mockResolvedValue(
+      buildPerson({ companyId: 'company-id' }),
+    );
+    companyRepository.findOne.mockResolvedValue({
+      id: 'company-id',
+      name: 'Example Company',
+      domainName: {
+        primaryLinkLabel: '',
+        primaryLinkUrl: 'https://www.example.com',
+        secondaryLinks: null,
+      },
+    } as CompanyWorkspaceEntity);
+
+    await expect(
+      service.enrichPerson({ workspaceId, personId, mode: 'general' }),
+    ).resolves.toBe('updated-pending');
+
+    expect(apolloClientService.enrichPerson).toHaveBeenCalledWith(
+      {
+        linkedinUrl: 'https://www.linkedin.com/in/jane',
+        organizationDomain: 'example.com',
+        organizationName: 'Example Company',
+      },
+      expect.any(Object),
+      expect.any(Function),
+    );
+  });
+
+  it('queues email waterfall polling when Apollo accepts without a synchronous person', async () => {
+    apolloClientService.enrichPerson.mockImplementation(
+      async (_input, _options, onProviderStart?: () => Promise<void>) => {
+        await onProviderStart?.();
+
+        return {
+          request_id: 'email-request-id',
+          person: null,
+          waterfall: { status: 'accepted' },
+        };
+      },
+    );
+
+    await expect(
+      service.enrichPerson({ workspaceId, personId, mode: 'general' }),
+    ).resolves.toBe('pending');
+
+    expect(messageQueueService.add).toHaveBeenCalledWith(
+      APOLLO_PHONE_ENRICHMENT_POLL_JOB_NAME,
+      expect.objectContaining({
+        personId,
+        requestId: 'email-request-id',
+        target: 'email',
+        workspaceId,
+      }),
+      expect.objectContaining({
+        id: expect.stringMatching(
+          new RegExp(
+            `^apollo-phone-enrichment-poll:email:${workspaceId}:${personId}:`,
+          ),
+        ),
+      }),
+    );
+  });
+
+  it('releases the email request when Apollo rejects the waterfall', async () => {
+    apolloClientService.enrichPerson.mockImplementation(
+      async (_input, _options, onProviderStart?: () => Promise<void>) => {
+        await onProviderStart?.();
+
+        return {
+          waterfall: {
+            message: 'No waterfall configured',
+            status: 'failed',
+          },
+        };
+      },
+    );
+
+    await expect(
+      service.enrichPerson({ workspaceId, personId, mode: 'general' }),
+    ).rejects.toMatchObject({
+      constructor: ApolloEnrichmentProviderRejectedError,
+      message: 'No waterfall configured',
+      retryable: false,
+      statusCode: 400,
+    });
+
+    expect(releaseLockWithToken).toHaveBeenCalledWith(
+      `apollo-phone-enrichment-request:email:${workspaceId}:${personId}`,
+      expect.any(String),
+    );
   });
 
   it('updates only the phone during phone enrichment', async () => {
@@ -331,7 +430,9 @@ describe('ApolloEnrichmentService', () => {
       },
       expect.objectContaining({
         revealPersonalEmails: false,
-        revealPhoneNumber: true,
+        revealPhoneNumber: false,
+        runWaterfallEmail: false,
+        runWaterfallPhone: true,
         webhookUrl: expect.stringMatching(
           /^https:\/\/hooks\.example\.com\/webhooks\/apollo\/enrichment\//,
         ),
@@ -377,6 +478,7 @@ describe('ApolloEnrichmentService', () => {
         personId,
         requestId: '1039995589705121900',
         requestToken: expect.any(String),
+        target: 'phone',
         workspaceId,
       },
       {
@@ -415,7 +517,7 @@ describe('ApolloEnrichmentService', () => {
 
     const pollJobData = messageQueueService.add.mock.calls[0][1];
 
-    apolloClientService.pollPhoneEnrichment.mockResolvedValue({
+    apolloClientService.pollEnrichment.mockResolvedValue({
       payload: {
         people: [
           {
@@ -428,11 +530,9 @@ describe('ApolloEnrichmentService', () => {
       status: 'ready',
     });
 
-    await expect(service.pollPhoneEnrichment(pollJobData)).resolves.toBe(
-      'resolved',
-    );
+    await expect(service.pollEnrichment(pollJobData)).resolves.toBe('resolved');
 
-    expect(apolloClientService.pollPhoneEnrichment).toHaveBeenCalledWith(
+    expect(apolloClientService.pollEnrichment).toHaveBeenCalledWith(
       '1039995589705121900',
     );
     expect(personRepository.update).toHaveBeenCalledWith(
@@ -447,6 +547,87 @@ describe('ApolloEnrichmentService', () => {
       },
       transactionManager,
     );
+  });
+
+  it('persists completed email and phone waterfall results from the webhook', async () => {
+    apolloClientService.enrichPerson.mockImplementation(
+      async (_input, _options, onProviderStart?: () => Promise<void>) => {
+        await onProviderStart?.();
+
+        return {
+          request_id: 'email-request-id',
+          person: { id: 'apollo-person-id' },
+          waterfall: { status: 'accepted' },
+        };
+      },
+    );
+
+    await expect(
+      service.enrichPerson({ workspaceId, personId, mode: 'general' }),
+    ).resolves.toBe('pending');
+
+    const enrichmentOptions = apolloClientService.enrichPerson.mock.calls[0][1];
+    const token = new URL(enrichmentOptions.webhookUrl).pathname
+      .split('/')
+      .pop();
+
+    if (!token) {
+      throw new Error('Expected a signed Apollo email webhook token');
+    }
+
+    jest.clearAllMocks();
+
+    await service.handleEnrichmentWebhook({
+      token,
+      payload: {
+        people: [
+          {
+            emails: [
+              {
+                email: 'waterfall@example.com',
+                email_status_cd: 'verified',
+                position: 0,
+              },
+            ],
+            sanitized_phone: '+14155550100',
+          },
+        ],
+        status: 'success',
+        target_fields: ['emails', 'phone_numbers'],
+      },
+    });
+
+    expect(personRepository.update).toHaveBeenCalledWith(
+      personId,
+      {
+        emails: {
+          primaryEmail: 'waterfall@example.com',
+          additionalEmails: null,
+        },
+      },
+      transactionManager,
+    );
+    expect(personRepository.update).toHaveBeenCalledWith(
+      personId,
+      {
+        phones: {
+          primaryPhoneNumber: '+14155550100',
+          primaryPhoneCountryCode: '',
+          primaryPhoneCallingCode: '',
+          additionalPhones: null,
+        },
+      },
+      transactionManager,
+    );
+    const phoneUpdateCall = personRepository.update.mock.calls.findIndex(
+      ([, update]) => 'phones' in update,
+    );
+    const emailUpdateCall = personRepository.update.mock.calls.findIndex(
+      ([, update]) => 'emails' in update,
+    );
+
+    expect(phoneUpdateCall).toBeLessThan(emailUpdateCall);
+    expect(enrollmentRepository.update).not.toHaveBeenCalled();
   });
 
   it('deduplicates concurrent phone reveals across all Apollo callers', async () => {
@@ -574,6 +755,8 @@ describe('ApolloEnrichmentService', () => {
       {
         revealPersonalEmails: false,
         revealPhoneNumber: false,
+        runWaterfallEmail: false,
+        runWaterfallPhone: false,
         webhookUrl: undefined,
       },
     );
@@ -584,6 +767,35 @@ describe('ApolloEnrichmentService', () => {
       },
       jobTitle: 'VP Sales',
     });
+  });
+
+  it('preserves the opt-in native phone behavior for automatic enrichment', async () => {
+    configValues.APOLLO_REVEAL_PHONE_NUMBER = true;
+    apolloClientService.enrichPerson.mockImplementation(
+      async (_input, _options, onProviderStart?: () => Promise<void>) => {
+        await onProviderStart?.();
+
+        return {
+          request_id: 'automatic-phone-request-id',
+          person: { id: 'apollo-person-id' },
+        };
+      },
+    );
+
+    await expect(
+      service.enrichPerson({ workspaceId, personId, mode: 'automatic' }),
+    ).resolves.toBe('pending');
+
+    expect(apolloClientService.enrichPerson).toHaveBeenCalledWith(
+      { linkedinUrl: 'https://www.linkedin.com/in/jane' },
+      expect.objectContaining({
+        revealPersonalEmails: false,
+        revealPhoneNumber: true,
+        runWaterfallEmail: false,
+        runWaterfallPhone: false,
+      }),
+      expect.any(Function),
+    );
   });
 
   it('rechecks the person after acquiring the global phone lock', async () => {
@@ -826,7 +1038,33 @@ describe('ApolloEnrichmentService', () => {
     enrichPersonSpy.mockRestore();
   });
 
-  it('rejects phone enrichment without a public HTTPS webhook base URL', async () => {
+  it('reports synchronous updates that still have waterfall results pending', async () => {
+    const enrichPersonSpy = jest
+      .spyOn(service, 'enrichPerson')
+      .mockResolvedValue('updated-pending');
+
+    await expect(
+      service.enrichPeople({
+        workspaceId,
+        personIds: [personId],
+        mode: 'general',
+        authContext: buildSystemAuthContext(workspaceId),
+      }),
+    ).resolves.toEqual({
+      requestedCount: 1,
+      updatedCount: 1,
+      pendingCount: 1,
+      skippedCount: 0,
+      notMatchedCount: 0,
+      notFoundCount: 0,
+      failedCount: 0,
+      disabled: false,
+    });
+
+    enrichPersonSpy.mockRestore();
+  });
+
+  it('rejects asynchronous enrichment without a public HTTPS webhook base URL', async () => {
     configValues.APOLLO_PHONE_ENRICHMENT_WEBHOOK_BASE_URL = undefined;
     configValues.SERVER_URL = 'http://localhost:2000';
 
@@ -837,7 +1075,7 @@ describe('ApolloEnrichmentService', () => {
         mode: 'phone',
       }),
     ).rejects.toThrow(
-      'Apollo phone enrichment requires APOLLO_PHONE_ENRICHMENT_WEBHOOK_BASE_URL or SERVER_URL to use public HTTPS',
+      'Apollo asynchronous enrichment requires APOLLO_PHONE_ENRICHMENT_WEBHOOK_BASE_URL or SERVER_URL to use public HTTPS',
     );
     expect(apolloClientService.enrichPerson).not.toHaveBeenCalled();
   });
@@ -847,7 +1085,7 @@ describe('ApolloEnrichmentService', () => {
 
     personRepository.findOne.mockResolvedValue(buildPerson());
 
-    await service.handlePhoneEnrichmentWebhook({
+    await service.handleEnrichmentWebhook({
       token: token ?? '',
       payload: {
         status: 'success',
@@ -899,7 +1137,7 @@ describe('ApolloEnrichmentService', () => {
     async ({ payload }) => {
       const token = await createPendingPhoneWebhookToken();
 
-      await service.handlePhoneEnrichmentWebhook({ token, payload });
+      await service.handleEnrichmentWebhook({ token, payload });
 
       expect(enrollmentRepository.update).toHaveBeenCalledWith(
         {
@@ -935,7 +1173,7 @@ describe('ApolloEnrichmentService', () => {
 
     renewLockWithToken.mockResolvedValue(false);
 
-    await service.handlePhoneEnrichmentWebhook({
+    await service.handleEnrichmentWebhook({
       token,
       payload: { status: 'failed' },
     });
@@ -953,7 +1191,7 @@ describe('ApolloEnrichmentService', () => {
     acquireLockWithToken.mockResolvedValue(false);
 
     await expect(
-      service.handlePhoneEnrichmentWebhook({
+      service.handleEnrichmentWebhook({
         token,
         payload: { status: 'failed' },
       }),
@@ -972,7 +1210,7 @@ describe('ApolloEnrichmentService', () => {
 
     renewLockWithToken.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
 
-    await service.handlePhoneEnrichmentWebhook({
+    await service.handleEnrichmentWebhook({
       token,
       payload: {
         status: 'success',
@@ -998,7 +1236,7 @@ describe('ApolloEnrichmentService', () => {
 
     renewLockWithToken.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
 
-    await service.handlePhoneEnrichmentWebhook({
+    await service.handleEnrichmentWebhook({
       token,
       payload: { status: 'failed' },
     });
@@ -1016,7 +1254,7 @@ describe('ApolloEnrichmentService', () => {
 
     renewLockWithToken.mockResolvedValue(false);
 
-    await service.handlePhoneEnrichmentWebhook({
+    await service.handleEnrichmentWebhook({
       token,
       payload: {
         status: 'success',
@@ -1051,7 +1289,7 @@ describe('ApolloEnrichmentService', () => {
       }),
     );
 
-    await service.handlePhoneEnrichmentWebhook({
+    await service.handleEnrichmentWebhook({
       token,
       payload: {
         status: 'success',
@@ -1085,7 +1323,7 @@ describe('ApolloEnrichmentService', () => {
     renewLockWithToken.mockRejectedValue(new Error('Redis unavailable'));
 
     await expect(
-      service.handlePhoneEnrichmentWebhook({
+      service.handleEnrichmentWebhook({
         token,
         payload: { status: 'failed' },
       }),
@@ -1108,7 +1346,7 @@ describe('ApolloEnrichmentService', () => {
     enrollmentRepository.update.mockRejectedValue(wakeError);
 
     await expect(
-      service.handlePhoneEnrichmentWebhook({
+      service.handleEnrichmentWebhook({
         token,
         payload: { status: 'failed' },
       }),
@@ -1131,7 +1369,7 @@ describe('ApolloEnrichmentService', () => {
     releaseLockWithToken.mockRejectedValue(new Error('Redis unavailable'));
 
     await expect(
-      service.handlePhoneEnrichmentWebhook({
+      service.handleEnrichmentWebhook({
         token,
         payload: { status: 'failed' },
       }),
@@ -1149,7 +1387,7 @@ describe('ApolloEnrichmentService', () => {
   });
 
   it('ignores Apollo phone webhooks with an invalid correlation token', async () => {
-    await service.handlePhoneEnrichmentWebhook({
+    await service.handleEnrichmentWebhook({
       token: 'invalid-token',
       payload: {
         status: 'success',

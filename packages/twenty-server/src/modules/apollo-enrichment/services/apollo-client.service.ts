@@ -5,16 +5,17 @@ import { type AxiosInstance, isAxiosError } from 'axios';
 import { SecureHttpClientService } from 'src/engine/core-modules/secure-http-client/secure-http-client.service';
 import { TwentyConfigService } from 'src/engine/core-modules/twenty-config/twenty-config.service';
 import {
+  type ApolloEnrichmentWebhookPayload,
   type ApolloOrganizationEnrichResponse,
   type ApolloOrganizationMatchInput,
   type ApolloPersonEnrichmentOptions,
   type ApolloPersonMatchInput,
   type ApolloPersonMatchResponse,
-  type ApolloPhoneEnrichmentWebhookPayload,
 } from 'src/modules/apollo-enrichment/types/apollo-api.type';
 import { ApolloEnrichmentError } from 'src/modules/apollo-enrichment/types/apollo-enrichment-error';
 
 type ApolloPeopleMatchParams = {
+  domain?: string;
   email?: string;
   first_name?: string;
   last_name?: string;
@@ -22,6 +23,8 @@ type ApolloPeopleMatchParams = {
   organization_name?: string;
   reveal_personal_emails: boolean;
   reveal_phone_number: boolean;
+  run_waterfall_email: boolean;
+  run_waterfall_phone: boolean;
   webhook_url?: string;
 };
 
@@ -32,18 +35,19 @@ type ApolloOrganizationEnrichRequest = {
   website?: string;
 };
 
-type ApolloPhoneEnrichmentPollApiResponse =
-  ApolloPhoneEnrichmentWebhookPayload & {
-    error_code?: string | null;
-    retry_after_seconds?: number | null;
-  };
+type ApolloEnrichmentPollApiResponse = {
+  error_code?: string | null;
+  retry_after_seconds?: number | null;
+  webhook_result?: ApolloEnrichmentWebhookPayload | null;
+  webhook_status?: 'failed' | 'in_progress' | 'success' | string | null;
+};
 
-export type ApolloPhoneEnrichmentPollResult =
+export type ApolloEnrichmentPollResult =
   | {
       status: 'pending';
     }
   | {
-      payload: ApolloPhoneEnrichmentWebhookPayload;
+      payload: ApolloEnrichmentWebhookPayload;
       status: 'ready';
     }
   | {
@@ -62,12 +66,19 @@ export class ApolloClientService {
     options: ApolloPersonEnrichmentOptions = {
       revealPersonalEmails: false,
       revealPhoneNumber: false,
+      runWaterfallEmail: false,
+      runWaterfallPhone: false,
     },
     onProviderStart?: () => Promise<void>,
   ): Promise<ApolloPersonMatchResponse> {
-    if (options.revealPhoneNumber && !options.webhookUrl) {
+    if (
+      (options.revealPhoneNumber ||
+        options.runWaterfallEmail ||
+        options.runWaterfallPhone) &&
+      !options.webhookUrl
+    ) {
       throw new ApolloEnrichmentError(
-        'Apollo phone enrichment requires a webhook URL',
+        'Apollo asynchronous enrichment requires a webhook URL',
         false,
       );
     }
@@ -77,11 +88,14 @@ export class ApolloClientService {
       ...(input.firstName ? { first_name: input.firstName } : {}),
       ...(input.lastName ? { last_name: input.lastName } : {}),
       ...(input.linkedinUrl ? { linkedin_url: input.linkedinUrl } : {}),
+      ...(input.organizationDomain ? { domain: input.organizationDomain } : {}),
       ...(input.organizationName
         ? { organization_name: input.organizationName }
         : {}),
       reveal_personal_emails: options.revealPersonalEmails,
       reveal_phone_number: options.revealPhoneNumber,
+      run_waterfall_email: options.runWaterfallEmail,
+      run_waterfall_phone: options.runWaterfallPhone,
       ...(options.webhookUrl ? { webhook_url: options.webhookUrl } : {}),
     };
 
@@ -97,8 +111,8 @@ export class ApolloClientService {
       },
     );
 
-    // Apollo returns demographic data synchronously and sends revealed phone
-    // numbers to webhook_url later. The request must not stay open while that
+    // Apollo returns demographic data synchronously and sends waterfall or
+    // revealed fields to webhook_url later. Do not hold the request open while
     // asynchronous delivery is pending.
     return response.data;
   }
@@ -122,11 +136,9 @@ export class ApolloClientService {
     return response.data;
   }
 
-  async pollPhoneEnrichment(
-    requestId: string,
-  ): Promise<ApolloPhoneEnrichmentPollResult> {
+  async pollEnrichment(requestId: string): Promise<ApolloEnrichmentPollResult> {
     const response =
-      await this.getHttpClient().get<ApolloPhoneEnrichmentPollApiResponse>(
+      await this.getHttpClient().get<ApolloEnrichmentPollApiResponse>(
         `/webhook_result/${encodeURIComponent(requestId)}`,
         {
           validateStatus: (statusCode) =>
@@ -137,11 +149,22 @@ export class ApolloClientService {
         },
       );
 
-    if (response.status === 200) {
+    if (
+      response.status === 200 &&
+      response.data.webhook_status === 'success' &&
+      response.data.webhook_result
+    ) {
       return {
-        payload: response.data,
+        payload: response.data.webhook_result,
         status: 'ready',
       };
+    }
+
+    if (
+      response.status === 200 &&
+      response.data.webhook_status === 'in_progress'
+    ) {
+      return { status: 'pending' };
     }
 
     if (

@@ -37,7 +37,7 @@ describe('ApolloClientService', () => {
     jest.clearAllMocks();
   });
 
-  it('returns immediately while Apollo delivers phone results asynchronously', async () => {
+  it('requests phone waterfall enrichment and returns immediately', async () => {
     httpClient.post.mockResolvedValue({
       data: {
         request_id: 'request-id',
@@ -53,10 +53,14 @@ describe('ApolloClientService', () => {
           email: 'jane@example.com',
           firstName: 'Jane',
           lastName: 'Doe',
+          organizationDomain: 'example.com',
+          organizationName: 'Example',
         },
         {
           revealPersonalEmails: false,
-          revealPhoneNumber: true,
+          revealPhoneNumber: false,
+          runWaterfallEmail: false,
+          runWaterfallPhone: true,
           webhookUrl:
             'https://twenty.example.com/webhooks/apollo/enrichment/token',
         },
@@ -73,8 +77,12 @@ describe('ApolloClientService', () => {
         email: 'jane@example.com',
         first_name: 'Jane',
         last_name: 'Doe',
+        domain: 'example.com',
+        organization_name: 'Example',
         reveal_personal_emails: false,
-        reveal_phone_number: true,
+        reveal_phone_number: false,
+        run_waterfall_email: false,
+        run_waterfall_phone: true,
         webhook_url:
           'https://twenty.example.com/webhooks/apollo/enrichment/token',
       },
@@ -82,7 +90,7 @@ describe('ApolloClientService', () => {
     expect(httpClient.get).not.toHaveBeenCalled();
   });
 
-  it('does not request or poll phone data during general enrichment', async () => {
+  it('requests email waterfall enrichment without requesting phone data', async () => {
     httpClient.post.mockResolvedValue({
       data: {
         person: {
@@ -96,16 +104,24 @@ describe('ApolloClientService', () => {
         linkedinUrl: 'https://www.linkedin.com/in/jane',
       },
       {
-        revealPersonalEmails: true,
+        revealPersonalEmails: false,
         revealPhoneNumber: false,
+        runWaterfallEmail: true,
+        runWaterfallPhone: false,
+        webhookUrl:
+          'https://twenty.example.com/webhooks/apollo/enrichment/token',
       },
     );
 
     expect(httpClient.post).toHaveBeenCalledWith('/people/match', undefined, {
       params: {
         linkedin_url: 'https://www.linkedin.com/in/jane',
-        reveal_personal_emails: true,
+        reveal_personal_emails: false,
         reveal_phone_number: false,
+        run_waterfall_email: true,
+        run_waterfall_phone: false,
+        webhook_url:
+          'https://twenty.example.com/webhooks/apollo/enrichment/token',
       },
     });
     expect(httpClient.get).not.toHaveBeenCalled();
@@ -120,7 +136,9 @@ describe('ApolloClientService', () => {
         { linkedinUrl: 'https://www.linkedin.com/in/jane' },
         {
           revealPersonalEmails: false,
-          revealPhoneNumber: true,
+          revealPhoneNumber: false,
+          runWaterfallEmail: false,
+          runWaterfallPhone: true,
           webhookUrl:
             'https://twenty.example.com/webhooks/apollo/enrichment/token',
         },
@@ -148,7 +166,9 @@ describe('ApolloClientService', () => {
       { linkedinUrl: 'https://www.linkedin.com/in/jane' },
       {
         revealPersonalEmails: false,
-        revealPhoneNumber: true,
+        revealPhoneNumber: false,
+        runWaterfallEmail: false,
+        runWaterfallPhone: true,
         webhookUrl:
           'https://twenty.example.com/webhooks/apollo/enrichment/token',
       },
@@ -185,6 +205,53 @@ describe('ApolloClientService', () => {
       person: {
         id: 'person-id',
       },
+    });
+  });
+
+  it('unwraps a completed waterfall payload from Apollo polling', async () => {
+    httpClient.get.mockResolvedValue({
+      data: {
+        request_id: 'request-id',
+        webhook_status: 'success',
+        webhook_result: {
+          people: [
+            {
+              emails: [{ email: 'jane@example.com' }],
+            },
+          ],
+          status: 'success',
+          target_fields: ['emails'],
+        },
+      },
+      status: 200,
+    });
+
+    await expect(service.pollEnrichment('request-id')).resolves.toEqual({
+      payload: {
+        people: [
+          {
+            emails: [{ email: 'jane@example.com' }],
+          },
+        ],
+        status: 'success',
+        target_fields: ['emails'],
+      },
+      status: 'ready',
+    });
+  });
+
+  it('keeps polling while Apollo reports the waterfall in progress', async () => {
+    httpClient.get.mockResolvedValue({
+      data: {
+        request_id: 'request-id',
+        webhook_result: null,
+        webhook_status: 'in_progress',
+      },
+      status: 200,
+    });
+
+    await expect(service.pollEnrichment('request-id')).resolves.toEqual({
+      status: 'pending',
     });
   });
 });

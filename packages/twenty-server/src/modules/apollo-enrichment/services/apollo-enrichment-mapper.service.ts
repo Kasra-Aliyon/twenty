@@ -58,6 +58,7 @@ export class ApolloEnrichmentMapperService {
       PersonWorkspaceEntity,
       | 'name'
       | 'emails'
+      | 'phones'
       | 'linkedinLink'
       | 'jobTitle'
       | 'companyId'
@@ -69,6 +70,7 @@ export class ApolloEnrichmentMapperService {
       !hasText(person.name?.lastName) ||
       !hasText(person.emails?.primaryEmail) ||
       this.canRefreshPrimaryEmailFromApollo(person) ||
+      !hasText(person.phones?.primaryPhoneNumber) ||
       !hasText(person.linkedinLink?.primaryLinkUrl) ||
       !hasText(person.jobTitle) ||
       !hasText(person.companyId);
@@ -305,6 +307,55 @@ export class ApolloEnrichmentMapperService {
     };
   }
 
+  mapApolloPersonEmailToTwentyUpdate({
+    person,
+    apolloPerson,
+  }: {
+    person: PersonWorkspaceEntity;
+    apolloPerson: ApolloPerson;
+  }): ApolloPersonMappedFields {
+    const email = this.extractApolloEmail(apolloPerson);
+    const apolloEmails = [
+      ...(apolloPerson.personal_emails ?? []),
+      ...(apolloPerson.emails ?? []).map(
+        (apolloEmail) => apolloEmail.email ?? '',
+      ),
+    ];
+
+    if (hasText(email) && this.shouldUpdatePrimaryEmail({ person, email })) {
+      return {
+        emails: {
+          primaryEmail: email,
+          additionalEmails: this.mergeAdditionalEmails({
+            currentPrimaryEmail: email,
+            currentAdditionalEmails: person.emails?.additionalEmails,
+            apolloEmails,
+          }),
+        },
+      };
+    }
+
+    const additionalEmails = this.mergeAdditionalEmails({
+      currentPrimaryEmail: person.emails?.primaryEmail,
+      currentAdditionalEmails: person.emails?.additionalEmails,
+      apolloEmails,
+    });
+
+    if (
+      JSON.stringify(additionalEmails) ===
+      JSON.stringify(person.emails?.additionalEmails ?? null)
+    ) {
+      return {};
+    }
+
+    return {
+      emails: {
+        primaryEmail: person.emails?.primaryEmail ?? '',
+        additionalEmails,
+      },
+    };
+  }
+
   extractApolloOrganization(
     apolloPerson: ApolloPerson,
   ): ApolloOrganization | undefined {
@@ -510,8 +561,20 @@ export class ApolloEnrichmentMapperService {
   }
 
   private extractApolloEmail(apolloPerson: ApolloPerson): string | undefined {
+    const waterfallEmails = [...(apolloPerson.emails ?? [])].sort(
+      (firstEmail, secondEmail) =>
+        Number(secondEmail.email_status_cd?.toLowerCase() === 'verified') -
+          Number(firstEmail.email_status_cd?.toLowerCase() === 'verified') ||
+        (firstEmail.position ?? Number.MAX_SAFE_INTEGER) -
+          (secondEmail.position ?? Number.MAX_SAFE_INTEGER),
+    );
+    const waterfallEmail = waterfallEmails.find((email) =>
+      hasText(email.email),
+    )?.email;
+
     return this.cleanEmail(
-      apolloPerson.email ??
+      waterfallEmail ??
+        apolloPerson.email ??
         apolloPerson.sanitized_email ??
         apolloPerson.personal_email,
     );

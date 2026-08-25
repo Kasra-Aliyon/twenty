@@ -186,6 +186,89 @@ describe('ApolloEnrichmentMapperService', () => {
     });
   });
 
+  it('considers a missing phone a general enrichment gap', () => {
+    expect(
+      mapper.shouldEnrichPersonGeneral(
+        buildPerson({
+          name: {
+            firstName: 'Jane',
+            lastName: 'Doe',
+          },
+          emails: {
+            primaryEmail: 'jane@example.com',
+            additionalEmails: null,
+          },
+          linkedinLink: {
+            primaryLinkLabel: '',
+            primaryLinkUrl: 'https://www.linkedin.com/in/jane',
+            secondaryLinks: null,
+          },
+          jobTitle: 'VP Sales',
+          companyId: 'company-id',
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it('maps the verified waterfall email for email-only enrichment', () => {
+    expect(
+      mapper.mapApolloPersonEmailToTwentyUpdate({
+        person: buildPerson(),
+        apolloPerson: {
+          emails: [
+            {
+              email: 'guessed@example.com',
+              email_status_cd: 'guessed',
+              position: 0,
+            },
+            {
+              email: 'Verified@Example.com',
+              email_status_cd: 'verified',
+              position: 1,
+            },
+          ],
+        },
+      }),
+    ).toEqual({
+      emails: {
+        primaryEmail: 'verified@example.com',
+        additionalEmails: ['guessed@example.com'],
+      },
+    });
+  });
+
+  it('keeps a manual primary email and adds a different waterfall email', () => {
+    expect(
+      mapper.mapApolloPersonEmailToTwentyUpdate({
+        person: buildPerson({
+          emails: {
+            primaryEmail: 'manual@example.com',
+            additionalEmails: null,
+          },
+          createdBy: {
+            context: {},
+            name: 'Manual User',
+            source: FieldActorSource.MANUAL,
+            workspaceMemberId: null,
+          },
+        }),
+        apolloPerson: {
+          emails: [
+            {
+              email: 'waterfall@example.com',
+              email_status_cd: 'verified',
+            },
+          ],
+        },
+      }),
+    ).toEqual({
+      emails: {
+        primaryEmail: 'manual@example.com',
+        additionalEmails: ['waterfall@example.com'],
+      },
+    });
+  });
+
   it('refreshes existing primary email for auto-created contact records', () => {
     const person = buildPerson({
       emails: {

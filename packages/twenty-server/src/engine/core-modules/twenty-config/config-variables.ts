@@ -303,7 +303,7 @@ export class ConfigVariables {
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.APOLLO_ENRICHMENT,
     description:
-      'Public HTTPS base URL Apollo uses to deliver asynchronous phone enrichment webhooks',
+      'Public HTTPS base URL Apollo uses to deliver asynchronous email and phone enrichment webhooks',
     type: ConfigVariableType.STRING,
   })
   @IsUrl({ require_protocol: true })
@@ -312,7 +312,8 @@ export class ConfigVariables {
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.APOLLO_ENRICHMENT,
-    description: 'Request personal email reveal from Apollo enrichment',
+    description:
+      'Request personal email reveal from automatic Apollo enrichment',
     type: ConfigVariableType.BOOLEAN,
   })
   @IsOptional()
@@ -320,7 +321,7 @@ export class ConfigVariables {
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.APOLLO_ENRICHMENT,
-    description: 'Request phone number reveal from Apollo enrichment',
+    description: 'Request phone number reveal from automatic Apollo enrichment',
     type: ConfigVariableType.BOOLEAN,
   })
   @IsOptional()

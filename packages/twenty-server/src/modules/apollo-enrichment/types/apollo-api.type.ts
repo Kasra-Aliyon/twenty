@@ -4,6 +4,12 @@ export type ApolloPhoneNumber = {
   type?: string | null;
 };
 
+export type ApolloEmail = {
+  email?: string | null;
+  email_status_cd?: string | null;
+  position?: number | null;
+};
+
 export type ApolloTechnology = {
   name?: string | null;
 };
@@ -49,6 +55,7 @@ export type ApolloPerson = {
   linkedin_url?: string | null;
   phone?: string | null;
   sanitized_phone?: string | null;
+  emails?: ApolloEmail[] | null;
   phone_numbers?: ApolloPhoneNumber[] | null;
   personal_emails?: string[] | null;
   organization?: ApolloOrganization | null;
@@ -59,14 +66,20 @@ export type ApolloPersonMatchResponse = {
   person?: ApolloPerson | null;
   organization?: ApolloOrganization | null;
   request_id?: number | string | null;
+  waterfall?: {
+    message?: string | null;
+    status?: 'accepted' | 'failed' | string | null;
+  } | null;
 };
 
 export type ApolloOrganizationEnrichResponse = {
   organization?: ApolloOrganization | null;
 };
 
-export type ApolloPhoneEnrichmentWebhookPayload = {
+export type ApolloEnrichmentWebhookPayload = {
+  request_id?: number | string | null;
   status?: 'failed' | 'success' | string | null;
+  target_fields?: string[] | null;
   people?: ApolloPerson[] | null;
 };
 
@@ -75,6 +88,7 @@ export type ApolloPersonMatchInput = {
   firstName?: string;
   lastName?: string;
   linkedinUrl?: string;
+  organizationDomain?: string;
   organizationName?: string;
 };
 
@@ -88,5 +102,7 @@ export type ApolloOrganizationMatchInput = {
 export type ApolloPersonEnrichmentOptions = {
   revealPersonalEmails: boolean;
   revealPhoneNumber: boolean;
+  runWaterfallEmail: boolean;
+  runWaterfallPhone: boolean;
   webhookUrl?: string;
 };

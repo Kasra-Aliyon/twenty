@@ -12,6 +12,7 @@ const COMPANY_ID = 'cd91ce89-09ea-4e4f-bc97-c38b73ea0993';
 const enrichmentResult = {
   requestedCount: 1,
   updatedCount: 1,
+  pendingCount: 0,
   skippedCount: 0,
   notMatchedCount: 0,
   notFoundCount: 0,
@@ -102,6 +103,7 @@ describe('Apollo enrichment MCP tools', () => {
         { input: { recordIds: [recordId] } },
         { endpoint: 'metadata', token: 'user' },
       );
+      expect(graphql.mock.calls[0][0]).toContain('pendingCount');
       expect(result.isError).not.toBe(true);
       expect(result.structuredContent).toEqual({
         result: enrichmentResult,

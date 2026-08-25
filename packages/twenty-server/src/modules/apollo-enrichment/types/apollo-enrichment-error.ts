@@ -18,8 +18,8 @@ export class ApolloEnrichmentProviderNotStartedError extends ApolloEnrichmentErr
   }
 }
 
-// Apollo returned a concrete HTTP response, so no asynchronous phone webhook
-// will arrive even though the durable provider boundary callback already ran.
+// Apollo returned a concrete HTTP rejection, so no asynchronous webhook will
+// arrive even though the durable provider boundary callback already ran.
 export class ApolloEnrichmentProviderRejectedError extends ApolloEnrichmentError {
   constructor(message: string, retryable: boolean, statusCode: number) {
     super(message, retryable, statusCode);
