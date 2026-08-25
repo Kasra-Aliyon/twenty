@@ -153,6 +153,7 @@ export class RecordListViewService {
           size: viewField.size,
           position: viewField.position,
           aggregateOperation: viewField.aggregateOperation ?? undefined,
+          subFieldName: viewField.subFieldName,
         })),
       });
 
