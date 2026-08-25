@@ -1,5 +1,10 @@
 import { FieldActorSource } from 'twenty-shared/types';
 
+import {
+  APOLLO_PHONE_ENRICHMENT_POLL_INTERVAL_MS,
+  APOLLO_PHONE_ENRICHMENT_POLL_JOB_NAME,
+  APOLLO_PHONE_ENRICHMENT_POLL_RETRY_LIMIT,
+} from 'src/modules/apollo-enrichment/apollo-enrichment.constants';
 import { ApolloClientService } from 'src/modules/apollo-enrichment/services/apollo-client.service';
 import { ApolloEnrichmentMapperService } from 'src/modules/apollo-enrichment/services/apollo-enrichment-mapper.service';
 import { ApolloEnrichmentService } from 'src/modules/apollo-enrichment/services/apollo-enrichment.service';
@@ -13,6 +18,7 @@ import { buildSystemAuthContext } from 'src/engine/twenty-orm/utils/build-system
 import { TwentyConfigService } from 'src/engine/core-modules/twenty-config/twenty-config.service';
 import { type ConfigVariables } from 'src/engine/core-modules/twenty-config/config-variables';
 import { type CacheStorageService } from 'src/engine/core-modules/cache-storage/services/cache-storage.service';
+import { type MessageQueueService } from 'src/engine/core-modules/message-queue/services/message-queue.service';
 import { PersonWorkspaceEntity } from 'src/modules/person/standard-objects/person.workspace-entity';
 import { SequenceEnrollmentWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence-enrollment.workspace-entity';
 
@@ -75,6 +81,10 @@ describe('ApolloEnrichmentService', () => {
   const apolloClientService = {
     enrichPerson: jest.fn(),
     enrichOrganization: jest.fn(),
+    pollPhoneEnrichment: jest.fn(),
+  };
+  const messageQueueService = {
+    add: jest.fn(),
   };
   const acquireLockWithToken = jest.fn();
   const renewLockWithToken = jest.fn();
@@ -123,6 +133,7 @@ describe('ApolloEnrichmentService', () => {
       renewLockWithToken,
       releaseLockWithToken,
     } as unknown as CacheStorageService,
+    messageQueueService as unknown as MessageQueueService,
   );
 
   const createPendingPhoneWebhookToken = async (): Promise<string> => {
@@ -186,6 +197,10 @@ describe('ApolloEnrichmentService', () => {
     apolloClientService.enrichOrganization.mockResolvedValue({
       organization: null,
     });
+    apolloClientService.pollPhoneEnrichment.mockResolvedValue({
+      status: 'pending',
+    });
+    messageQueueService.add.mockResolvedValue(undefined);
   });
 
   it('skips when Apollo enrichment is disabled', async () => {
@@ -254,10 +269,10 @@ describe('ApolloEnrichmentService', () => {
       transactionManager,
     );
     expect(personRepository.findOne).toHaveBeenCalledWith(
-      expect.objectContaining({
+      {
         lock: { mode: 'pessimistic_write' },
-        select: ['id', 'emails', 'linkedinLink', 'name', 'phones'],
-      }),
+        where: { id: personId },
+      },
       transactionManager,
     );
   });
@@ -322,6 +337,103 @@ describe('ApolloEnrichmentService', () => {
         ),
       }),
       expect.any(Function),
+    );
+    expect(personRepository.update).toHaveBeenCalledWith(
+      personId,
+      {
+        phones: {
+          primaryPhoneNumber: '+14155550100',
+          primaryPhoneCountryCode: '',
+          primaryPhoneCallingCode: '',
+          additionalPhones: null,
+        },
+      },
+      transactionManager,
+    );
+  });
+
+  it('queues zero-credit polling for an asynchronous phone result', async () => {
+    apolloClientService.enrichPerson.mockImplementation(
+      async (_input, _options, onProviderStart?: () => Promise<void>) => {
+        await onProviderStart?.();
+
+        return {
+          request_id: '1039995589705121900',
+          person: {
+            id: 'apollo-person-id',
+          },
+        };
+      },
+    );
+
+    await expect(
+      service.enrichPerson({ workspaceId, personId, mode: 'phone' }),
+    ).resolves.toBe('pending');
+
+    expect(messageQueueService.add).toHaveBeenCalledWith(
+      APOLLO_PHONE_ENRICHMENT_POLL_JOB_NAME,
+      {
+        matchFingerprint: expect.any(String),
+        personId,
+        requestId: '1039995589705121900',
+        requestToken: expect.any(String),
+        workspaceId,
+      },
+      {
+        backoff: {
+          type: 'fixed',
+          delay: APOLLO_PHONE_ENRICHMENT_POLL_INTERVAL_MS,
+        },
+        delay: APOLLO_PHONE_ENRICHMENT_POLL_INTERVAL_MS,
+        id: expect.stringMatching(
+          new RegExp(
+            `^apollo-phone-enrichment-poll:${workspaceId}:${personId}:`,
+          ),
+        ),
+        retryLimit: APOLLO_PHONE_ENRICHMENT_POLL_RETRY_LIMIT,
+      },
+    );
+  });
+
+  it('persists a completed polled phone result when the webhook is missed', async () => {
+    apolloClientService.enrichPerson.mockImplementation(
+      async (_input, _options, onProviderStart?: () => Promise<void>) => {
+        await onProviderStart?.();
+
+        return {
+          request_id: '1039995589705121900',
+          person: {
+            id: 'apollo-person-id',
+          },
+        };
+      },
+    );
+
+    await expect(
+      service.enrichPerson({ workspaceId, personId, mode: 'phone' }),
+    ).resolves.toBe('pending');
+
+    const pollJobData = messageQueueService.add.mock.calls[0][1];
+
+    apolloClientService.pollPhoneEnrichment.mockResolvedValue({
+      payload: {
+        people: [
+          {
+            id: 'apollo-person-id',
+            sanitized_phone: '+14155550100',
+          },
+        ],
+        status: 'success',
+      },
+      status: 'ready',
+    });
+
+    await expect(service.pollPhoneEnrichment(pollJobData)).resolves.toBe(
+      'resolved',
+    );
+
+    expect(apolloClientService.pollPhoneEnrichment).toHaveBeenCalledWith(
+      '1039995589705121900',
     );
     expect(personRepository.update).toHaveBeenCalledWith(
       personId,

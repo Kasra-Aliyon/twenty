@@ -20,6 +20,9 @@ import { type WorkspaceAuthContext } from 'src/engine/core-modules/auth/types/wo
 import { InjectCacheStorage } from 'src/engine/core-modules/cache-storage/decorators/cache-storage.decorator';
 import { CacheStorageService } from 'src/engine/core-modules/cache-storage/services/cache-storage.service';
 import { CacheStorageNamespace } from 'src/engine/core-modules/cache-storage/types/cache-storage-namespace.enum';
+import { InjectMessageQueue } from 'src/engine/core-modules/message-queue/decorators/message-queue.decorator';
+import { MessageQueue } from 'src/engine/core-modules/message-queue/message-queue.constants';
+import { MessageQueueService } from 'src/engine/core-modules/message-queue/services/message-queue.service';
 import { TwentyConfigService } from 'src/engine/core-modules/twenty-config/twenty-config.service';
 import { type WorkspaceEntityManager } from 'src/engine/twenty-orm/entity-manager/workspace-entity-manager';
 import { GlobalWorkspaceOrmManager } from 'src/engine/twenty-orm/global-workspace-datasource/global-workspace-orm.manager';
@@ -28,6 +31,12 @@ import { getWorkspaceContext } from 'src/engine/twenty-orm/storage/orm-workspace
 import { type RolePermissionConfig } from 'src/engine/twenty-orm/types/role-permission-config';
 import { buildSystemAuthContext } from 'src/engine/twenty-orm/utils/build-system-auth-context.util';
 import { resolveRolePermissionConfig } from 'src/engine/twenty-orm/utils/resolve-role-permission-config.util';
+import {
+  APOLLO_PHONE_ENRICHMENT_POLL_INTERVAL_MS,
+  APOLLO_PHONE_ENRICHMENT_POLL_JOB_ID_PREFIX,
+  APOLLO_PHONE_ENRICHMENT_POLL_JOB_NAME,
+  APOLLO_PHONE_ENRICHMENT_POLL_RETRY_LIMIT,
+} from 'src/modules/apollo-enrichment/apollo-enrichment.constants';
 import { ApolloClientService } from 'src/modules/apollo-enrichment/services/apollo-client.service';
 import {
   type ApolloCompanyMappedFields,
@@ -100,6 +109,8 @@ type ApolloPhonePersistenceOutcome =
   | 'ownership-lost'
   | 'updated';
 
+export type ApolloPhoneEnrichmentPollOutcome = 'pending' | 'resolved' | 'stale';
+
 @Injectable()
 export class ApolloEnrichmentService {
   private readonly logger = new Logger(ApolloEnrichmentService.name);
@@ -112,6 +123,8 @@ export class ApolloEnrichmentService {
     private readonly twentyConfigService: TwentyConfigService,
     @InjectCacheStorage(CacheStorageNamespace.EngineLock)
     private readonly cacheStorageService: CacheStorageService,
+    @InjectMessageQueue(MessageQueue.apolloEnrichmentQueue)
+    private readonly messageQueueService: MessageQueueService,
   ) {}
 
   async enrichPerson({
@@ -297,6 +310,20 @@ export class ApolloEnrichmentService {
           await this.releasePhoneEnrichmentLock(phoneRequestLock);
 
           return 'not-matched';
+        }
+
+        const phoneRequestId = this.normalizeApolloPhoneRequestId(
+          apolloResponse.request_id,
+        );
+
+        if (isDefined(phoneRequestLock) && isDefined(phoneRequestId)) {
+          await this.enqueuePhoneEnrichmentPoll({
+            matchFingerprint: this.buildPersonMatchFingerprint(matchInput),
+            personId: person.id,
+            requestId: phoneRequestId,
+            requestToken: phoneRequestLock.token,
+            workspaceId,
+          });
         }
 
         if (mode === 'phone') {
@@ -491,6 +518,56 @@ export class ApolloEnrichmentService {
     } finally {
       await this.releasePhoneWebhookProcessingLock(webhookProcessingLock);
     }
+  }
+
+  async pollPhoneEnrichment({
+    matchFingerprint,
+    personId,
+    requestId,
+    requestToken,
+    workspaceId,
+  }: {
+    matchFingerprint: string;
+    personId: string;
+    requestId: string;
+    requestToken: string;
+    workspaceId: string;
+  }): Promise<ApolloPhoneEnrichmentPollOutcome> {
+    const phoneRequestLock = this.getPhoneEnrichmentLock({
+      personId,
+      requestToken,
+      workspaceId,
+    });
+    const requestOwnershipConfirmed =
+      await this.confirmPhoneEnrichmentLockOwnership(phoneRequestLock);
+
+    if (!requestOwnershipConfirmed) {
+      return 'stale';
+    }
+
+    const pollResult =
+      await this.apolloClientService.pollPhoneEnrichment(requestId);
+
+    if (pollResult.status === 'pending') {
+      return 'pending';
+    }
+
+    const token = this.buildPhoneWebhookToken({
+      matchFingerprint,
+      personId,
+      requestToken,
+      workspaceId,
+    });
+
+    await this.handlePhoneEnrichmentWebhook({
+      token,
+      payload:
+        pollResult.status === 'ready'
+          ? pollResult.payload
+          : { status: 'failed' },
+    });
+
+    return 'resolved';
   }
 
   async enrichPeople({
@@ -984,7 +1061,6 @@ export class ApolloEnrichmentService {
       const committedPerson = await personRepository.findOne(
         {
           where: { id: personId },
-          select: ['id', 'emails', 'linkedinLink', 'name', 'phones'],
           lock: { mode: 'pessimistic_write' },
         },
         workspaceTransactionManager,
@@ -1384,6 +1460,54 @@ export class ApolloEnrichmentService {
     }
   }
 
+  private async enqueuePhoneEnrichmentPoll({
+    matchFingerprint,
+    personId,
+    requestId,
+    requestToken,
+    workspaceId,
+  }: {
+    matchFingerprint: string;
+    personId: string;
+    requestId: string;
+    requestToken: string;
+    workspaceId: string;
+  }): Promise<void> {
+    await this.messageQueueService.add(
+      APOLLO_PHONE_ENRICHMENT_POLL_JOB_NAME,
+      {
+        matchFingerprint,
+        personId,
+        requestId,
+        requestToken,
+        workspaceId,
+      },
+      {
+        backoff: {
+          type: 'fixed',
+          delay: APOLLO_PHONE_ENRICHMENT_POLL_INTERVAL_MS,
+        },
+        delay: APOLLO_PHONE_ENRICHMENT_POLL_INTERVAL_MS,
+        id: `${APOLLO_PHONE_ENRICHMENT_POLL_JOB_ID_PREFIX}:${workspaceId}:${personId}:${requestToken}`,
+        retryLimit: APOLLO_PHONE_ENRICHMENT_POLL_RETRY_LIMIT,
+      },
+    );
+  }
+
+  private normalizeApolloPhoneRequestId(
+    requestId: number | string | null | undefined,
+  ): string | undefined {
+    if (!isDefined(requestId)) {
+      return undefined;
+    }
+
+    const normalizedRequestId = String(requestId);
+
+    return /^-?\d+$/.test(normalizedRequestId)
+      ? normalizedRequestId
+      : undefined;
+  }
+
   private getPersonEnrichmentOptions({
     matchFingerprint,
     mode,
@@ -1463,6 +1587,30 @@ export class ApolloEnrichmentService {
       );
     }
 
+    const token = this.buildPhoneWebhookToken({
+      matchFingerprint,
+      personId,
+      requestToken,
+      workspaceId,
+    });
+
+    return new URL(
+      `/webhooks/apollo/enrichment/${token}`,
+      serverUrl,
+    ).toString();
+  }
+
+  private buildPhoneWebhookToken({
+    matchFingerprint,
+    personId,
+    requestToken,
+    workspaceId,
+  }: {
+    matchFingerprint: string;
+    personId: string;
+    requestToken: string;
+    workspaceId: string;
+  }): string {
     const tokenPayload: ApolloPhoneWebhookTokenPayload = {
       expiresAt: Date.now() + APOLLO_PHONE_WEBHOOK_TOKEN_TTL_MS,
       matchFingerprint,
@@ -1475,10 +1623,7 @@ export class ApolloEnrichmentService {
     );
     const signature = this.signPhoneWebhookPayload(encodedPayload);
 
-    return new URL(
-      `/webhooks/apollo/enrichment/${encodedPayload}.${signature}`,
-      serverUrl,
-    ).toString();
+    return `${encodedPayload}.${signature}`;
   }
 
   private verifyPhoneWebhookToken(

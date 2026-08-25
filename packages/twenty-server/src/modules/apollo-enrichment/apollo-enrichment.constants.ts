@@ -1,3 +1,9 @@
 export const APOLLO_ENRICHMENT_JOB_RETRY_LIMIT = 2;
 export const APOLLO_ENRICHMENT_JOB_BACKOFF_DELAY_MS = 60_000;
 export const APOLLO_ENRICHMENT_QUEUE_JOB_ID_PREFIX = 'apollo-enrich';
+export const APOLLO_PHONE_ENRICHMENT_POLL_JOB_NAME =
+  'ApolloPhoneEnrichmentPollJob';
+export const APOLLO_PHONE_ENRICHMENT_POLL_JOB_ID_PREFIX =
+  'apollo-phone-enrichment-poll';
+export const APOLLO_PHONE_ENRICHMENT_POLL_INTERVAL_MS = 30_000;
+export const APOLLO_PHONE_ENRICHMENT_POLL_RETRY_LIMIT = 120;

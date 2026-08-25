@@ -3,6 +3,7 @@ import { Logger } from '@nestjs/common';
 import { Process } from 'src/engine/core-modules/message-queue/decorators/process.decorator';
 import { Processor } from 'src/engine/core-modules/message-queue/decorators/processor.decorator';
 import { MessageQueue } from 'src/engine/core-modules/message-queue/message-queue.constants';
+import { APOLLO_PHONE_ENRICHMENT_POLL_JOB_NAME } from 'src/modules/apollo-enrichment/apollo-enrichment.constants';
 import { ApolloEnrichmentService } from 'src/modules/apollo-enrichment/services/apollo-enrichment.service';
 import { ApolloEnrichmentError } from 'src/modules/apollo-enrichment/types/apollo-enrichment-error';
 import { type ApolloEnrichmentTrigger } from 'src/modules/apollo-enrichment/types/apollo-enrichment-trigger.type';
@@ -11,6 +12,14 @@ export type ApolloEnrichPersonJobData = {
   workspaceId: string;
   personId: string;
   trigger: ApolloEnrichmentTrigger;
+};
+
+type ApolloPhoneEnrichmentPollJobData = {
+  matchFingerprint: string;
+  personId: string;
+  requestId: string;
+  requestToken: string;
+  workspaceId: string;
 };
 
 @Processor(MessageQueue.apolloEnrichmentQueue)
@@ -42,6 +51,21 @@ export class ApolloEnrichPersonJob {
       }
 
       throw error;
+    }
+  }
+
+  @Process(APOLLO_PHONE_ENRICHMENT_POLL_JOB_NAME)
+  async handlePhoneEnrichmentPoll(
+    data: ApolloPhoneEnrichmentPollJobData,
+  ): Promise<void> {
+    const result = await this.apolloEnrichmentService.pollPhoneEnrichment(data);
+
+    if (result === 'pending') {
+      throw new ApolloEnrichmentError(
+        'Apollo phone enrichment result is still pending',
+        true,
+        404,
+      );
     }
   }
 }

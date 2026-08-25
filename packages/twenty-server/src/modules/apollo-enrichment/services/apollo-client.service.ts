@@ -10,6 +10,7 @@ import {
   type ApolloPersonEnrichmentOptions,
   type ApolloPersonMatchInput,
   type ApolloPersonMatchResponse,
+  type ApolloPhoneEnrichmentWebhookPayload,
 } from 'src/modules/apollo-enrichment/types/apollo-api.type';
 import { ApolloEnrichmentError } from 'src/modules/apollo-enrichment/types/apollo-enrichment-error';
 
@@ -30,6 +31,24 @@ type ApolloOrganizationEnrichRequest = {
   name?: string;
   website?: string;
 };
+
+type ApolloPhoneEnrichmentPollApiResponse =
+  ApolloPhoneEnrichmentWebhookPayload & {
+    error_code?: string | null;
+    retry_after_seconds?: number | null;
+  };
+
+export type ApolloPhoneEnrichmentPollResult =
+  | {
+      status: 'pending';
+    }
+  | {
+      payload: ApolloPhoneEnrichmentWebhookPayload;
+      status: 'ready';
+    }
+  | {
+      status: 'terminal';
+    };
 
 @Injectable()
 export class ApolloClientService {
@@ -101,6 +120,38 @@ export class ApolloClientService {
       );
 
     return response.data;
+  }
+
+  async pollPhoneEnrichment(
+    requestId: string,
+  ): Promise<ApolloPhoneEnrichmentPollResult> {
+    const response =
+      await this.getHttpClient().get<ApolloPhoneEnrichmentPollApiResponse>(
+        `/webhook_result/${encodeURIComponent(requestId)}`,
+        {
+          validateStatus: (statusCode) =>
+            statusCode === 200 ||
+            statusCode === 400 ||
+            statusCode === 404 ||
+            statusCode === 410,
+        },
+      );
+
+    if (response.status === 200) {
+      return {
+        payload: response.data,
+        status: 'ready',
+      };
+    }
+
+    if (
+      response.status === 404 &&
+      response.data.error_code === 'result_pending'
+    ) {
+      return { status: 'pending' };
+    }
+
+    return { status: 'terminal' };
   }
 
   private getHttpClient(): AxiosInstance {
