@@ -7,10 +7,14 @@ import { useFilterValueDependencies } from '@/object-record/record-filter/hooks/
 import { anyFieldFilterValueComponentState } from '@/object-record/record-filter/states/anyFieldFilterValueComponentState';
 import { currentRecordFiltersComponentState } from '@/object-record/record-filter/states/currentRecordFiltersComponentState';
 import { useCurrentRecordGroupDefinition } from '@/object-record/record-group/hooks/useCurrentRecordGroupDefinition';
-import { useRecordIndexContextOrThrow } from '@/object-record/record-index/contexts/RecordIndexContext';
+import {
+  recordIndexRequiredFilterFamilyState,
+  useRecordIndexContext,
+} from '@/object-record/record-index/contexts/RecordIndexContext';
 import { useRecordGroupFilter } from '@/object-record/record-group/hooks/useRecordGroupFilter';
 import { currentRecordSortsComponentState } from '@/object-record/record-sort/states/currentRecordSortsComponentState';
 import { useAtomComponentStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomComponentStateValue';
+import { useAtomFamilyStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomFamilyStateValue';
 import { useAtomStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomStateValue';
 import {
   combineFilters,
@@ -22,7 +26,14 @@ export const useFindManyRecordIndexTableParams = (
   objectNameSingular: string,
   instanceId?: string,
 ) => {
-  const { requiredFilter } = useRecordIndexContextOrThrow();
+  const recordIndexContext = useRecordIndexContext();
+  const recordIndexId = instanceId ?? recordIndexContext?.recordIndexId ?? '';
+  const recordIndexRequiredFilter = useAtomFamilyStateValue(
+    recordIndexRequiredFilterFamilyState,
+    recordIndexId,
+  );
+  const requiredFilter =
+    recordIndexContext?.requiredFilter ?? recordIndexRequiredFilter;
   const { objectMetadataItem } = useObjectMetadataItem({
     objectNameSingular,
   });

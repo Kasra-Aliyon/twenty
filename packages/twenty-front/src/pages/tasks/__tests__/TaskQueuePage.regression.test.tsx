@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { type ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { SEQUENCE_TASK_TYPES } from 'twenty-shared/types';
@@ -12,6 +12,11 @@ const mockUseFindManyRecords = jest.fn((_options: unknown) => ({
   hasNextPage: false,
   loading: false,
 }));
+const mockFetchAllCallTasks = jest.fn(async (): Promise<unknown[]> => []);
+const mockUseLazyFetchAllRecords = jest.fn((_options: unknown) => ({
+  fetchAllRecords: mockFetchAllCallTasks,
+}));
+const mockDownloadSequenceCallsCsv = jest.fn();
 
 jest.mock('@/auth/states/currentWorkspaceMemberState', () => ({
   currentWorkspaceMemberState: {},
@@ -25,12 +30,36 @@ jest.mock('@/object-record/hooks/useFindManyRecords', () => ({
   useFindManyRecords: (options: unknown) => mockUseFindManyRecords(options),
 }));
 
+jest.mock('@/object-record/hooks/useLazyFetchAllRecords', () => ({
+  useLazyFetchAllRecords: (options: unknown) =>
+    mockUseLazyFetchAllRecords(options),
+}));
+
 jest.mock('@/object-record/hooks/useObjectPermissionsForObject', () => ({
   useObjectPermissionsForObject: () => ({ canUpdateObjectRecords: true }),
 }));
 
+jest.mock('@/settings/roles/hooks/useHasPermissionFlag', () => ({
+  useHasPermissionFlag: () => true,
+}));
+
+jest.mock('@/ui/feedback/snack-bar-manager/hooks/useSnackBar', () => ({
+  useSnackBar: () => ({ enqueueErrorSnackBar: jest.fn() }),
+}));
+
 jest.mock('@/ui/layout/page/components/PageCardHeader', () => ({
-  PageCardHeader: ({ title }: { title: ReactNode }) => <header>{title}</header>,
+  PageCardHeader: ({
+    title,
+    actionButton,
+  }: {
+    title: ReactNode;
+    actionButton?: ReactNode;
+  }) => (
+    <header>
+      {title}
+      {actionButton}
+    </header>
+  ),
 }));
 
 jest.mock('@/ui/layout/page/components/PageCardLayout', () => ({
@@ -85,6 +114,11 @@ jest.mock('../components/TaskQueueFilters', () => ({
 
 jest.mock('../components/TaskQueueList', () => ({
   TaskQueueList: () => null,
+}));
+
+jest.mock('../utils/generate-sequence-calls-csv', () => ({
+  downloadSequenceCallsCsv: (tasks: unknown[]) =>
+    mockDownloadSequenceCallsCsv(tasks),
 }));
 
 describe('TaskQueuePage', () => {
@@ -155,5 +189,88 @@ describe('TaskQueuePage', () => {
         },
       ]),
     );
+  });
+
+  it('exports all open call task contacts', async () => {
+    const callTaskNodes = [
+      {
+        id: 'call-task-id',
+        taskTargets: {
+          edges: [
+            {
+              node: {
+                id: 'task-target-id',
+                targetPerson: {
+                  id: 'person-id',
+                  name: { firstName: 'Jane', lastName: 'Doe' },
+                },
+              },
+            },
+          ],
+        },
+      },
+    ];
+    mockFetchAllCallTasks.mockResolvedValueOnce(callTaskNodes);
+
+    render(
+      <MemoryRouter
+        future={{
+          v7_relativeSplatPath: true,
+          v7_startTransition: true,
+        }}
+      >
+        <TaskQueuePage />
+      </MemoryRouter>,
+    );
+
+    const exportQueryOptions = mockUseLazyFetchAllRecords.mock.calls[0][0] as {
+      filter: { and: unknown[] };
+      recordGqlFields: Record<string, unknown>;
+    };
+
+    expect(exportQueryOptions.filter.and).toEqual(
+      expect.arrayContaining([
+        { status: { in: ['TODO', 'IN_PROGRESS'] } },
+        { sequenceEnrollmentId: { is: 'NOT_NULL' } },
+        { type: { in: [SEQUENCE_TASK_TYPES.CALL] } },
+      ]),
+    );
+    expect(exportQueryOptions.recordGqlFields).toMatchObject({
+      taskTargets: {
+        targetPerson: {
+          name: { firstName: true, lastName: true },
+          phones: {
+            primaryPhoneNumber: true,
+            primaryPhoneCallingCode: true,
+            additionalPhones: true,
+          },
+          emails: { primaryEmail: true },
+          jobTitle: true,
+          company: { name: true },
+          address: { addressCountry: true },
+          linkedinLink: { primaryLinkUrl: true },
+        },
+      },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Export calls' }));
+
+    expect(mockFetchAllCallTasks).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(mockDownloadSequenceCallsCsv).toHaveBeenCalledWith([
+        expect.objectContaining({
+          id: 'call-task-id',
+          taskTargets: [
+            expect.objectContaining({
+              id: 'task-target-id',
+              targetPerson: expect.objectContaining({
+                id: 'person-id',
+                name: { firstName: 'Jane', lastName: 'Doe' },
+              }),
+            }),
+          ],
+        }),
+      ]);
+    });
   });
 });

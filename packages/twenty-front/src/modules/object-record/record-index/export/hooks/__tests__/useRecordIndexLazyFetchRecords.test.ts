@@ -7,8 +7,10 @@ import {
 } from '@/object-record/record-index/export/hooks/useRecordIndexLazyFetchRecords';
 
 import { useLazyFetchAllRecords } from '@/object-record/hooks/useLazyFetchAllRecords';
+import { recordIndexRequiredFilterFamilyState } from '@/object-record/record-index/contexts/RecordIndexContext';
 import { ViewType } from '@/views/types/ViewType';
 import { getJestMetadataAndApolloMocksAndCommandMenuWrapper } from '~/testing/jest/getJestMetadataAndApolloMocksAndCommandMenuWrapper';
+import { getJestMetadataAndApolloMocksWrapper } from '~/testing/jest/getJestMetadataAndApolloMocksWrapper';
 import { getTestEnrichedObjectMetadataItemsMock } from '~/testing/utils/getTestEnrichedObjectMetadataItemsMock';
 
 const mockPerson = {
@@ -71,6 +73,22 @@ const Wrapper = getJestMetadataAndApolloMocksAndCommandMenuWrapper({
   contextStoreCurrentObjectMetadataNameSingular: 'person',
 });
 
+const requiredFilter = {
+  recordListMemberships: {
+    recordListId: { eq: 'record-list-id' },
+  },
+};
+
+const HeadlessCommandWrapper = getJestMetadataAndApolloMocksWrapper({
+  apolloMocks: [],
+  onInitializeJotaiStore: (store) => {
+    store.set(
+      recordIndexRequiredFilterFamilyState.atomFamily('people'),
+      requiredFilter,
+    );
+  },
+});
+
 jest.mock('@/object-record/hooks/useLazyFetchAllRecords', () => ({
   useLazyFetchAllRecords: jest.fn(),
 }));
@@ -96,6 +114,26 @@ describe('useRecordData', () => {
   }
 
   describe('data fetching', () => {
+    it('should initialize outside of a RecordIndexContext provider', () => {
+      expect(() =>
+        renderHook(
+          () =>
+            useRecordIndexLazyFetchRecords({
+              recordIndexId,
+              objectMetadataItem,
+              callback: jest.fn(),
+              pageSize: 30,
+              delayMs: 0,
+            }),
+          { wrapper: HeadlessCommandWrapper },
+        ),
+      ).not.toThrow();
+
+      expect(useLazyFetchAllRecords).toHaveBeenCalledWith(
+        expect.objectContaining({ filter: requiredFilter }),
+      );
+    });
+
     it('should handle no records', async () => {
       const callback = jest.fn();
 

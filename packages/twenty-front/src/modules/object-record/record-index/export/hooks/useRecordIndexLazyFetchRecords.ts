@@ -15,11 +15,15 @@ import { useObjectOptionsForBoard } from '@/object-record/object-options-dropdow
 import { visibleRecordFieldsComponentSelector } from '@/object-record/record-field/states/visibleRecordFieldsComponentSelector';
 import { type RecordField } from '@/object-record/record-field/types/RecordField';
 import { useFilterValueDependencies } from '@/object-record/record-filter/hooks/useFilterValueDependencies';
+import {
+  recordIndexRequiredFilterFamilyState,
+  useRecordIndexContext,
+} from '@/object-record/record-index/contexts/RecordIndexContext';
 import { useFindManyRecordIndexTableParams } from '@/object-record/record-index/hooks/useFindManyRecordIndexTableParams';
-import { useRecordIndexContextOrThrow } from '@/object-record/record-index/contexts/RecordIndexContext';
 import { recordIndexGroupFieldMetadataItemComponentState } from '@/object-record/record-index/states/recordIndexGroupFieldMetadataComponentState';
 import { useAtomComponentSelectorValue } from '@/ui/utilities/state/jotai/hooks/useAtomComponentSelectorValue';
 import { useAtomComponentStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomComponentStateValue';
+import { useAtomFamilyStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomFamilyStateValue';
 import { useAtomStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomStateValue';
 import { ViewType } from '@/views/types/ViewType';
 import { combineFilters, isDefined } from 'twenty-shared/utils';
@@ -56,7 +60,13 @@ export const useRecordIndexLazyFetchRecords = ({
   callback,
   viewType = ViewType.TABLE,
 }: UseRecordDataOptions) => {
-  const { requiredFilter } = useRecordIndexContextOrThrow();
+  const recordIndexContext = useRecordIndexContext();
+  const recordIndexRequiredFilter = useAtomFamilyStateValue(
+    recordIndexRequiredFilterFamilyState,
+    recordIndexId,
+  );
+  const requiredFilter =
+    recordIndexContext?.requiredFilter ?? recordIndexRequiredFilter;
   const { hiddenBoardFields } = useObjectOptionsForBoard({
     objectNameSingular: objectMetadataItem.nameSingular,
     recordBoardId: recordIndexId,

@@ -12,6 +12,31 @@ export type TaskQueueRecord = ObjectRecord & {
     id: string;
     targetPerson: {
       id: string;
+      name?: {
+        firstName: string | null;
+        lastName: string | null;
+      } | null;
+      phones?: {
+        primaryPhoneNumber: string | null;
+        primaryPhoneCallingCode: string | null;
+        additionalPhones:
+          | Array<{
+              number: string;
+              callingCode: string;
+            }>
+          | string
+          | null;
+      } | null;
+      emails?: {
+        primaryEmail: string | null;
+      } | null;
+      jobTitle?: string | null;
+      company?: {
+        name: string | null;
+      } | null;
+      address?: {
+        addressCountry: string | null;
+      } | null;
       linkedinLink: {
         primaryLinkUrl: string | null;
       } | null;

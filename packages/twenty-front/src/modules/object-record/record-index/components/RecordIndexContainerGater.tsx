@@ -1,4 +1,7 @@
-import { RecordIndexContextProvider } from '@/object-record/record-index/contexts/RecordIndexContext';
+import {
+  RecordIndexContextProvider,
+  recordIndexRequiredFilterFamilyState,
+} from '@/object-record/record-index/contexts/RecordIndexContext';
 
 import { getCommandMenuIdFromRecordIndexId } from '@/command-menu-item/utils/getCommandMenuIdFromRecordIndexId';
 import { CommandMenuComponentInstanceContext } from '@/command-menu/states/contexts/CommandMenuComponentInstanceContext';
@@ -20,10 +23,11 @@ import { type ObjectRecord } from '@/object-record/types/ObjectRecord';
 import { RECORD_INDEX_DRAG_SELECT_BOUNDARY_CLASS } from '@/ui/utilities/drag-select/constants/RecordIndecDragSelectBoundaryClass';
 import { PageCardLayout } from '@/ui/layout/page/components/PageCardLayout';
 import { PageTitle } from '@/ui/utilities/page-title/components/PageTitle';
+import { useSetAtomFamilyState } from '@/ui/utilities/state/jotai/hooks/useSetAtomFamilyState';
 import { ViewComponentInstanceContext } from '@/views/states/contexts/ViewComponentInstanceContext';
 import { styled } from '@linaria/react';
 import { useStore } from 'jotai';
-import { type ReactNode, useCallback } from 'react';
+import { type ReactNode, useCallback, useEffect } from 'react';
 import { type RecordGqlOperationFilter } from 'twenty-shared/types';
 
 const StyledIndexContainer = styled.div`
@@ -54,6 +58,19 @@ export const RecordIndexContainerGater = ({
 
   const { recordIndexId, objectMetadataItem } =
     useRecordIndexIdFromCurrentContextStore();
+
+  const setRecordIndexRequiredFilter = useSetAtomFamilyState(
+    recordIndexRequiredFilterFamilyState,
+    recordIndexId,
+  );
+
+  useEffect(() => {
+    setRecordIndexRequiredFilter(requiredFilter);
+  }, [requiredFilter, setRecordIndexRequiredFilter]);
+
+  useEffect(() => {
+    return () => setRecordIndexRequiredFilter(undefined);
+  }, [setRecordIndexRequiredFilter]);
 
   const handleIndexRecordsLoaded = useCallback(() => {
     // TODO: find a better way to reset this state ?

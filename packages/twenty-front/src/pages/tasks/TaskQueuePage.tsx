@@ -1,6 +1,11 @@
 import { useObjectMetadataItem } from '@/object-metadata/hooks/useObjectMetadataItem';
+import { getRecordFromRecordNode } from '@/object-record/cache/utils/getRecordFromRecordNode';
 import { useFindManyRecords } from '@/object-record/hooks/useFindManyRecords';
+import { useLazyFetchAllRecords } from '@/object-record/hooks/useLazyFetchAllRecords';
+import { EXPORT_TABLE_DATA_DEFAULT_PAGE_SIZE } from '@/object-record/object-options-dropdown/constants/ExportTableDataDefaultPageSize';
 import { useObjectPermissionsForObject } from '@/object-record/hooks/useObjectPermissionsForObject';
+import { useHasPermissionFlag } from '@/settings/roles/hooks/useHasPermissionFlag';
+import { useSnackBar } from '@/ui/feedback/snack-bar-manager/hooks/useSnackBar';
 import { PageCardHeader } from '@/ui/layout/page/components/PageCardHeader';
 import { PageCardLayout } from '@/ui/layout/page/components/PageCardLayout';
 import { PageContainer } from '@/ui/layout/page/components/PageContainer';
@@ -15,7 +20,9 @@ import {
   SEQUENCE_TASK_TYPES,
   type SequenceTaskType,
 } from 'twenty-shared/types';
-import { IconListCheck } from 'twenty-ui/icon';
+import { PermissionFlagType } from '~/generated-metadata/graphql';
+import { IconFileExport, IconListCheck } from 'twenty-ui/icon';
+import { Button } from 'twenty-ui/input';
 
 import {
   TASK_CATEGORY_FILTERS,
@@ -25,6 +32,7 @@ import {
 } from './components/TaskQueueFilters';
 import { TaskQueueList } from './components/TaskQueueList';
 import { type TaskQueueRecord } from './types/TaskQueueRecord';
+import { downloadSequenceCallsCsv } from './utils/generate-sequence-calls-csv';
 
 const TASK_QUEUE_REFRESH_INTERVAL_MILLISECONDS = 15_000;
 const TASK_QUEUE_PAGE_SIZE = 50;
@@ -48,6 +56,11 @@ const TaskQueuePageContent = () => {
   );
   const [priorityFilter, setPriorityFilter] =
     useState<TaskPriorityFilter>('ALL');
+  const [isExportingCalls, setIsExportingCalls] = useState(false);
+  const hasExportCsvPermission = useHasPermissionFlag(
+    PermissionFlagType.EXPORT_CSV,
+  );
+  const { enqueueErrorSnackBar } = useSnackBar();
   const { objectMetadataItem: taskObjectMetadataItem } = useObjectMetadataItem({
     objectNameSingular: CoreObjectNameSingular.Task,
   });
@@ -96,6 +109,72 @@ const TaskQueuePageContent = () => {
     limit: TASK_QUEUE_PAGE_SIZE,
   });
 
+  const { fetchAllRecords: fetchAllCallTasks } =
+    useLazyFetchAllRecords<TaskQueueRecord>({
+      objectNameSingular: CoreObjectNameSingular.Task,
+      filter: {
+        and: [
+          { status: { in: ['TODO', 'IN_PROGRESS'] } },
+          { sequenceEnrollmentId: { is: 'NOT_NULL' } },
+          { type: { in: [SEQUENCE_TASK_TYPES.CALL] } },
+        ],
+      },
+      orderBy: [{ dueAt: 'AscNullsLast' }],
+      recordGqlFields: {
+        id: true,
+        taskTargets: {
+          id: true,
+          targetPerson: {
+            id: true,
+            name: {
+              firstName: true,
+              lastName: true,
+            },
+            phones: {
+              primaryPhoneNumber: true,
+              primaryPhoneCallingCode: true,
+              additionalPhones: true,
+            },
+            emails: {
+              primaryEmail: true,
+            },
+            jobTitle: true,
+            company: {
+              name: true,
+            },
+            address: {
+              addressCountry: true,
+            },
+            linkedinLink: {
+              primaryLinkUrl: true,
+            },
+          },
+        },
+      },
+      limit: EXPORT_TABLE_DATA_DEFAULT_PAGE_SIZE,
+    });
+
+  const handleExportCalls = async () => {
+    setIsExportingCalls(true);
+
+    try {
+      const callTaskNodes = await fetchAllCallTasks();
+      const callTasks = callTaskNodes.map((callTaskNode) =>
+        getRecordFromRecordNode<TaskQueueRecord>({
+          recordNode: callTaskNode,
+        }),
+      );
+
+      downloadSequenceCallsCsv(callTasks);
+    } catch {
+      enqueueErrorSnackBar({
+        message: t`The call contacts could not be exported.`,
+      });
+    } finally {
+      setIsExportingCalls(false);
+    }
+  };
+
   useEffect(() => {
     const intervalId = window.setInterval(() => {
       void refetch().catch(() => undefined);
@@ -111,6 +190,20 @@ const TaskQueuePageContent = () => {
           <PageCardHeader
             icon={<IconListCheck size={18} />}
             title={t`Sequence tasks`}
+            actionButton={
+              hasExportCsvPermission ? (
+                <Button
+                  Icon={IconFileExport}
+                  title={t`Export calls`}
+                  ariaLabel={t`Export calls`}
+                  size="small"
+                  variant="secondary"
+                  isLoading={isExportingCalls}
+                  disabled={isExportingCalls}
+                  onClick={() => void handleExportCalls()}
+                />
+              ) : null
+            }
           />
         }
         secondaryBar={
