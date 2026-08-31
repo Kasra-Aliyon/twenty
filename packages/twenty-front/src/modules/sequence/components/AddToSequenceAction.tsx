@@ -38,8 +38,8 @@ import {
   type SequenceStepSettings,
   type SequenceStatus,
 } from 'twenty-shared/types';
-import { combineFilters } from 'twenty-shared/utils';
-import { IconSend } from 'twenty-ui/icon';
+import { combineFilters, isDefined } from 'twenty-shared/utils';
+import { IconChevronLeft, IconListNumbers, IconSend } from 'twenty-ui/icon';
 import { Button } from 'twenty-ui/input';
 import { MenuItem } from 'twenty-ui/navigation';
 
@@ -49,6 +49,9 @@ type SequenceForEnrollment = ObjectRecord & {
   senderConnectedAccountId: string | null;
   settings: SequenceSettings;
   steps?: Array<{
+    id: string;
+    name: string | null;
+    position: number;
     settings: SequenceStepSettings;
   }>;
 };
@@ -93,6 +96,8 @@ const AddToSequenceActionContent = ({
 }) => {
   const dropdownId = 'add-selected-people-to-sequence';
   const [isSaving, setIsSaving] = useState(false);
+  const [selectedSequence, setSelectedSequence] =
+    useState<SequenceForEnrollment | null>(null);
   const { closeDropdown } = useCloseDropdown();
   const { selectedRecords, isSelectAll, numberOfSelectedRecords } =
     useCurrentCommandMenuContextApi();
@@ -158,6 +163,8 @@ const AddToSequenceActionContent = ({
       settings: true,
       steps: {
         id: true,
+        name: true,
+        position: true,
         settings: true,
       },
     },
@@ -192,7 +199,10 @@ const AddToSequenceActionContent = ({
     return null;
   }
 
-  const addToSequence = async (sequence: SequenceForEnrollment) => {
+  const addToSequence = async (
+    sequence: SequenceForEnrollment,
+    startStepId?: string,
+  ) => {
     if (areEnrollmentsLoading) {
       return;
     }
@@ -256,6 +266,7 @@ const AddToSequenceActionContent = ({
           sequenceId: sequence.id,
           personId: person.id,
           stopOnReply: sequence.settings.stopOnReply,
+          ...(startStepId === undefined ? {} : { currentStepId: startStepId }),
         })),
       });
       await apolloCoreClient.refetchQueries({ include: 'active' });
@@ -266,13 +277,19 @@ const AddToSequenceActionContent = ({
       });
     } finally {
       setIsSaving(false);
+      setSelectedSequence(null);
     }
   };
+
+  const selectedSequenceRootSteps = (selectedSequence?.steps ?? [])
+    .filter(({ settings }) => !isDefined(settings.branch))
+    .sort((firstStep, secondStep) => firstStep.position - secondStep.position);
 
   return (
     <Dropdown
       dropdownId={dropdownId}
       dropdownPlacement="bottom-end"
+      onClose={() => setSelectedSequence(null)}
       clickableComponent={
         <Button
           title={t`Add to sequence`}
@@ -285,31 +302,59 @@ const AddToSequenceActionContent = ({
       dropdownComponents={
         <DropdownContent widthInPixels={GenericDropdownContentWidth.ExtraLarge}>
           <DropdownMenuItemsContainer>
-            {sequences.map((sequence) => (
-              <MenuItem
-                key={sequence.id}
-                LeftIcon={IconSend}
-                text={sequence.name}
-                contextualText={sequence.status}
-                disabled={
-                  areEnrollmentsLoading ||
-                  (doesSequenceRequireSender(sequence) &&
-                    !sequence.senderConnectedAccountId &&
-                    (sequence.settings.senderConnectedAccountIds?.length ??
-                      0) === 0)
-                }
-                onClick={() => void addToSequence(sequence)}
-              />
-            ))}
-            {sequences.length === 0 && (
-              <MenuItem text={t`No sequences available`} disabled />
-            )}
-            {hasMoreSequences && (
-              <MenuItem
-                text={t`Load more sequences`}
-                disabled={areSequencesLoading}
-                onClick={() => void fetchMoreSequences()}
-              />
+            {selectedSequence === null ? (
+              <>
+                {sequences.map((sequence) => (
+                  <MenuItem
+                    key={sequence.id}
+                    LeftIcon={IconSend}
+                    text={sequence.name}
+                    contextualText={sequence.status}
+                    disabled={
+                      areEnrollmentsLoading ||
+                      (doesSequenceRequireSender(sequence) &&
+                        !sequence.senderConnectedAccountId &&
+                        (sequence.settings.senderConnectedAccountIds?.length ??
+                          0) === 0)
+                    }
+                    onClick={() => setSelectedSequence(sequence)}
+                  />
+                ))}
+                {sequences.length === 0 && (
+                  <MenuItem text={t`No sequences available`} disabled />
+                )}
+                {hasMoreSequences && (
+                  <MenuItem
+                    text={t`Load more sequences`}
+                    disabled={areSequencesLoading}
+                    onClick={() => void fetchMoreSequences()}
+                  />
+                )}
+              </>
+            ) : (
+              <>
+                <MenuItem
+                  LeftIcon={IconChevronLeft}
+                  text={t`Back to sequences`}
+                  onClick={() => setSelectedSequence(null)}
+                />
+                <MenuItem
+                  LeftIcon={IconSend}
+                  text={t`Start from the beginning`}
+                  onClick={() => void addToSequence(selectedSequence)}
+                />
+                {selectedSequenceRootSteps.map((step) => (
+                  <MenuItem
+                    key={step.id}
+                    LeftIcon={IconListNumbers}
+                    text={step.name ?? `${t`Step`} ${step.position + 1}`}
+                    contextualText={t`Start here`}
+                    onClick={() =>
+                      void addToSequence(selectedSequence, step.id)
+                    }
+                  />
+                ))}
+              </>
             )}
           </DropdownMenuItemsContainer>
         </DropdownContent>

@@ -282,11 +282,30 @@ describe('sequence MCP contract regressions', () => {
       '0.3.0',
     );
     expect(sequencesToolsTesting.sequenceCapabilities.contract_version).toBe(
-      '2026-08-20.2',
+      '2026-08-27.2',
     );
     expect(
       sequencesToolsTesting.sequenceCapabilities.placement.semantics,
     ).toContain('point-in-time');
+    expect(
+      sequencesToolsTesting.sequenceCapabilities.sequence_settings
+        .sending_window,
+    ).toContain('emailWindowStart/emailWindowEnd control');
+    expect(
+      sequencesToolsTesting.sequenceCapabilities.sequence_settings
+        .sending_window,
+    ).toContain('manual email task surfacing');
+    expect(
+      sequencesToolsTesting.sequenceCapabilities.sequence_settings
+        .daily_start_limit,
+    ).toContain('RECIPIENT mode resets the quota at UTC midnight');
+    expect(
+      sequencesToolsTesting.sequenceSettingsSchema.shape.timezone.description,
+    ).toContain('manual email task surfacing');
+    expect(
+      sequencesToolsTesting.sequenceSettingsSchema.shape.sendWindowTimezoneMode
+        .description,
+    ).toContain('Controls scheduling for every email step');
     expect(
       sequencesToolsTesting.sequenceCapabilities.step_types.CONDITION.conditions
         .ACCEPTED_LINKEDIN_INVITE,

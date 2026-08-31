@@ -508,23 +508,56 @@ export class SequenceExecutorService {
       const isAutomatedEmail =
         nextStep.settings.type === SEQUENCE_STEP_TYPES.SEND_EMAIL &&
         !this.isManualExecution(nextStep.settings);
+      const isManualEmail =
+        nextStep.settings.type === SEQUENCE_STEP_TYPES.SEND_EMAIL &&
+        this.isManualExecution(nextStep.settings);
 
-      // The scheduler normally enforces the fixed sequence window before it
+      if (isManualEmail && !isDefined(person)) {
+        person = await personRepository.findOne({
+          where: { id: enrollment.personId },
+          relations: { company: true },
+        });
+      }
+
+      if (isManualEmail && !isDefined(person)) {
+        await this.failEnrollment({
+          enrollmentRepository,
+          enrollment,
+          errorMessage: SEQUENCE_EXECUTION_ERROR.MISSING_PERSON,
+          stepId: nextStep.id,
+          stepPosition: nextStep.position,
+        });
+
+        return;
+      }
+
+      const newWorkWindowSettings = isManualEmail
+        ? resolveSequenceEmailWindowSettings({
+            settings: sequenceSettings,
+            recipientTimeZone: person?.timeZone,
+          })
+        : sequenceSettings;
+
+      // The scheduler normally enforces the relevant action window before it
       // queues work other than automated email. Queue retries and immediate
       // continuations can enter the executor without passing through that
       // scheduler gate, so apply the same CAS-backed deferral here. Finishing
       // an Apollo request that has already crossed its paid provider boundary
       // is recovery rather than new work and must remain eligible at its lease
       // deadline.
-      if (!isAutomatedEmail && !isWaitingForApolloEnrichment) {
+      if (
+        !isAutomatedEmail &&
+        !isWaitingForApolloEnrichment &&
+        nextStep.settings.type !== SEQUENCE_STEP_TYPES.DELAY
+      ) {
         const now = new Date();
 
-        if (!isWithinSendingWindow(now, sequenceSettings)) {
+        if (!isWithinSendingWindow(now, newWorkWindowSettings)) {
           await this.deferNewWorkUntilSequenceWindow({
             enrollmentRepository,
             enrollment,
             now,
-            settings: sequenceSettings,
+            settings: newWorkWindowSettings,
           });
 
           return;
@@ -3333,11 +3366,19 @@ export class SequenceExecutorService {
       const isLinkedinHost =
         parsedUrl.hostname === 'linkedin.com' ||
         parsedUrl.hostname.endsWith('.linkedin.com');
+      const profilePathMatch = parsedUrl.pathname.match(/^\/in\/([^/]+)\/?$/i);
+
+      if (!isLinkedinHost || !isNonEmptyString(profilePathMatch?.[1])) {
+        return false;
+      }
+
+      const decodedProfileIdentifier = decodeURIComponent(
+        profilePathMatch[1],
+      ).trim();
 
       return (
-        isLinkedinHost &&
-        /^\/in\/[^/]+\/?$/i.test(parsedUrl.pathname) &&
-        isNonEmptyString(normalizeLinkedinHandle(linkedinUrl))
+        isNonEmptyString(decodedProfileIdentifier) &&
+        !/[\s/?#]/u.test(decodedProfileIdentifier)
       );
     } catch {
       return false;

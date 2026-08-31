@@ -38,22 +38,46 @@ import { compactRecord } from './tool-data-builders.js';
 
 const sequenceSettingsSchema = z.object({
   activeDays: z.array(z.number().int().min(0).max(6)).max(7),
-  windowStart: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/),
-  windowEnd: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/),
-  timezone: z.string().refine((timezone) => {
-    try {
-      new Intl.DateTimeFormat('en-US', { timeZone: timezone }).format();
-      return true;
-    } catch {
-      return false;
-    }
-  }, 'Must be an IANA timezone such as Europe/Helsinki or America/New_York'),
+  windowStart: z
+    .string()
+    .regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/)
+    .describe('Start of the LinkedIn, call, and non-email task window.'),
+  windowEnd: z
+    .string()
+    .regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/)
+    .describe('End of the LinkedIn, call, and non-email task window.'),
+  emailWindowStart: z
+    .string()
+    .regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/)
+    .describe('Start of the automated and manual email step window.')
+    .optional(),
+  emailWindowEnd: z
+    .string()
+    .regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/)
+    .describe('End of the automated and manual email step window.')
+    .optional(),
+  timezone: z
+    .string()
+    .refine((timezone) => {
+      try {
+        new Intl.DateTimeFormat('en-US', { timeZone: timezone }).format();
+        return true;
+      } catch {
+        return false;
+      }
+    }, 'Must be an IANA timezone such as Europe/Helsinki or America/New_York')
+    .describe(
+      'IANA sequence timezone used for LinkedIn steps, calls, and other non-email work. Email steps, including automated delivery and manual email task surfacing, also use it when sendWindowTimezoneMode is SEQUENCE.',
+    ),
   sendWindowTimezoneMode: z
     .enum([
       SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.SEQUENCE,
       SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.RECIPIENT,
     ])
-    .default(SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.SEQUENCE),
+    .default(SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.SEQUENCE)
+    .describe(
+      'Controls scheduling for every email step. SEQUENCE uses settings.timezone. RECIPIENT uses the Person timeZone field with a UTC fallback for automated email delivery and manual email task surfacing. LinkedIn steps, calls, and other non-email work always use settings.timezone.',
+    ),
   dailyStartLimitEnabled: z.boolean(),
   dailyStarts: z.number().int().min(1),
   staggerMinutes: z.number().nonnegative(),
@@ -76,6 +100,8 @@ const sequenceSettingsPatchSchema = z.object({
   activeDays: sequenceSettingsSchema.shape.activeDays.optional(),
   windowStart: sequenceSettingsSchema.shape.windowStart.optional(),
   windowEnd: sequenceSettingsSchema.shape.windowEnd.optional(),
+  emailWindowStart: sequenceSettingsSchema.shape.emailWindowStart.optional(),
+  emailWindowEnd: sequenceSettingsSchema.shape.emailWindowEnd.optional(),
   timezone: sequenceSettingsSchema.shape.timezone.optional(),
   sendWindowTimezoneMode: sequenceSettingsSchema.shape.sendWindowTimezoneMode
     .removeDefault()
@@ -95,7 +121,7 @@ const sequenceSettingsPatchSchema = z.object({
     sequenceSettingsSchema.shape.senderConnectedAccountIds,
 });
 
-const SEQUENCE_MCP_CONTRACT_VERSION = '2026-08-20.2';
+const SEQUENCE_MCP_CONTRACT_VERSION = '2026-08-27.2';
 const SEQUENCE_SETTINGS_ATOMIC_PATCH_MARKER =
   '__twentySequenceSettingsAtomicPatch';
 const SEQUENCE_STEP_SETTINGS_PATCH_BASE_TYPE =
@@ -202,6 +228,15 @@ const SEQUENCE_MUTATION_CAPABILITIES_QUERY = `
       atomicSettingsPatchVersion
       atomicStepAppend
       atomicStepAppendVersion
+    }
+  }
+`;
+
+const SEQUENCE_ENROLLMENT_START_STEP_CAPABILITIES_QUERY = `
+  query TwentyMcpSequenceEnrollmentStartStepCapabilities {
+    sequenceMutationCapabilities {
+      enrollmentStartStep
+      enrollmentStartStepVersion
     }
   }
 `;
@@ -869,6 +904,11 @@ type SequenceMutationCapabilities = {
   atomicStepAppendVersion: number;
 };
 
+type SequenceEnrollmentStartStepCapabilities = {
+  enrollmentStartStep: boolean;
+  enrollmentStartStepVersion: number;
+};
+
 const getSequenceMutationCapabilities = async (
   client: TwentyClient,
 ): Promise<SequenceMutationCapabilities> => {
@@ -925,6 +965,43 @@ const assertAtomicStepAppendSupported = async (
       message:
         'This Twenty backend does not support the required concurrency-safe sequence step append protocol version 1. Upgrade the backend or provide an explicit position.',
       code: 'SEQUENCE_ATOMIC_APPEND_UNSUPPORTED',
+      details: capabilities,
+    });
+  }
+};
+
+const assertEnrollmentStartStepSupported = async (
+  client: TwentyClient,
+): Promise<void> => {
+  let result: {
+    sequenceMutationCapabilities: SequenceEnrollmentStartStepCapabilities;
+  };
+
+  try {
+    result = await client.graphql(
+      SEQUENCE_ENROLLMENT_START_STEP_CAPABILITIES_QUERY,
+      {},
+      { endpoint: 'metadata' },
+    );
+  } catch (error) {
+    throw new TwentyApiError({
+      message:
+        'This Twenty backend does not advertise enrollment at a selected starting step. Upgrade the backend before using start_step_id.',
+      code: 'SEQUENCE_ENROLLMENT_START_STEP_UNSUPPORTED',
+      details: error,
+    });
+  }
+
+  const capabilities = result.sequenceMutationCapabilities;
+
+  if (
+    capabilities.enrollmentStartStep !== true ||
+    capabilities.enrollmentStartStepVersion !== 1
+  ) {
+    throw new TwentyApiError({
+      message:
+        'This Twenty backend does not support the required enrollment starting-step protocol version 1. Upgrade the backend before using start_step_id.',
+      code: 'SEQUENCE_ENROLLMENT_START_STEP_UNSUPPORTED',
       details: capabilities,
     });
   }
@@ -1431,11 +1508,11 @@ const SEQUENCE_CAPABILITIES = {
     active_days:
       'Integers 0-6 where 0 is Sunday. At least one day is required before activation.',
     sending_window:
-      'windowStart/windowEnd are HH:mm. SEQUENCE mode uses settings.timezone. RECIPIENT mode uses the Person timeZone field and falls back to UTC when it is missing or invalid. start > end is an overnight window whose after-midnight portion belongs to the previous active day; equal start/end means all day.',
+      'All window fields are HH:mm. windowStart/windowEnd control enrollment admission, LinkedIn steps, calls, and other non-email work in settings.timezone. emailWindowStart/emailWindowEnd control automated email delivery and manual email task surfacing. Email steps use settings.timezone in SEQUENCE mode; RECIPIENT mode uses the Person timeZone field and falls back to UTC when it is missing or invalid. For legacy settings without email window fields, email steps inherit windowStart/windowEnd. start > end is an overnight window whose after-midnight portion belongs to the previous active day; equal start/end means all day.',
     daily_start_limit:
-      'dailyStartLimitEnabled controls whether dailyStarts limits pending admissions. SEQUENCE mode resets the quota by settings.timezone; RECIPIENT mode uses one sequence-wide UTC day.',
+      'dailyStartLimitEnabled controls whether dailyStarts limits pending admissions. RECIPIENT mode resets the quota at UTC midnight; SEQUENCE mode resets it at midnight in settings.timezone.',
     daily_starts:
-      'Maximum pending enrollments admitted during the applicable sequence-timezone or UTC quota day.',
+      'Maximum pending enrollments admitted during each quota day: UTC in RECIPIENT mode, or settings.timezone in SEQUENCE mode.',
     stagger_minutes:
       'Minimum spacing used when scheduling automated email starts.',
     sender_pool:
@@ -1554,6 +1631,7 @@ const SEQUENCE_CAPABILITIES = {
     statuses: SEQUENCE_ENROLLMENT_STATUSES,
     waiting_on: SEQUENCE_WAITING_ON,
     controls: [
+      'Enroll one or more people at a selected root step. Earlier steps are intentionally bypassed, and condition steps evaluate immediately when admitted.',
       'Mark an open enrollment as replied.',
       'Skip an active enrollment to its next step now.',
       'Remove a pending or active enrollment while preserving history.',
@@ -2268,6 +2346,11 @@ export const registerSequenceTools = (
       inputSchema: z.object({
         person_id: recordIdSchema,
         sequence_id: recordIdSchema,
+        start_step_id: recordIdSchema
+          .optional()
+          .describe(
+            'Optional root step to execute first. Earlier steps are bypassed. Branch-child steps are rejected.',
+          ),
         confirm: z.boolean().describe(CONFIRMATION_DESCRIPTION),
         response_format: responseFormatSchema,
       }),
@@ -2279,7 +2362,13 @@ export const registerSequenceTools = (
         openWorldHint: true,
       },
     },
-    async ({ person_id, sequence_id, confirm, response_format }) =>
+    async ({
+      person_id,
+      sequence_id,
+      start_step_id,
+      confirm,
+      response_format,
+    }) =>
       runTool(async () => {
         if (!confirm) {
           throw new Error(
@@ -2287,9 +2376,19 @@ export const registerSequenceTools = (
           );
         }
 
+        if (start_step_id !== undefined) {
+          await assertEnrollmentStartStepSupported(dependencies.client);
+        }
+
         return records.create({
           object: STANDARD_OBJECTS.sequenceEnrollments,
-          data: { personId: person_id, sequenceId: sequence_id },
+          data: {
+            personId: person_id,
+            sequenceId: sequence_id,
+            ...(start_step_id === undefined
+              ? {}
+              : { currentStepId: start_step_id }),
+          },
         });
       }, response_format),
   );
@@ -2310,6 +2409,11 @@ export const registerSequenceTools = (
             'person_ids cannot contain duplicates.',
           ),
         sequence_id: recordIdSchema,
+        start_step_id: recordIdSchema
+          .optional()
+          .describe(
+            'Optional root step to execute first for every person. Earlier steps are bypassed. Branch-child steps are rejected.',
+          ),
         confirm: z.boolean().describe(CONFIRMATION_DESCRIPTION),
         response_format: responseFormatSchema,
       }),
@@ -2321,7 +2425,13 @@ export const registerSequenceTools = (
         openWorldHint: true,
       },
     },
-    async ({ person_ids, sequence_id, confirm, response_format }) =>
+    async ({
+      person_ids,
+      sequence_id,
+      start_step_id,
+      confirm,
+      response_format,
+    }) =>
       runTool(async () => {
         if (!confirm) {
           throw new Error(
@@ -2329,17 +2439,28 @@ export const registerSequenceTools = (
           );
         }
 
+        if (start_step_id !== undefined) {
+          await assertEnrollmentStartStepSupported(dependencies.client);
+        }
+
         const results = await Promise.allSettled(
           person_ids.map((personId) =>
             records.create({
               object: STANDARD_OBJECTS.sequenceEnrollments,
-              data: { personId, sequenceId: sequence_id },
+              data: {
+                personId,
+                sequenceId: sequence_id,
+                ...(start_step_id === undefined
+                  ? {}
+                  : { currentStepId: start_step_id }),
+              },
             }),
           ),
         );
 
         return {
           sequence_id,
+          start_step_id: start_step_id ?? null,
           succeeded: results.filter((result) => result.status === 'fulfilled')
             .length,
           failed: results.filter((result) => result.status === 'rejected')

@@ -3,6 +3,7 @@ import {
   LINKEDIN_ACTION_TYPES,
   LINKEDIN_CONNECTION_STATES,
   SEQUENCE_ENROLLMENT_STATUSES,
+  SEQUENCE_SEND_WINDOW_TIMEZONE_MODES,
   SEQUENCE_STATUSES,
   SEQUENCE_WAITING_ON,
 } from 'twenty-shared/types';
@@ -19,15 +20,12 @@ import {
   SEQUENCE_EXECUTION_ERROR,
   SEQUENCE_LINKEDIN_ACTION_ENROLLMENT_MOVED_ERROR,
   SEQUENCE_LINKEDIN_ACTION_PAUSED_ERROR,
-  SEQUENCE_LINKEDIN_ACTION_UNSTARTED_RETRY_BASE_MILLISECONDS,
-  SEQUENCE_LINKEDIN_ACTION_UNSTARTED_RETRY_LIMIT,
 } from 'src/modules/sequence/sequence.constants';
 import { type SequenceEmailReplyReconciliationService } from 'src/modules/sequence/services/sequence-email-reply-reconciliation.service';
 import { SequenceLinkedinActionMutationService } from 'src/modules/sequence/services/sequence-linkedin-action-mutation.service';
 import { type SequenceLinkedinThrottleService } from 'src/modules/sequence/services/sequence-linkedin-throttle.service';
 import { SequenceEnrollmentWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence-enrollment.workspace-entity';
 import { SequenceWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence.workspace-entity';
-import { WorkspaceMemberWorkspaceEntity } from 'src/modules/workspace-member/standard-objects/workspace-member.workspace-entity';
 
 describe('SequenceLinkedinActionMutationService', () => {
   const workspaceId = 'workspace-id';
@@ -39,8 +37,8 @@ describe('SequenceLinkedinActionMutationService', () => {
     findOne: jest.fn().mockResolvedValue({ id: workspaceMemberId }),
   };
   const transactionManager = {
-    getRepository: jest.fn((entity) => {
-      if (entity === WorkspaceMemberWorkspaceEntity) {
+    getRepository: jest.fn((entityTarget) => {
+      if (entityTarget === 'workspaceMember') {
         return workspaceMemberRepository;
       }
 
@@ -251,6 +249,10 @@ describe('SequenceLinkedinActionMutationService', () => {
       }),
       transactionManager,
     );
+    expect(transactionManager.getRepository).toHaveBeenCalledWith(
+      'workspaceMember',
+      { shouldBypassPermissionChecks: true },
+    );
     expect(actionRepository.update).toHaveBeenCalledWith(
       expect.objectContaining({
         id: action.id,
@@ -327,6 +329,36 @@ describe('SequenceLinkedinActionMutationService', () => {
         executedAt: null,
       },
       transactionManager,
+    );
+  });
+
+  it('re-slots a linked claim at provider start using the fixed sequence timezone', async () => {
+    const providerStartAt = new Date('2026-08-18T00:01:00.000Z');
+    const replacementScheduledAt = new Date('2026-08-18T16:00:00.000Z');
+    const { reserveSlot, service } = setup({
+      replacementScheduledAt,
+      sequenceSettings: {
+        ...DEFAULT_SEQUENCE_SETTINGS,
+        sendWindowTimezoneMode: SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.RECIPIENT,
+        timezone: 'Europe/Helsinki',
+      },
+    });
+
+    await service.start({
+      workspaceId,
+      workspaceMemberId,
+      actionId: action.id,
+      claimedBy,
+      claimedAt,
+      now: providerStartAt,
+    });
+
+    expect(reserveSlot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        settings: expect.objectContaining({
+          timezone: 'Europe/Helsinki',
+        }),
+      }),
     );
   });
 
@@ -854,13 +886,12 @@ describe('SequenceLinkedinActionMutationService', () => {
     LINKEDIN_ACTION_STATUSES.FAILED,
     LINKEDIN_ACTION_STATUSES.COMPLETED,
   ])(
-    'safely requeues a pre-start %s report instead of trusting browser outcome data',
+    'terminally fails a pre-start %s report once instead of trusting browser outcome data',
     async (reportedStatus) => {
       const now = new Date('2026-08-17T09:03:00.000Z');
-      const replacementScheduledAt = new Date('2026-08-17T09:10:00.000Z');
-      const { actionRepository, reserveSlot, service } = setup({
-        replacementScheduledAt,
-      });
+      const { actionRepository, enrollmentRepository, reserveSlot, service } =
+        setup();
+      const expectedErrorMessage = `${SEQUENCE_EXECUTION_ERROR.LINKEDIN_ACTION_UNSTARTED}: Forged terminal result`;
 
       await expect(
         service.report({
@@ -879,38 +910,36 @@ describe('SequenceLinkedinActionMutationService', () => {
         }),
       ).resolves.toEqual(
         expect.objectContaining({
-          status: LINKEDIN_ACTION_STATUSES.SCHEDULED,
-          scheduledAt: replacementScheduledAt,
-          claimedAt: null,
-          claimedBy: null,
+          status: LINKEDIN_ACTION_STATUSES.FAILED,
           executedAt: null,
           connectionState: LINKEDIN_CONNECTION_STATES.UNKNOWN,
-          errorMessage: null,
+          errorMessage: expectedErrorMessage,
         }),
       );
-      expect(reserveSlot).toHaveBeenCalledWith({
-        workspaceId,
-        ownerWorkspaceMemberId: workspaceMemberId,
-        settings: DEFAULT_SEQUENCE_SETTINGS,
-        now,
-        transactionManager,
-        excludedActionId: action.id,
-        minimumScheduledAt: new Date(
-          now.getTime() +
-            SEQUENCE_LINKEDIN_ACTION_UNSTARTED_RETRY_BASE_MILLISECONDS,
-        ),
-      });
+      expect(reserveSlot).not.toHaveBeenCalled();
       expect(actionRepository.update).toHaveBeenCalledWith(
         expect.objectContaining({ id: action.id, claimedAt, claimedBy }),
         {
-          status: LINKEDIN_ACTION_STATUSES.SCHEDULED,
-          scheduledAt: replacementScheduledAt,
-          claimedAt: null,
-          claimedBy: null,
-          executedAt: null,
-          attemptCount: 1,
+          status: LINKEDIN_ACTION_STATUSES.FAILED,
           connectionState: LINKEDIN_CONNECTION_STATES.UNKNOWN,
-          errorMessage: null,
+          errorMessage: expectedErrorMessage,
+          executedAt: null,
+        },
+        transactionManager,
+      );
+      expect(enrollmentRepository.update).toHaveBeenCalledWith(
+        {
+          id: action.sequenceEnrollmentId,
+          status: SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
+          waitingOn: SEQUENCE_WAITING_ON.LINKEDIN_ACTION,
+          currentStepId: action.sequenceStepId,
+        },
+        {
+          status: SEQUENCE_ENROLLMENT_STATUSES.FAILED,
+          waitingOn: null,
+          nextActionAt: null,
+          endedAt: now,
+          errorMessage: expectedErrorMessage,
         },
         transactionManager,
       );
@@ -921,61 +950,10 @@ describe('SequenceLinkedinActionMutationService', () => {
     LINKEDIN_ACTION_TYPES.SEND_CONNECTION_REQUEST,
     LINKEDIN_ACTION_TYPES.SEND_MESSAGE,
     LINKEDIN_ACTION_TYPES.WITHDRAW_CONNECTION_REQUEST,
-  ])(
-    'applies bounded exponential retry to an unstarted %s report',
-    async (type) => {
-      const now = new Date('2026-08-17T09:03:00.000Z');
-      const replacementScheduledAt = new Date('2026-08-17T09:15:00.000Z');
-      const { actionRepository, reserveSlot, service } = setup({
-        lockedAction: { ...action, type, attemptCount: 2 },
-        replacementScheduledAt,
-      });
-
-      await expect(
-        service.report({
-          workspaceId,
-          workspaceMemberId,
-          actionId: action.id,
-          claimedBy,
-          claimedAt,
-          data: {
-            status: LINKEDIN_ACTION_STATUSES.FAILED,
-            connectionState: LINKEDIN_CONNECTION_STATES.UNKNOWN,
-          },
-          now,
-        }),
-      ).resolves.toEqual(
-        expect.objectContaining({
-          type,
-          status: LINKEDIN_ACTION_STATUSES.SCHEDULED,
-          scheduledAt: replacementScheduledAt,
-        }),
-      );
-      expect(reserveSlot).toHaveBeenCalledWith(
-        expect.objectContaining({
-          minimumScheduledAt: new Date(
-            now.getTime() +
-              SEQUENCE_LINKEDIN_ACTION_UNSTARTED_RETRY_BASE_MILLISECONDS * 4,
-          ),
-        }),
-      );
-      expect(actionRepository.update).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.objectContaining({ attemptCount: 3 }),
-        transactionManager,
-      );
-    },
-  );
-
-  it('terminally fails the action and exact waiter after unstarted retries are exhausted', async () => {
-    const now = new Date('2026-08-17T09:03:00.000Z');
-    const { actionRepository, enrollmentRepository, reserveSlot, service } =
-      setup({
-        lockedAction: {
-          ...action,
-          attemptCount: SEQUENCE_LINKEDIN_ACTION_UNSTARTED_RETRY_LIMIT,
-        },
-      });
+  ])('does not retry an explicit preflight failure for %s', async (type) => {
+    const { actionRepository, reserveSlot, service } = setup({
+      lockedAction: { ...action, type, attemptCount: 2 },
+    });
 
     await expect(
       service.report({
@@ -986,44 +964,24 @@ describe('SequenceLinkedinActionMutationService', () => {
         claimedAt,
         data: {
           status: LINKEDIN_ACTION_STATUSES.FAILED,
-          connectionState: LINKEDIN_CONNECTION_STATES.CONNECTED,
-          errorMessage: 'Connect button not found',
+          connectionState: LINKEDIN_CONNECTION_STATES.UNKNOWN,
+          errorMessage: 'Provider control not found',
         },
-        now,
       }),
     ).resolves.toEqual(
       expect.objectContaining({
+        type,
         status: LINKEDIN_ACTION_STATUSES.FAILED,
-        connectionState: LINKEDIN_CONNECTION_STATES.UNKNOWN,
-        errorMessage: SEQUENCE_EXECUTION_ERROR.LINKEDIN_ACTION_UNSTARTED,
-        executedAt: null,
+        errorMessage: `${SEQUENCE_EXECUTION_ERROR.LINKEDIN_ACTION_UNSTARTED}: Provider control not found`,
       }),
     );
     expect(reserveSlot).not.toHaveBeenCalled();
     expect(actionRepository.update).toHaveBeenCalledWith(
       expect.anything(),
-      {
-        status: LINKEDIN_ACTION_STATUSES.FAILED,
-        connectionState: LINKEDIN_CONNECTION_STATES.UNKNOWN,
-        errorMessage: SEQUENCE_EXECUTION_ERROR.LINKEDIN_ACTION_UNSTARTED,
-        executedAt: null,
-      },
-      transactionManager,
-    );
-    expect(enrollmentRepository.update).toHaveBeenCalledWith(
-      {
-        id: action.sequenceEnrollmentId,
-        status: SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
-        waitingOn: SEQUENCE_WAITING_ON.LINKEDIN_ACTION,
-        currentStepId: action.sequenceStepId,
-      },
-      {
-        status: SEQUENCE_ENROLLMENT_STATUSES.FAILED,
-        waitingOn: null,
-        nextActionAt: null,
-        endedAt: now,
-        errorMessage: SEQUENCE_EXECUTION_ERROR.LINKEDIN_ACTION_UNSTARTED,
-      },
+      expect.not.objectContaining({
+        attemptCount: expect.anything(),
+        scheduledAt: expect.anything(),
+      }),
       transactionManager,
     );
   });
@@ -1077,9 +1035,8 @@ describe('SequenceLinkedinActionMutationService', () => {
     },
   );
 
-  it('requeues a direct unstarted report under the direct LinkedIn policy', async () => {
+  it('fails a direct explicit preflight report once without an enrollment', async () => {
     const now = new Date('2026-08-17T09:03:00.000Z');
-    const replacementScheduledAt = new Date('2026-08-17T09:10:00.000Z');
     const { enrollmentRepository, reserveSlot, service } = setup({
       actionCandidate: {
         id: unlinkedAction.id,
@@ -1087,7 +1044,6 @@ describe('SequenceLinkedinActionMutationService', () => {
         sequenceStepId: null,
       },
       lockedAction: unlinkedAction,
-      replacementScheduledAt,
     });
 
     await expect(
@@ -1100,20 +1056,17 @@ describe('SequenceLinkedinActionMutationService', () => {
         data: {
           status: LINKEDIN_ACTION_STATUSES.FAILED,
           connectionState: LINKEDIN_CONNECTION_STATES.UNKNOWN,
+          errorMessage: 'Message control not found',
         },
         now,
       }),
     ).resolves.toEqual(
       expect.objectContaining({
-        status: LINKEDIN_ACTION_STATUSES.SCHEDULED,
-        scheduledAt: replacementScheduledAt,
+        status: LINKEDIN_ACTION_STATUSES.FAILED,
+        errorMessage: `${SEQUENCE_EXECUTION_ERROR.LINKEDIN_ACTION_UNSTARTED}: Message control not found`,
       }),
     );
-    expect(reserveSlot).toHaveBeenCalledWith(
-      expect.objectContaining({
-        settings: DIRECT_LINKEDIN_ACTION_THROTTLE_SETTINGS,
-      }),
-    );
+    expect(reserveSlot).not.toHaveBeenCalled();
     expect(enrollmentRepository.findOne).not.toHaveBeenCalled();
     expect(enrollmentRepository.update).not.toHaveBeenCalled();
   });

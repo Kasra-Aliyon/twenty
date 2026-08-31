@@ -4,29 +4,34 @@ import { t } from '@lingui/core/macro';
 import {
   SEQUENCE_TASK_TYPES,
   TASK_PRIORITIES,
-  type SequenceTaskType,
   type TaskPriority,
 } from 'twenty-shared/types';
 import { type SelectOption } from 'twenty-ui/input';
 import { themeCssVariables } from 'twenty-ui/theme-constants';
 
-export type TaskTypeFilter = SequenceTaskType | 'ALL';
+export const TASK_CATEGORY_FILTERS = {
+  ALL: 'ALL',
+  LINKEDIN: 'LINKEDIN',
+  CALL: SEQUENCE_TASK_TYPES.CALL,
+  EMAIL: SEQUENCE_TASK_TYPES.EMAIL,
+  TODO: SEQUENCE_TASK_TYPES.TODO,
+  CUSTOM: SEQUENCE_TASK_TYPES.CUSTOM,
+} as const;
+
+export type TaskCategoryFilter =
+  (typeof TASK_CATEGORY_FILTERS)[keyof typeof TASK_CATEGORY_FILTERS];
 export type TaskPriorityFilter = TaskPriority | 'ALL';
 
-const TYPE_OPTIONS: SelectOption<TaskTypeFilter>[] = [
-  { value: 'ALL', label: t`All task types` },
-  { value: SEQUENCE_TASK_TYPES.CALL, label: t`Calls` },
-  { value: SEQUENCE_TASK_TYPES.TODO, label: t`To dos` },
+const CATEGORY_OPTIONS: SelectOption<TaskCategoryFilter>[] = [
+  { value: TASK_CATEGORY_FILTERS.ALL, label: t`All categories` },
   {
-    value: SEQUENCE_TASK_TYPES.LINKEDIN_CONNECTION,
-    label: t`LinkedIn connections`,
+    value: TASK_CATEGORY_FILTERS.LINKEDIN,
+    label: t`LinkedIn`,
   },
-  {
-    value: SEQUENCE_TASK_TYPES.LINKEDIN_MESSAGE,
-    label: t`LinkedIn messages`,
-  },
-  { value: SEQUENCE_TASK_TYPES.EMAIL, label: t`Manual emails` },
-  { value: SEQUENCE_TASK_TYPES.CUSTOM, label: t`Custom tasks` },
+  { value: TASK_CATEGORY_FILTERS.CALL, label: t`Calls` },
+  { value: TASK_CATEGORY_FILTERS.EMAIL, label: t`Emails` },
+  { value: TASK_CATEGORY_FILTERS.TODO, label: t`To-dos` },
+  { value: TASK_CATEGORY_FILTERS.CUSTOM, label: t`Custom` },
 ];
 
 const PRIORITY_OPTIONS: SelectOption<TaskPriorityFilter>[] = [
@@ -46,25 +51,25 @@ const StyledFilters = styled.div`
 `;
 
 type TaskQueueFiltersProps = {
-  typeFilter: TaskTypeFilter;
+  categoryFilter: TaskCategoryFilter;
   priorityFilter: TaskPriorityFilter;
-  onTypeFilterChange: (value: TaskTypeFilter) => void;
+  onCategoryFilterChange: (value: TaskCategoryFilter) => void;
   onPriorityFilterChange: (value: TaskPriorityFilter) => void;
 };
 
 export const TaskQueueFilters = ({
-  typeFilter,
+  categoryFilter,
   priorityFilter,
-  onTypeFilterChange,
+  onCategoryFilterChange,
   onPriorityFilterChange,
 }: TaskQueueFiltersProps) => (
   <StyledFilters>
     <Select
-      dropdownId="task-queue-type-filter"
+      dropdownId="task-queue-category-filter"
       selectSizeVariant="small"
-      value={typeFilter}
-      options={TYPE_OPTIONS}
-      onChange={onTypeFilterChange}
+      value={categoryFilter}
+      options={CATEGORY_OPTIONS}
+      onChange={onCategoryFilterChange}
     />
     <Select
       dropdownId="task-queue-priority-filter"

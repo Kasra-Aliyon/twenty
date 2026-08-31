@@ -9,7 +9,7 @@ import { type FindOperator } from 'typeorm';
 
 import { type CacheStorageService } from 'src/engine/core-modules/cache-storage/services/cache-storage.service';
 import { type WorkspaceEntityManager } from 'src/engine/twenty-orm/entity-manager/workspace-entity-manager';
-import { LinkedinActionWorkspaceEntity } from 'src/modules/linkedin/standard-objects/linkedin-action.workspace-entity';
+import { type LinkedinActionWorkspaceEntity } from 'src/modules/linkedin/standard-objects/linkedin-action.workspace-entity';
 import { SequenceLinkedinThrottleService } from 'src/modules/sequence/services/sequence-linkedin-throttle.service';
 import {
   DEFAULT_SEQUENCE_SETTINGS,
@@ -18,7 +18,6 @@ import {
   SEQUENCE_EXECUTION_ERROR,
 } from 'src/modules/sequence/sequence.constants';
 import { isWithinSendingWindow } from 'src/modules/sequence/utils/sequence-window.util';
-import { WorkspaceMemberWorkspaceEntity } from 'src/modules/workspace-member/standard-objects/workspace-member.workspace-entity';
 
 describe('SequenceLinkedinThrottleService', () => {
   const workspaceId = 'workspace-id';
@@ -206,24 +205,35 @@ describe('SequenceLinkedinThrottleService', () => {
         ...overrides,
       });
     };
-    const transactionManager = {
-      queryRunner: { isTransactionActive },
-      getRepository: jest.fn((entity) => {
-        if (entity === WorkspaceMemberWorkspaceEntity) {
+    const getRepository = jest.fn(
+      (
+        entity: unknown,
+        _options?: { shouldBypassPermissionChecks?: boolean },
+      ) => {
+        if (typeof entity !== 'string') {
+          throw new Error('Entity target must be a string');
+        }
+
+        if (entity === 'workspaceMember') {
           return workspaceMemberRepository;
         }
 
-        if (entity === LinkedinActionWorkspaceEntity) {
+        if (entity === 'linkedinAction') {
           return linkedinActionRepository;
         }
 
         throw new Error('Unexpected repository');
-      }),
+      },
+    );
+    const transactionManager = {
+      queryRunner: { isTransactionActive },
+      getRepository,
     } as unknown as WorkspaceEntityManager;
 
     return {
       service: new SequenceLinkedinThrottleService(cacheStorageService),
       cacheStorageService,
+      getRepository,
       linkedinActionRepository,
       persistAction,
       persistedActions,
@@ -254,6 +264,60 @@ describe('SequenceLinkedinThrottleService', () => {
 
   afterEach(() => {
     jest.restoreAllMocks();
+  });
+
+  it('uses metadata names for every repository resolved from an active transaction', async () => {
+    const { getRepository, service, transactionManager } = buildService();
+    const now = new Date('2026-07-20T09:00:00.000Z');
+    const settings = buildSettings();
+
+    await expect(
+      service.reserveSlot({
+        workspaceId,
+        ownerWorkspaceMemberId,
+        settings,
+        now,
+        transactionManager,
+      }),
+    ).resolves.toEqual(expect.any(Date));
+
+    await expect(
+      service.reserveClaimSlotIfTooEarly({
+        actionId: 'action-id',
+        actionScheduledAt: now,
+        now,
+        ownerWorkspaceMemberId,
+        settings,
+        transactionManager,
+        workspaceId,
+      }),
+    ).resolves.toBeNull();
+
+    await expect(
+      service.reserveClaimSlotIfDailyCapExceeded({
+        actionId: 'action-id',
+        actionScheduledAt: now,
+        now,
+        ownerWorkspaceMemberId,
+        settings,
+        transactionManager,
+        workspaceId,
+      }),
+    ).resolves.toBeNull();
+
+    expect(getRepository.mock.calls.map(([target]) => target)).toEqual([
+      'workspaceMember',
+      'linkedinAction',
+      'workspaceMember',
+      'linkedinAction',
+      'workspaceMember',
+      'linkedinAction',
+    ]);
+    expect(
+      getRepository.mock.calls.every(
+        ([, options]) => options?.shouldBypassPermissionChecks === true,
+      ),
+    ).toBe(true);
   });
 
   it('releases only the exact Redis lock token it acquired', async () => {

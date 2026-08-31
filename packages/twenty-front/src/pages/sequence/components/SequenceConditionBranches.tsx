@@ -74,6 +74,22 @@ const StyledLaneConnector = styled.div`
   width: 1px;
 `;
 
+const StyledStepNumber = styled.div`
+  align-items: center;
+  background: ${themeCssVariables.background.secondary};
+  border: 1px solid ${themeCssVariables.border.color.medium};
+  border-radius: ${themeCssVariables.border.radius.rounded};
+  color: ${themeCssVariables.font.color.tertiary};
+  display: flex;
+  font-size: ${themeCssVariables.font.size.xs};
+  height: 20px;
+  justify-content: center;
+  margin: -4px 0;
+  position: relative;
+  width: 20px;
+  z-index: 1;
+`;
+
 const StyledLaneToMergeConnector = styled.div`
   background: ${themeCssVariables.border.color.strong};
   flex: 1;
@@ -194,23 +210,29 @@ export const SequenceConditionBranches = ({
         <StyledOutcome outcome={outcome}>
           {outcome === SEQUENCE_CONDITION_BRANCHES.YES ? t`Yes` : t`No`}
         </StyledOutcome>
-        {branchSteps.map((step, index) => (
-          <StyledBranchStep key={step.id}>
-            <StyledLaneConnector />
-            <SequenceStepCard
-              step={step}
-              stepNumber={steps.findIndex(({ id }) => id === step.id) + 1}
-              isSelected={step.id === selectedStepId}
-              canMoveUp={canAddOrReorder && index > 0}
-              canMoveDown={canAddOrReorder && index < branchSteps.length - 1}
-              canDelete={canDeleteSteps}
-              onSelect={() => onSelectStep(step.id)}
-              onMoveUp={() => onSwapSteps(step, branchSteps[index - 1])}
-              onMoveDown={() => onSwapSteps(step, branchSteps[index + 1])}
-              onDelete={() => onDeleted(step.id)}
-            />
-          </StyledBranchStep>
-        ))}
+        {branchSteps.map((step, index) => {
+          const stepNumber = steps.findIndex(({ id }) => id === step.id) + 1;
+
+          return (
+            <StyledBranchStep key={step.id}>
+              <StyledLaneConnector />
+              <StyledStepNumber>{stepNumber}</StyledStepNumber>
+              <StyledLaneConnector />
+              <SequenceStepCard
+                step={step}
+                stepNumber={stepNumber}
+                isSelected={step.id === selectedStepId}
+                canMoveUp={canAddOrReorder && index > 0}
+                canMoveDown={canAddOrReorder && index < branchSteps.length - 1}
+                canDelete={canDeleteSteps}
+                onSelect={() => onSelectStep(step.id)}
+                onMoveUp={() => onSwapSteps(step, branchSteps[index - 1])}
+                onMoveDown={() => onSwapSteps(step, branchSteps[index + 1])}
+                onDelete={() => onDeleted(step.id)}
+              />
+            </StyledBranchStep>
+          );
+        })}
         <StyledLaneConnector />
         {isPaletteOpen ? (
           <SequenceStepPalette

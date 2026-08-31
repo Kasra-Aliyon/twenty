@@ -159,6 +159,8 @@ export const DEFAULT_SEQUENCE_SETTINGS = {
   activeDays: [1, 2, 3, 4, 5],
   windowStart: '09:00',
   windowEnd: '17:00',
+  emailWindowStart: '09:00',
+  emailWindowEnd: '17:00',
   timezone: 'UTC',
   sendWindowTimezoneMode: 'SEQUENCE',
   dailyStartLimitEnabled: false,

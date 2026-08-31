@@ -19,6 +19,8 @@ describe('parseSequenceSettings', () => {
         activeDays: [5, 1, 5, 0],
         windowStart: '23:59',
         windowEnd: '00:00',
+        emailWindowStart: '08:30',
+        emailWindowEnd: '16:30',
         timezone: 'Europe/Helsinki',
         sendWindowTimezoneMode: SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.RECIPIENT,
         senderConnectedAccountIds: [
@@ -39,6 +41,8 @@ describe('parseSequenceSettings', () => {
       activeDays: [5, 1, 0],
       windowStart: '23:59',
       windowEnd: '00:00',
+      emailWindowStart: '08:30',
+      emailWindowEnd: '16:30',
       timezone: 'Europe/Helsinki',
       sendWindowTimezoneMode: SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.RECIPIENT,
       senderConnectedAccountIds: ['connected-account-2', 'connected-account-1'],
@@ -49,6 +53,20 @@ describe('parseSequenceSettings', () => {
       linkedinDailyActions: 15,
       linkedinDelayPatternMinutes: [2, 4, 1.5],
       stopOnReply: false,
+    });
+  });
+
+  it('uses the legacy task window for email when split fields are absent', () => {
+    expect(
+      parseSequenceSettings({
+        windowStart: '10:15',
+        windowEnd: '18:45',
+      }),
+    ).toMatchObject({
+      windowStart: '10:15',
+      windowEnd: '18:45',
+      emailWindowStart: '10:15',
+      emailWindowEnd: '18:45',
     });
   });
 

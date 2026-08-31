@@ -52,6 +52,8 @@ describe('ApolloEnrichmentService', () => {
       },
       jobTitle: null,
       companyId: null,
+      address: null,
+      timeZone: null,
       ...overrides,
     }) as PersonWorkspaceEntity;
 
@@ -1452,6 +1454,62 @@ describe('ApolloEnrichmentService', () => {
     expect(companyRepository.update.mock.calls[0][1]).not.toHaveProperty(
       'companyPhone',
     );
+  });
+
+  it('fills a missing Company country without overwriting its existing address', async () => {
+    companyRepository.findOne.mockResolvedValue({
+      id: 'company-id',
+      name: 'Acme',
+      domainName: {
+        primaryLinkLabel: '',
+        primaryLinkUrl: 'https://acme.com',
+        secondaryLinks: null,
+      },
+      linkedinLink: null,
+      employees: null,
+      industry: null,
+      keywords: null,
+      technologies: null,
+      annualRevenue: null,
+      address: {
+        addressStreet1: 'Existing street',
+        addressStreet2: '',
+        addressCity: 'Existing city',
+        addressState: '',
+        addressZipCode: '',
+        addressCountry: '',
+        addressLat: 0,
+        addressLng: 0,
+      },
+      deletedAt: null,
+    } as unknown as CompanyWorkspaceEntity);
+    apolloClientService.enrichOrganization.mockResolvedValue({
+      organization: {
+        name: 'Acme',
+        primary_domain: 'acme.com',
+        city: 'Apollo city',
+        country: 'Finland',
+      },
+    });
+
+    await expect(
+      service.enrichCompany({
+        workspaceId,
+        companyId: 'company-id',
+      }),
+    ).resolves.toBe('updated');
+    expect(companyRepository.update).toHaveBeenCalledWith('company-id', {
+      address: {
+        addressStreet1: 'Existing street',
+        addressStreet2: '',
+        addressCity: 'Existing city',
+        addressState: '',
+        addressZipCode: '',
+        addressCountry: 'Finland',
+        addressLat: 0,
+        addressLng: 0,
+      },
+    });
   });
 
   it('refreshes existing email for restored auto-created contact records', async () => {

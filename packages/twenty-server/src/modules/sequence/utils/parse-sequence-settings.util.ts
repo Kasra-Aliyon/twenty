@@ -61,6 +61,16 @@ export const parseSequenceSettings = (value: unknown): SequenceSettings => {
     typeof value.windowEnd === 'string' && TIME_PATTERN.test(value.windowEnd)
       ? value.windowEnd
       : DEFAULT_SEQUENCE_SETTINGS.windowEnd;
+  const emailWindowStart =
+    typeof value.emailWindowStart === 'string' &&
+    TIME_PATTERN.test(value.emailWindowStart)
+      ? value.emailWindowStart
+      : windowStart;
+  const emailWindowEnd =
+    typeof value.emailWindowEnd === 'string' &&
+    TIME_PATTERN.test(value.emailWindowEnd)
+      ? value.emailWindowEnd
+      : windowEnd;
   const timezone =
     typeof value.timezone === 'string' && isValidTimeZone(value.timezone)
       ? value.timezone
@@ -88,6 +98,8 @@ export const parseSequenceSettings = (value: unknown): SequenceSettings => {
     activeDays,
     windowStart,
     windowEnd,
+    emailWindowStart,
+    emailWindowEnd,
     timezone,
     sendWindowTimezoneMode,
     senderConnectedAccountIds,

@@ -353,6 +353,7 @@ export class SequenceMutationSerializationService {
     requestedPosition,
     requestedSettings,
     stepId,
+    updatedFields,
     workspaceEntityManager,
   }: {
     authContext: WorkspaceAuthContext;
@@ -360,6 +361,7 @@ export class SequenceMutationSerializationService {
     requestedPosition?: number | null;
     requestedSettings?: SequenceStepWorkspaceEntity['settings'] | null;
     stepId: string;
+    updatedFields?: string[];
     workspaceEntityManager: WorkspaceEntityManager;
   }): Promise<SequenceStepWorkspaceEntity['settings'] | null | undefined> {
     if (
@@ -388,11 +390,6 @@ export class SequenceMutationSerializationService {
       stepId,
       workspaceEntityManager,
     });
-    await this.invariantService.assertStepUpdateAllowed({
-      authContext,
-      stepId,
-      nextSequenceId,
-    });
 
     const serializedSettings = isAtomicSettingsPatch(requestedSettings)
       ? await this.mergeLockedStepSettingsPatch({
@@ -402,6 +399,14 @@ export class SequenceMutationSerializationService {
           workspaceEntityManager,
         })
       : requestedSettings;
+
+    await this.invariantService.assertStepUpdateAllowed({
+      authContext,
+      stepId,
+      nextSequenceId,
+      nextSettings: serializedSettings,
+      updatedFields,
+    });
 
     if (
       isDefined(requestedPosition) ||

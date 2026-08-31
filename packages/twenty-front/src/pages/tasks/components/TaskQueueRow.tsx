@@ -3,10 +3,7 @@ import { useOpenRecordInSidePanel } from '@/side-panel/hooks/useOpenRecordInSide
 import { useSnackBar } from '@/ui/feedback/snack-bar-manager/hooks/useSnackBar';
 import { styled } from '@linaria/react';
 import { t } from '@lingui/core/macro';
-import {
-  CoreObjectNameSingular,
-  SEQUENCE_TASK_TYPES,
-} from 'twenty-shared/types';
+import { CoreObjectNameSingular } from 'twenty-shared/types';
 import { IconBrandLinkedin, IconCalendar, IconSend } from 'twenty-ui/icon';
 import { Checkbox, CheckboxShape } from 'twenty-ui/input';
 import { themeCssVariables } from 'twenty-ui/theme-constants';
@@ -82,9 +79,6 @@ export const TaskQueueRow = ({
   const linkedinUrl = task.taskTargets?.find(
     (taskTarget) => taskTarget.targetPerson?.linkedinLink?.primaryLinkUrl,
   )?.targetPerson?.linkedinLink?.primaryLinkUrl;
-  const isLinkedinTask =
-    task.type === SEQUENCE_TASK_TYPES.LINKEDIN_CONNECTION ||
-    task.type === SEQUENCE_TASK_TYPES.LINKEDIN_MESSAGE;
 
   const completeTask = async (isCompleted: boolean) => {
     if (!canUpdate) {
@@ -125,7 +119,7 @@ export const TaskQueueRow = ({
       {task.sequenceEnrollmentId && <IconSend size={16} />}
       <StyledTitle>{task.title || t`Untitled task`}</StyledTitle>
       <StyledMeta>
-        {isLinkedinTask && linkedinUrl && (
+        {linkedinUrl && (
           <StyledLinkedinLink
             href={linkedinUrl}
             target="_blank"

@@ -64,6 +64,20 @@ export const getLinkedinRunnerEnableError = (
   return null;
 };
 
+export const getRunnerStateAfterEnable = ({
+  runnerState,
+  tabId,
+}: {
+  runnerState: LinkedInRunnerSessionState;
+  tabId: number;
+}): LinkedInRunnerSessionState => ({
+  ...runnerState,
+  enabled: true,
+  tabId,
+  completedCount: runnerState.enabled ? runnerState.completedCount : 0,
+  failedCount: runnerState.enabled ? runnerState.failedCount : 0,
+});
+
 export const getLinkedinRunnerClaimError = (
   runnerState: LinkedInRunnerSessionState,
   tabId: number | undefined,
@@ -608,19 +622,17 @@ export const getRunnerStateAfterTabRemoval = ({
 
 export const resolveRunnerActionReport = ({
   runnerState,
-  reportAccepted,
-  status,
+  reportedAction,
   now = Date.now(),
 }: {
   runnerState: LinkedInRunnerSessionState;
-  reportAccepted: boolean;
-  status: Extract<LinkedInActionStatus, 'COMPLETED' | 'SKIPPED' | 'FAILED'>;
+  reportedAction: TwentyLinkedInAction | null;
   now?: number;
 }): {
   error: string | null;
   runnerState: LinkedInRunnerSessionState;
 } => {
-  if (!reportAccepted && runnerState.activeActionStartedAt !== null) {
+  if (reportedAction === null && runnerState.activeActionStartedAt !== null) {
     return {
       error: LINKEDIN_ACTION_REPORT_CONFLICT_ERROR,
       runnerState: {
@@ -631,8 +643,12 @@ export const resolveRunnerActionReport = ({
     };
   }
 
+  const persistedStatus = reportedAction?.status;
+  const providerWasStarted = reportedAction?.executedAt != null;
+
   return {
-    error: reportAccepted ? null : LINKEDIN_ACTION_REPORT_CONFLICT_ERROR,
+    error:
+      reportedAction !== null ? null : LINKEDIN_ACTION_REPORT_CONFLICT_ERROR,
     runnerState: {
       ...runnerState,
       tabId: runnerState.enabled ? runnerState.tabId : null,
@@ -640,13 +656,14 @@ export const resolveRunnerActionReport = ({
       activeActionStartedAt: null,
       activeActionNeedsRelease: false,
       activeActionNeedsReconciliation: false,
-      lastExecutedAt: now,
+      lastExecutedAt: providerWasStarted ? now : runnerState.lastExecutedAt,
       completedCount:
         runnerState.completedCount +
-        (reportAccepted && status !== 'FAILED' ? 1 : 0),
+        (persistedStatus === 'COMPLETED' || persistedStatus === 'SKIPPED'
+          ? 1
+          : 0),
       failedCount:
-        runnerState.failedCount +
-        (reportAccepted && status === 'FAILED' ? 1 : 0),
+        runnerState.failedCount + (persistedStatus === 'FAILED' ? 1 : 0),
     },
   };
 };

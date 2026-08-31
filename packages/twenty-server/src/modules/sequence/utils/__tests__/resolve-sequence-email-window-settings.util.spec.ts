@@ -28,16 +28,41 @@ describe('resolveSequenceEmailWindowSettings', () => {
     ).toBe(settings);
   });
 
+  it('uses the dedicated email window in sequence mode', () => {
+    const result = resolveSequenceEmailWindowSettings({
+      settings: buildSettings({
+        windowStart: '09:00',
+        windowEnd: '17:00',
+        emailWindowStart: '07:30',
+        emailWindowEnd: '15:30',
+        timezone: 'Europe/Helsinki',
+      }),
+      recipientTimeZone: 'America/New_York',
+    });
+
+    expect(result).toMatchObject({
+      windowStart: '07:30',
+      windowEnd: '15:30',
+      timezone: 'Europe/Helsinki',
+    });
+  });
+
   it('uses a valid recipient timezone in recipient mode', () => {
     expect(
       resolveSequenceEmailWindowSettings({
         settings: buildSettings({
           sendWindowTimezoneMode: SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.RECIPIENT,
           timezone: 'Europe/Helsinki',
+          emailWindowStart: '08:00',
+          emailWindowEnd: '16:00',
         }),
         recipientTimeZone: 'America/New_York',
-      }).timezone,
-    ).toBe('America/New_York');
+      }),
+    ).toMatchObject({
+      windowStart: '08:00',
+      windowEnd: '16:00',
+      timezone: 'America/New_York',
+    });
   });
 
   it.each([null, undefined, '', 'Not/A_TimeZone'])(

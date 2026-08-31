@@ -168,14 +168,20 @@ export class SequenceSchedulerService {
         sequence,
         settings: parseSequenceSettings(sequence.settings),
       }));
-      const fixedWindowEligibleSequences = activeSequencesWithSettings.filter(
-        ({ settings }) => isWithinSendingWindow(now, settings),
-      );
       const executionSequences = activeSequencesWithSettings.filter(
-        ({ settings }) =>
-          isWithinSendingWindow(now, settings) ||
-          (settings.activeDays.length > 0 &&
-            isRecipientSequenceEmailWindow(settings)),
+        ({ settings }) => {
+          const emailWindowSettings = resolveSequenceEmailWindowSettings({
+            settings,
+            recipientTimeZone: undefined,
+          });
+
+          return (
+            isWithinSendingWindow(now, settings) ||
+            isWithinSendingWindow(now, emailWindowSettings) ||
+            (settings.activeDays.length > 0 &&
+              isRecipientSequenceEmailWindow(settings))
+          );
+        },
       );
 
       if (executionSequences.length === 0) {
@@ -233,9 +239,6 @@ export class SequenceSchedulerService {
           sequence.senderConnectedAccountId,
         ]),
       );
-      const fixedWindowEligibleSequenceIds = new Set(
-        fixedWindowEligibleSequences.map(({ sequence }) => sequence.id),
-      );
       const stepsBySequenceId = this.groupStepsBySequenceId(steps);
       const pausedLinkedinRetryEnrollmentIds =
         await this.getPausedLinkedinRetryEnrollmentIds({
@@ -243,41 +246,7 @@ export class SequenceSchedulerService {
           linkedinActionRepository,
           stepsBySequenceId,
         });
-      const recipientTimeZonePersonIds = [
-        ...new Set(
-          dueEnrollments
-            .filter((enrollment) => {
-              const settings = settingsBySequenceId.get(enrollment.sequenceId);
-
-              return (
-                isDefined(settings) && isRecipientSequenceEmailWindow(settings)
-              );
-            })
-            .map(({ personId }) => personId),
-        ),
-      ];
-      const recipientTimeZoneByPersonId = new Map<string, string | null>();
-
-      if (recipientTimeZonePersonIds.length > 0) {
-        const personRepository =
-          await this.globalWorkspaceOrmManager.getRepository(
-            workspaceId,
-            PersonWorkspaceEntity,
-            { shouldBypassPermissionChecks: true },
-          );
-        const recipients = await personRepository.find({
-          where: { id: In(recipientTimeZonePersonIds) },
-          select: { id: true, timeZone: true },
-        });
-
-        for (const recipient of recipients) {
-          recipientTimeZoneByPersonId.set(recipient.id, recipient.timeZone);
-        }
-      }
-
-      const dueEmailsByMailboxId = new Map<string, DueEmail[]>();
-
-      for (const enrollment of dueEnrollments) {
+      const dueEnrollmentContexts = dueEnrollments.map((enrollment) => {
         const sequenceSteps =
           stepsBySequenceId.get(enrollment.sequenceId) ?? [];
         const currentStep = sequenceSteps.find(
@@ -303,11 +272,73 @@ export class SequenceSchedulerService {
                 currentStepPosition: enrollment.currentStepPosition,
               });
         const settings = settingsBySequenceId.get(enrollment.sequenceId);
+        const isEmail =
+          isDefined(nextStep) &&
+          nextStep.settings.type === SEQUENCE_STEP_TYPES.SEND_EMAIL;
         const isAutomatedEmail =
           isDefined(nextStep) &&
           nextStep.settings.type === SEQUENCE_STEP_TYPES.SEND_EMAIL &&
           nextStep.settings.executionMode !==
             SEQUENCE_ACTION_EXECUTION_MODES.MANUAL;
+
+        return {
+          enrollment,
+          isAutomatedEmail,
+          isEmail,
+          isRecoveringApolloEnrichment,
+          settings,
+        };
+      });
+      const recipientTimeZonePersonIds = [
+        ...new Set(
+          dueEnrollmentContexts
+            .filter(({ isEmail, settings }) => {
+              return (
+                isEmail &&
+                isDefined(settings) &&
+                isRecipientSequenceEmailWindow(settings)
+              );
+            })
+            .map(({ enrollment }) => enrollment.personId),
+        ),
+      ];
+      const recipientTimeZoneByPersonId = new Map<string, string | null>();
+
+      if (recipientTimeZonePersonIds.length > 0) {
+        const personRepository =
+          await this.globalWorkspaceOrmManager.getRepository(
+            workspaceId,
+            PersonWorkspaceEntity,
+            { shouldBypassPermissionChecks: true },
+          );
+        const recipients = await personRepository.find({
+          where: { id: In(recipientTimeZonePersonIds) },
+          select: { id: true, timeZone: true },
+        });
+
+        for (const recipient of recipients) {
+          recipientTimeZoneByPersonId.set(recipient.id, recipient.timeZone);
+        }
+      }
+
+      const dueEmailsByMailboxId = new Map<string, DueEmail[]>();
+
+      for (const {
+        enrollment,
+        isAutomatedEmail,
+        isEmail,
+        isRecoveringApolloEnrichment,
+        settings,
+      } of dueEnrollmentContexts) {
+        const effectiveSettings =
+          isEmail && isDefined(settings)
+            ? resolveSequenceEmailWindowSettings({
+                settings,
+                recipientTimeZone: recipientTimeZoneByPersonId.get(
+                  enrollment.personId,
+                ),
+              })
+            : settings;
 
         if (!isAutomatedEmail) {
           // Finishing an enrichment already paid for is repair, not outreach:
@@ -315,9 +346,13 @@ export class SequenceSchedulerService {
           // due on and keep the enrollment parked for another whole window.
           if (
             !isRecoveringApolloEnrichment &&
-            !fixedWindowEligibleSequenceIds.has(enrollment.sequenceId)
+            (!isDefined(effectiveSettings) ||
+              !isWithinSendingWindow(now, effectiveSettings))
           ) {
-            if (isDefined(settings) && isDefined(enrollment.waitingOn)) {
+            if (
+              isDefined(effectiveSettings) &&
+              isDefined(enrollment.waitingOn)
+            ) {
               await enrollmentRepository.update(
                 {
                   id: enrollment.id,
@@ -332,7 +367,7 @@ export class SequenceSchedulerService {
                   waitingOn: enrollment.waitingOn,
                   nextActionAt: LessThanOrEqual(now),
                 },
-                { nextActionAt: nextWindowOpen(now, settings) },
+                { nextActionAt: nextWindowOpen(now, effectiveSettings) },
               );
             }
 
@@ -347,16 +382,9 @@ export class SequenceSchedulerService {
           continue;
         }
 
-        if (!isDefined(settings)) {
+        if (!isDefined(effectiveSettings)) {
           continue;
         }
-
-        const effectiveSettings = resolveSequenceEmailWindowSettings({
-          settings,
-          recipientTimeZone: recipientTimeZoneByPersonId.get(
-            enrollment.personId,
-          ),
-        });
 
         if (effectiveSettings.activeDays.length === 0) {
           continue;
@@ -1539,6 +1567,10 @@ export class SequenceSchedulerService {
 
       const lockedSettings = parseSequenceSettings(lockedSequence.settings);
 
+      if (!isWithinSendingWindow(now, lockedSettings)) {
+        return;
+      }
+
       let remainingStarts = SEQUENCE_SCHEDULER_BATCH_SIZE;
 
       if (lockedSettings.dailyStartLimitEnabled) {
@@ -1573,8 +1605,12 @@ export class SequenceSchedulerService {
             sequenceId: sequence.id,
             status: SEQUENCE_ENROLLMENT_STATUSES.PENDING,
           },
-          order: { createdAt: 'ASC' },
-          take: Math.min(remainingStarts, SEQUENCE_SCHEDULER_BATCH_SIZE),
+          order: {
+            currentStepPosition: 'DESC',
+            createdAt: 'ASC',
+            id: 'ASC',
+          },
+          take: SEQUENCE_SCHEDULER_BATCH_SIZE,
         },
         workspaceTransactionManager,
       );
@@ -1607,8 +1643,13 @@ export class SequenceSchedulerService {
           ).length,
         ]),
       );
+      let admittedStarts = 0;
 
       for (const enrollment of pendingEnrollments) {
+        if (admittedStarts >= remainingStarts) {
+          break;
+        }
+
         const senderConnectedAccountId =
           !hasExplicitSenderPool &&
           isDefined(enrollment.senderConnectedAccountId) &&
@@ -1634,14 +1675,16 @@ export class SequenceSchedulerService {
           workspaceTransactionManager,
         );
 
-        if (
-          updateResult.affected === 1 &&
-          isDefined(senderConnectedAccountId)
-        ) {
-          assignmentCountBySenderId.set(
-            senderConnectedAccountId,
-            (assignmentCountBySenderId.get(senderConnectedAccountId) ?? 0) + 1,
-          );
+        if (updateResult.affected === 1) {
+          admittedStarts += 1;
+
+          if (isDefined(senderConnectedAccountId)) {
+            assignmentCountBySenderId.set(
+              senderConnectedAccountId,
+              (assignmentCountBySenderId.get(senderConnectedAccountId) ?? 0) +
+                1,
+            );
+          }
         }
       }
     });

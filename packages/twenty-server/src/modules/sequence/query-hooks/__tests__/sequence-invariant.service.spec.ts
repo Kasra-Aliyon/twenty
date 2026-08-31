@@ -4,6 +4,7 @@ import {
   SEQUENCE_CONDITION_TYPES,
   SEQUENCE_CONDITION_BRANCHES,
   SEQUENCE_STATUSES,
+  SEQUENCE_SEND_WINDOW_TIMEZONE_MODES,
   SEQUENCE_STEP_TYPES,
   SEQUENCE_TASK_TYPES,
   SEQUENCE_WAITING_ON,
@@ -109,7 +110,7 @@ describe('SequenceInvariantService', () => {
           sequenceId: sequence.id,
           personId: 'person-id',
           status: SEQUENCE_ENROLLMENT_STATUSES.COMPLETED,
-          currentStepId: 'attacker-step-id',
+          currentStepPosition: 42,
           senderConnectedAccountId: 'attacker-sender-id',
         },
       ],
@@ -125,6 +126,140 @@ describe('SequenceInvariantService', () => {
         sentEmailsByStepId: {},
       }),
     );
+  });
+
+  it('starts a new enrollment at an explicitly selected root step', async () => {
+    const firstStep = {
+      id: 'first-step-id',
+      sequenceId: sequence.id,
+      position: 2,
+      settings: {
+        type: SEQUENCE_STEP_TYPES.CREATE_TASK,
+        taskType: SEQUENCE_TASK_TYPES.TODO,
+        titleTemplate: 'First step',
+        notesTemplate: '',
+        priority: TASK_PRIORITIES.MEDIUM,
+        continueMode: 'ON_DONE',
+      },
+    } as SequenceStepWorkspaceEntity;
+    const selectedStep = {
+      id: 'selected-step-id',
+      sequenceId: sequence.id,
+      position: 6,
+      settings: {
+        type: SEQUENCE_STEP_TYPES.DELAY,
+        days: 1,
+        hours: 0,
+        minutes: 0,
+      },
+    } as SequenceStepWorkspaceEntity;
+
+    stepRepository.find.mockResolvedValueOnce([firstStep, selectedStep]);
+
+    const [normalized] = await service.normalizeEnrollmentCreates({
+      authContext,
+      data: [
+        {
+          sequenceId: sequence.id,
+          personId: 'person-id',
+          currentStepId: selectedStep.id,
+        },
+      ],
+    });
+
+    expect(normalized).toEqual(
+      expect.objectContaining({
+        status: SEQUENCE_ENROLLMENT_STATUSES.PENDING,
+        currentStepId: null,
+        currentStepPosition: 4,
+      }),
+    );
+  });
+
+  it('rejects a starting step outside the selected sequence', async () => {
+    stepRepository.find.mockResolvedValueOnce([]);
+
+    await expect(
+      service.normalizeEnrollmentCreates({
+        authContext,
+        data: [
+          {
+            sequenceId: sequence.id,
+            personId: 'person-id',
+            currentStepId: 'different-sequence-step-id',
+          },
+        ],
+      }),
+    ).rejects.toThrow('starting step was not found in this sequence');
+  });
+
+  it('rejects enrollment directly inside a condition branch', async () => {
+    const branchStep = {
+      id: 'branch-step-id',
+      sequenceId: sequence.id,
+      position: 2,
+      settings: {
+        type: SEQUENCE_STEP_TYPES.DELAY,
+        days: 1,
+        hours: 0,
+        minutes: 0,
+        branch: {
+          conditionStepId: 'condition-step-id',
+          outcome: SEQUENCE_CONDITION_BRANCHES.YES,
+        },
+      },
+    } as SequenceStepWorkspaceEntity;
+
+    stepRepository.find.mockResolvedValueOnce([branchStep]);
+
+    await expect(
+      service.normalizeEnrollmentCreates({
+        authContext,
+        data: [
+          {
+            sequenceId: sequence.id,
+            personId: 'person-id',
+            currentStepId: branchStep.id,
+          },
+        ],
+      }),
+    ).rejects.toThrow('root sequence step');
+  });
+
+  it('rejects an ambiguous starting step position', async () => {
+    const firstTiedStep = {
+      id: 'first-tied-step-id',
+      sequenceId: sequence.id,
+      position: 2,
+      settings: {
+        type: SEQUENCE_STEP_TYPES.DELAY,
+        days: 1,
+        hours: 0,
+        minutes: 0,
+      },
+    } as SequenceStepWorkspaceEntity;
+    const selectedTiedStep = {
+      ...firstTiedStep,
+      id: 'selected-tied-step-id',
+    } as SequenceStepWorkspaceEntity;
+
+    stepRepository.find.mockResolvedValueOnce([
+      firstTiedStep,
+      selectedTiedStep,
+    ]);
+
+    await expect(
+      service.normalizeEnrollmentCreates({
+        authContext,
+        data: [
+          {
+            sequenceId: sequence.id,
+            personId: 'person-id',
+            currentStepId: selectedTiedStep.id,
+          },
+        ],
+      }),
+    ).rejects.toThrow('shares its position');
   });
 
   it('leaves pooled enrollment senders unassigned until scheduler admission', async () => {
@@ -276,7 +411,35 @@ describe('SequenceInvariantService', () => {
           settings: { ...DEFAULT_SEQUENCE_SETTINGS, stopOnReply: false },
         },
       }),
-    ).rejects.toThrow('Pause the sequence');
+    ).rejects.toThrow(
+      'Pause the sequence before changing non-schedule settings',
+    );
+  });
+
+  it('allows schedule changes while the sequence is active', async () => {
+    sequenceRepository.find.mockResolvedValueOnce([
+      { ...sequence, status: SEQUENCE_STATUSES.ACTIVE },
+    ]);
+
+    await expect(
+      service.assertSequenceUpdateAllowed({
+        authContext,
+        sequenceId: sequence.id,
+        data: {
+          settings: {
+            ...DEFAULT_SEQUENCE_SETTINGS,
+            activeDays: [1, 2, 3, 4],
+            windowStart: '10:00',
+            windowEnd: '18:00',
+            emailWindowStart: '08:00',
+            emailWindowEnd: '16:00',
+            timezone: 'Europe/Helsinki',
+            sendWindowTimezoneMode:
+              SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.RECIPIENT,
+          },
+        },
+      }),
+    ).resolves.toBeUndefined();
   });
 
   it('allows supported terminal and skip actions while normalizing timestamps', async () => {
@@ -327,6 +490,90 @@ describe('SequenceInvariantService', () => {
         stepId: 'step-id',
       }),
     ).rejects.toThrow('Pause the sequence');
+  });
+
+  it('allows a content-only step update on a paused sequence with active enrollments', async () => {
+    activeEnrollmentCount = 1;
+
+    await expect(
+      service.assertStepUpdateAllowed({
+        authContext,
+        stepId: 'step-id',
+        updatedFields: ['settings'],
+        nextSettings: {
+          type: SEQUENCE_STEP_TYPES.SEND_EMAIL,
+          subject: 'Updated subject',
+          bodyHtml: '<p>Updated body</p>',
+          threadAsReplyToPreviousEmail: false,
+          stopOnReply: null,
+        },
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it('allows removing a connection request note on a paused sequence with active enrollments', async () => {
+    activeEnrollmentCount = 1;
+    stepRepository.find.mockResolvedValueOnce([
+      {
+        id: 'step-id',
+        sequenceId: sequence.id,
+        settings: {
+          type: SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST,
+          noteTemplate: 'Existing invitation note',
+        },
+      },
+    ]);
+
+    await expect(
+      service.assertStepUpdateAllowed({
+        authContext,
+        stepId: 'step-id',
+        updatedFields: ['settings'],
+        nextSettings: {
+          type: SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST,
+          noteTemplate: '',
+        },
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it('rejects a content-only step update while the sequence is active', async () => {
+    sequenceRepository.find.mockResolvedValueOnce([
+      { ...sequence, status: SEQUENCE_STATUSES.ACTIVE },
+    ]);
+
+    await expect(
+      service.assertStepUpdateAllowed({
+        authContext,
+        stepId: 'step-id',
+        updatedFields: ['settings'],
+        nextSettings: {
+          type: SEQUENCE_STEP_TYPES.SEND_EMAIL,
+          subject: 'Updated subject',
+          bodyHtml: '<p>Updated body</p>',
+          threadAsReplyToPreviousEmail: false,
+          stopOnReply: null,
+        },
+      }),
+    ).rejects.toThrow('Pause the sequence');
+  });
+
+  it('rejects a step type change while an enrollment is active', async () => {
+    activeEnrollmentCount = 1;
+
+    await expect(
+      service.assertStepUpdateAllowed({
+        authContext,
+        stepId: 'step-id',
+        updatedFields: ['settings'],
+        nextSettings: {
+          type: SEQUENCE_STEP_TYPES.DELAY,
+          days: 1,
+          hours: 0,
+          minutes: 0,
+        },
+      }),
+    ).rejects.toThrow('changing its steps');
   });
 
   it('rejects step edits on an archived sequence', async () => {

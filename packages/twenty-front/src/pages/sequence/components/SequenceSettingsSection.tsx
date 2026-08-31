@@ -3,6 +3,7 @@ import { LINKEDIN_DAILY_ACTION_LIMITS } from '@/sequence/constants/linkedin-dail
 import { SequenceMailboxMultiSelect } from '@/sequence/components/SequenceMailboxMultiSelect';
 import { getDefaultSequenceSettings } from '@/sequence/constants/default-sequence-settings';
 import { type SequenceSenderAccount } from '@/sequence/types/SequenceSenderAccount';
+import { getSequenceSettingsWithDefaults } from '@/sequence/utils/getSequenceSettingsWithDefaults';
 import {
   isSequenceEmailSenderAccountReady,
   isSequenceSenderAccount,
@@ -105,10 +106,9 @@ export const SequenceSettingsSection = ({
   canUpdate,
 }: SequenceSettingsSectionProps) => {
   const defaults = getDefaultSequenceSettings();
-  const [settings, setSettings] = useState<SequenceSettings>({
-    ...defaults,
-    ...sequence.settings,
-  });
+  const [settings, setSettings] = useState<SequenceSettings>(() =>
+    getSequenceSettingsWithDefaults(sequence.settings),
+  );
   const [linkedinDelayPatternText, setLinkedinDelayPatternText] = useState(
     (
       sequence.settings.linkedinDelayPatternMinutes ??
@@ -181,17 +181,15 @@ export const SequenceSettingsSection = ({
       return;
     }
 
-    if (!isRecipientTimezoneMode) {
-      try {
-        new Intl.DateTimeFormat('en-US', {
-          timeZone: settings.timezone,
-        }).format();
-      } catch {
-        enqueueErrorSnackBar({
-          message: t`Enter a valid IANA timezone such as Europe/Helsinki.`,
-        });
-        return;
-      }
+    try {
+      new Intl.DateTimeFormat('en-US', {
+        timeZone: settings.timezone,
+      }).format();
+    } catch {
+      enqueueErrorSnackBar({
+        message: t`Enter a valid IANA timezone such as Europe/Helsinki.`,
+      });
+      return;
     }
 
     if (settings.activeDays.length === 0) {
@@ -246,25 +244,14 @@ export const SequenceSettingsSection = ({
             </StyledDayButton>
           ))}
         </StyledDayPicker>
+        <StyledHelperText>
+          {t`These days apply to both the LinkedIn and task window and the email window.`}
+        </StyledHelperText>
       </StyledField>
 
       <StyledFieldsGrid>
-        <Select
-          dropdownId={`sequence-settings-timezone-mode-${sequence.id}`}
-          label={t`Apply sending hours in`}
-          fullWidth
-          value={settings.sendWindowTimezoneMode}
-          options={SEND_WINDOW_TIMEZONE_MODE_OPTIONS}
-          disabled={!canUpdate}
-          onChange={(sendWindowTimezoneMode) =>
-            setSettings((currentSettings) => ({
-              ...currentSettings,
-              sendWindowTimezoneMode,
-            }))
-          }
-        />
         <StyledField>
-          <span>{t`Window starts`}</span>
+          <span>{t`LinkedIn and task window starts`}</span>
           <StyledInput
             type="time"
             value={settings.windowStart}
@@ -278,7 +265,7 @@ export const SequenceSettingsSection = ({
           />
         </StyledField>
         <StyledField>
-          <span>{t`Window ends`}</span>
+          <span>{t`LinkedIn and task window ends`}</span>
           <StyledInput
             type="time"
             value={settings.windowEnd}
@@ -292,10 +279,10 @@ export const SequenceSettingsSection = ({
           />
         </StyledField>
         <StyledField>
-          <span>{t`Timezone`}</span>
+          <span>{t`Sequence time zone`}</span>
           <StyledInput
             value={settings.timezone}
-            disabled={!canUpdate || isRecipientTimezoneMode}
+            disabled={!canUpdate}
             onChange={(event) =>
               setSettings((currentSettings) => ({
                 ...currentSettings,
@@ -305,11 +292,53 @@ export const SequenceSettingsSection = ({
             placeholder="Europe/Helsinki"
           />
         </StyledField>
+        <StyledField>
+          <span>{t`Email window starts`}</span>
+          <StyledInput
+            type="time"
+            value={settings.emailWindowStart ?? settings.windowStart}
+            disabled={!canUpdate}
+            onChange={(event) =>
+              setSettings((currentSettings) => ({
+                ...currentSettings,
+                emailWindowStart: event.target.value,
+              }))
+            }
+          />
+        </StyledField>
+        <StyledField>
+          <span>{t`Email window ends`}</span>
+          <StyledInput
+            type="time"
+            value={settings.emailWindowEnd ?? settings.windowEnd}
+            disabled={!canUpdate}
+            onChange={(event) =>
+              setSettings((currentSettings) => ({
+                ...currentSettings,
+                emailWindowEnd: event.target.value,
+              }))
+            }
+          />
+        </StyledField>
+        <Select
+          dropdownId={`sequence-settings-timezone-mode-${sequence.id}`}
+          label={t`Apply email window in`}
+          fullWidth
+          value={settings.sendWindowTimezoneMode}
+          options={SEND_WINDOW_TIMEZONE_MODE_OPTIONS}
+          disabled={!canUpdate}
+          onChange={(sendWindowTimezoneMode) =>
+            setSettings((currentSettings) => ({
+              ...currentSettings,
+              sendWindowTimezoneMode,
+            }))
+          }
+        />
       </StyledFieldsGrid>
       <StyledHelperText>
         {isRecipientTimezoneMode
-          ? t`The selected days and hours use the Time zone field on each recipient's Person record. Missing or invalid values fall back to UTC.`
-          : t`The selected days and hours use the sequence time zone.`}
+          ? t`LinkedIn steps, calls, enrollment admission, and other non-email tasks use the first window in the sequence time zone. Automated emails and manual email tasks use the email window in each recipient's Person time zone; missing or invalid values fall back to UTC.`
+          : t`LinkedIn steps, calls, enrollment admission, and other non-email tasks use the first window. Automated emails and manual email tasks use the email window. Both use the sequence time zone.`}
       </StyledHelperText>
 
       <StyledToggleRow>

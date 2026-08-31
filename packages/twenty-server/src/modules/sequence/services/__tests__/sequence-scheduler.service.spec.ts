@@ -1,6 +1,8 @@
 import {
   LINKEDIN_ACTION_STATUSES,
   LINKEDIN_ACTION_TYPES,
+  SEQUENCE_ACTION_EXECUTION_MODES,
+  SEQUENCE_CONDITION_TYPES,
   SEQUENCE_ENROLLMENT_STATUSES,
   SEQUENCE_SEND_WINDOW_TIMEZONE_MODES,
   SEQUENCE_STATUSES,
@@ -8,6 +10,7 @@ import {
   SEQUENCE_WAITING_ON,
   type SequenceEnrollmentStatus,
   type SequenceSettings,
+  type SequenceStepSettings,
 } from 'twenty-shared/types';
 import { FindOperator, IsNull, MoreThanOrEqual } from 'typeorm';
 
@@ -198,13 +201,16 @@ describe('SequenceSchedulerService', () => {
     const stepRepository = {
       find: jest.fn().mockResolvedValue(steps),
     };
+    const recipients = Object.entries(recipientTimeZones).map(
+      ([id, timeZone]) => ({ id, timeZone }),
+    );
     const personRepository = {
-      find: jest.fn().mockResolvedValue(
-        Object.entries(recipientTimeZones).map(([id, timeZone]) => ({
-          id,
-          timeZone,
-        })),
-      ),
+      find: jest.fn().mockResolvedValue(recipients),
+      findOne: jest
+        .fn()
+        .mockImplementation(async (options) =>
+          recipients.find(({ id }) => id === options.where.id),
+        ),
     };
     const linkedinActionRepository = {
       findOne: jest.fn().mockResolvedValue(null),
@@ -1095,7 +1101,7 @@ describe('SequenceSchedulerService', () => {
     );
   });
 
-  it('requeues an expired idempotent sequence claim under lock after resume', async () => {
+  it('requeues an expired sequence claim with the fixed sequence window', async () => {
     const waitingEnrollment = {
       ...buildEnrollment('waiting-id'),
       waitingOn: SEQUENCE_WAITING_ON.LINKEDIN_ACTION,
@@ -1117,11 +1123,22 @@ describe('SequenceSchedulerService', () => {
       service,
       enrollmentRepository,
       linkedinActionRepository,
+      personRepository,
       reserveLinkedinSlot,
       transactionManager,
     } = setup({
       startedToday: 0,
       expiredClaimedActions: [expiredRequest],
+      sequenceSettings: {
+        activeDays: [1],
+        windowStart: '09:00',
+        windowEnd: '17:00',
+        timezone: 'Europe/Helsinki',
+        sendWindowTimezoneMode: SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.RECIPIENT,
+      },
+      recipientTimeZones: {
+        [waitingEnrollment.personId]: 'America/Los_Angeles',
+      },
     });
 
     enrollmentRepository.find.mockResolvedValueOnce([
@@ -1137,11 +1154,13 @@ describe('SequenceSchedulerService', () => {
       ownerWorkspaceMemberId: expiredRequest.ownerWorkspaceMemberId,
       settings: expect.objectContaining({
         linkedinDailyActions: DEFAULT_SEQUENCE_SETTINGS.linkedinDailyActions,
+        timezone: 'Europe/Helsinki',
       }),
       now,
       transactionManager,
       excludedActionId: expiredRequest.id,
     });
+    expect(personRepository.findOne).not.toHaveBeenCalled();
     expect(linkedinActionRepository.update).toHaveBeenCalledWith(
       expect.objectContaining({
         id: expiredRequest.id,
@@ -1572,7 +1591,9 @@ describe('SequenceSchedulerService', () => {
         options.where.status === SEQUENCE_ENROLLMENT_STATUSES.PENDING,
     );
 
-    expect(pendingFindCall?.[0]).toEqual(expect.objectContaining({ take: 1 }));
+    expect(pendingFindCall?.[0]).toEqual(
+      expect.objectContaining({ take: SEQUENCE_SCHEDULER_BATCH_SIZE }),
+    );
     expect(enrollmentRepository.update).toHaveBeenCalledWith(
       expect.objectContaining({
         id: pendingEnrollment.id,
@@ -1583,6 +1604,41 @@ describe('SequenceSchedulerService', () => {
         nextActionAt: now,
       }),
       expect.any(Object),
+    );
+  });
+
+  it('prioritizes staged pending enrollments before fresh enrollments', async () => {
+    const stagedEnrollment = {
+      ...buildEnrollment(
+        'staged-pending-id',
+        SEQUENCE_ENROLLMENT_STATUSES.PENDING,
+      ),
+      currentStepPosition: 2.5,
+    } as SequenceEnrollmentWorkspaceEntity;
+    const freshEnrollment = buildEnrollment(
+      'fresh-pending-id',
+      SEQUENCE_ENROLLMENT_STATUSES.PENDING,
+    );
+    const { service, enrollmentRepository } = setup({
+      startedToday: 0,
+      pendingEnrollments: [stagedEnrollment, freshEnrollment],
+    });
+
+    await service.tick(workspaceId, now);
+
+    const pendingFindCall = enrollmentRepository.find.mock.calls.find(
+      ([options]) =>
+        options.where.status === SEQUENCE_ENROLLMENT_STATUSES.PENDING,
+    );
+
+    expect(pendingFindCall?.[0]).toEqual(
+      expect.objectContaining({
+        order: {
+          currentStepPosition: 'DESC',
+          createdAt: 'ASC',
+          id: 'ASC',
+        },
+      }),
     );
   });
 
@@ -1656,8 +1712,7 @@ describe('SequenceSchedulerService', () => {
     );
   });
 
-  it('admits recipient-mode enrollments outside the fixed sequence window and counts the UTC quota day', async () => {
-    const recipientNow = new Date('2024-01-01T22:30:00.000Z');
+  it('admits in the fixed sequence window and counts the UTC quota day', async () => {
     const pendingEnrollment = buildEnrollment(
       'recipient-pending-id',
       SEQUENCE_ENROLLMENT_STATUSES.PENDING,
@@ -1672,9 +1727,12 @@ describe('SequenceSchedulerService', () => {
         timezone: 'Europe/Helsinki',
         sendWindowTimezoneMode: SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.RECIPIENT,
       },
+      recipientTimeZones: {
+        [pendingEnrollment.personId]: 'America/Los_Angeles',
+      },
     });
 
-    await service.tick(workspaceId, recipientNow);
+    await service.tick(workspaceId, now);
 
     expect(enrollmentRepository.count).toHaveBeenCalledWith(
       {
@@ -1692,8 +1750,90 @@ describe('SequenceSchedulerService', () => {
       }),
       expect.objectContaining({
         status: SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
-        startedAt: recipientNow,
-        nextActionAt: recipientNow,
+        startedAt: now,
+        nextActionAt: now,
+      }),
+      expect.any(Object),
+    );
+  });
+
+  it('does not admit outside the fixed sequence window when the recipient window is open', async () => {
+    const recipientNow = new Date('2024-01-01T22:30:00.000Z');
+    const pendingEnrollment = buildEnrollment(
+      'closed-recipient-pending-id',
+      SEQUENCE_ENROLLMENT_STATUSES.PENDING,
+    );
+    const { service, enrollmentRepository } = setup({
+      startedToday: 0,
+      pendingEnrollments: [pendingEnrollment],
+      sequenceSettings: {
+        activeDays: [1],
+        windowStart: '09:00',
+        windowEnd: '17:00',
+        timezone: 'Europe/Helsinki',
+        sendWindowTimezoneMode: SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.RECIPIENT,
+      },
+      recipientTimeZones: {
+        [pendingEnrollment.personId]: 'America/Los_Angeles',
+      },
+    });
+
+    await service.tick(workspaceId, recipientNow);
+
+    expect(enrollmentRepository.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: pendingEnrollment.id,
+        status: SEQUENCE_ENROLLMENT_STATUSES.PENDING,
+      }),
+      expect.objectContaining({
+        status: SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
+      }),
+      expect.any(Object),
+    );
+  });
+
+  it('keeps staged-first admission independent of recipient timezones', async () => {
+    const stagedEnrollment = {
+      ...buildEnrollment(
+        'staged-recipient-id',
+        SEQUENCE_ENROLLMENT_STATUSES.PENDING,
+      ),
+      currentStepPosition: 2.5,
+    } as SequenceEnrollmentWorkspaceEntity;
+    const freshEnrollment = buildEnrollment(
+      'fresh-recipient-id',
+      SEQUENCE_ENROLLMENT_STATUSES.PENDING,
+    );
+    const { service, enrollmentRepository } = setup({
+      startedToday: 1,
+      pendingEnrollments: [stagedEnrollment, freshEnrollment],
+      sequenceSettings: {
+        activeDays: [1],
+        windowStart: '09:00',
+        windowEnd: '17:00',
+        timezone: 'Europe/Helsinki',
+        sendWindowTimezoneMode: SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.RECIPIENT,
+      },
+      recipientTimeZones: {
+        [stagedEnrollment.personId]: 'America/Los_Angeles',
+        [freshEnrollment.personId]: 'Europe/London',
+      },
+    });
+
+    await service.tick(workspaceId, now);
+
+    expect(enrollmentRepository.update).toHaveBeenCalledWith(
+      expect.objectContaining({ id: stagedEnrollment.id }),
+      expect.objectContaining({
+        status: SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
+        startedAt: now,
+      }),
+      expect.any(Object),
+    );
+    expect(enrollmentRepository.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ id: freshEnrollment.id }),
+      expect.objectContaining({
+        status: SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
       }),
       expect.any(Object),
     );
@@ -1837,6 +1977,38 @@ describe('SequenceSchedulerService', () => {
     });
   });
 
+  it('schedules an email in its dedicated window while the task window is closed', async () => {
+    const emailWindowNow = new Date('2024-01-01T16:00:00.000Z');
+    const dueEnrollment = buildEnrollment('split-window-email-id');
+    const { service, enrollmentRepository, enqueueProcess } = setup({
+      startedToday: 0,
+      dueEnrollments: [dueEnrollment],
+      sequenceSettings: {
+        activeDays: [1],
+        windowStart: '09:00',
+        windowEnd: '10:00',
+        emailWindowStart: '17:00',
+        emailWindowEnd: '19:00',
+        timezone: 'Europe/Helsinki',
+        sendWindowTimezoneMode: SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.SEQUENCE,
+      },
+    });
+
+    await service.tick(workspaceId, emailWindowNow);
+
+    expect(enrollmentRepository.update).toHaveBeenCalledWith(
+      expect.objectContaining({ id: dueEnrollment.id }),
+      expect.objectContaining({
+        waitingOn: SEQUENCE_WAITING_ON.EMAIL_SCHEDULED,
+        nextActionAt: emailWindowNow,
+      }),
+    );
+    expect(enqueueProcess).toHaveBeenCalledWith({
+      workspaceId,
+      enrollmentId: dueEnrollment.id,
+    });
+  });
+
   it('uses UTC when a recipient-local email has no determined timezone', async () => {
     const recipientNow = new Date('2024-01-01T16:00:00.000Z');
     const dueEnrollment = buildEnrollment('utc-fallback-id');
@@ -1862,7 +2034,97 @@ describe('SequenceSchedulerService', () => {
     expect(enqueueProcess).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps non-email steps behind the fixed sequence window in recipient mode', async () => {
+  it('defers a Los Angeles email while the fixed Helsinki window is open', async () => {
+    const dueEnrollment = buildEnrollment('los-angeles-email-id');
+    const { service, enrollmentRepository, enqueueProcess, personRepository } =
+      setup({
+        startedToday: 0,
+        dueEnrollments: [dueEnrollment],
+        sequenceSettings: {
+          activeDays: [1],
+          windowStart: '09:00',
+          windowEnd: '17:00',
+          timezone: 'Europe/Helsinki',
+          sendWindowTimezoneMode: SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.RECIPIENT,
+        },
+        recipientTimeZones: {
+          [dueEnrollment.personId]: 'America/Los_Angeles',
+        },
+      });
+
+    await service.tick(workspaceId, now);
+
+    expect(personRepository.find).toHaveBeenCalledTimes(1);
+    expect(enrollmentRepository.update).toHaveBeenCalledWith(
+      expect.objectContaining({ id: dueEnrollment.id }),
+      expect.objectContaining({
+        waitingOn: SEQUENCE_WAITING_ON.EMAIL_SCHEDULED,
+        nextActionAt: new Date('2024-01-01T17:00:00.000Z'),
+      }),
+    );
+    expect(enqueueProcess).not.toHaveBeenCalledWith({
+      workspaceId,
+      enrollmentId: dueEnrollment.id,
+    });
+  });
+
+  it('defers then queues a manual email in the recipient window', async () => {
+    const dueEnrollment = buildEnrollment('manual-los-angeles-email-id');
+    const manualEmailStep = {
+      ...step,
+      id: 'manual-los-angeles-email-step-id',
+      settings: {
+        ...step.settings,
+        executionMode: SEQUENCE_ACTION_EXECUTION_MODES.MANUAL,
+      },
+    } as SequenceStepWorkspaceEntity;
+    const { service, enrollmentRepository, enqueueProcess, personRepository } =
+      setup({
+        startedToday: 0,
+        dueEnrollments: [dueEnrollment],
+        steps: [manualEmailStep],
+        sequenceSettings: {
+          activeDays: [1],
+          windowStart: '09:00',
+          windowEnd: '17:00',
+          timezone: 'Europe/Helsinki',
+          sendWindowTimezoneMode: SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.RECIPIENT,
+        },
+        recipientTimeZones: {
+          [dueEnrollment.personId]: 'America/Los_Angeles',
+        },
+      });
+
+    await service.tick(workspaceId, now);
+
+    expect(personRepository.find).toHaveBeenCalledTimes(1);
+    expect(enrollmentRepository.update).toHaveBeenCalledWith(
+      expect.objectContaining({ id: dueEnrollment.id }),
+      expect.objectContaining({
+        nextActionAt: new Date('2024-01-01T17:00:00.000Z'),
+      }),
+    );
+    expect(enrollmentRepository.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ id: dueEnrollment.id }),
+      expect.objectContaining({
+        waitingOn: SEQUENCE_WAITING_ON.EMAIL_SCHEDULED,
+      }),
+    );
+    expect(enqueueProcess).not.toHaveBeenCalledWith({
+      workspaceId,
+      enrollmentId: dueEnrollment.id,
+    });
+
+    await service.tick(workspaceId, new Date('2024-01-01T17:00:00.000Z'));
+
+    expect(personRepository.find).toHaveBeenCalledTimes(2);
+    expect(enqueueProcess).toHaveBeenCalledWith({
+      workspaceId,
+      enrollmentId: dueEnrollment.id,
+    });
+  });
+
+  it('defers non-email work to the fixed sequence window', async () => {
     const recipientNow = new Date('2024-01-01T16:00:00.000Z');
     const dueEnrollment = buildEnrollment('task-id');
     const taskStep = {
@@ -1877,7 +2139,7 @@ describe('SequenceSchedulerService', () => {
       dueEnrollments: [dueEnrollment],
       steps: [taskStep],
       sequenceSettings: {
-        activeDays: [1],
+        activeDays: [1, 2],
         windowStart: '09:00',
         windowEnd: '17:00',
         timezone: 'Europe/Helsinki',
@@ -1890,24 +2152,81 @@ describe('SequenceSchedulerService', () => {
 
     await service.tick(workspaceId, recipientNow);
 
-    expect(enqueueProcess).not.toHaveBeenCalled();
+    expect(enqueueProcess).not.toHaveBeenCalledWith({
+      workspaceId,
+      enrollmentId: dueEnrollment.id,
+    });
     expect(enrollmentRepository.update).toHaveBeenCalledWith(
       expect.objectContaining({
         id: dueEnrollment.id,
         status: SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
-        currentStepPosition: dueEnrollment.currentStepPosition,
-        currentStepId: IsNull(),
-        updatedAt: expectMillisecondPrecisionDateCondition(
-          dueEnrollment.updatedAt,
-        ),
-        waitingOn: dueEnrollment.waitingOn,
-        nextActionAt: expect.anything(),
       }),
-      { nextActionAt: expect.any(Date) },
+      { nextActionAt: new Date('2024-01-02T07:00:00.000Z') },
     );
   });
 
-  it('defers a full page of fixed-window work so a later recipient-window email can run', async () => {
+  it.each([
+    {
+      label: 'condition',
+      settings: {
+        type: SEQUENCE_STEP_TYPES.CONDITION,
+        condition: SEQUENCE_CONDITION_TYPES.HAS_EMAIL_ADDRESS,
+      } as SequenceStepSettings,
+    },
+    {
+      label: 'LinkedIn',
+      settings: {
+        type: SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST,
+        noteTemplate: '',
+      } as SequenceStepSettings,
+    },
+  ])(
+    'queues $label work in the fixed sequence window',
+    async ({ label, settings: stepSettings }) => {
+      const dueEnrollment = buildEnrollment(`fixed-window-${label}-id`);
+      const dueStep = {
+        id: `fixed-window-${label}-step-id`,
+        sequenceId: sequence.id,
+        position: 0,
+        type: stepSettings.type,
+        settings: stepSettings,
+      } as SequenceStepWorkspaceEntity;
+      const {
+        service,
+        enrollmentRepository,
+        enqueueProcess,
+        personRepository,
+      } = setup({
+        startedToday: 0,
+        dueEnrollments: [dueEnrollment],
+        steps: [dueStep],
+        sequenceSettings: {
+          activeDays: [1],
+          windowStart: '09:00',
+          windowEnd: '17:00',
+          timezone: 'Europe/Helsinki',
+          sendWindowTimezoneMode: SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.RECIPIENT,
+        },
+        recipientTimeZones: {
+          [dueEnrollment.personId]: 'America/Los_Angeles',
+        },
+      });
+
+      await service.tick(workspaceId, now);
+
+      expect(enqueueProcess).toHaveBeenCalledWith({
+        workspaceId,
+        enrollmentId: dueEnrollment.id,
+      });
+      expect(enrollmentRepository.update).not.toHaveBeenCalledWith(
+        expect.objectContaining({ id: dueEnrollment.id }),
+        { nextActionAt: expect.any(Date) },
+      );
+      expect(personRepository.find).not.toHaveBeenCalled();
+    },
+  );
+
+  it('defers a full page of closed fixed-window work so later eligible email can run', async () => {
     const recipientNow = new Date('2024-01-01T16:00:00.000Z');
     const taskStep = {
       id: 'fixed-window-task-step',
@@ -1941,6 +2260,12 @@ describe('SequenceSchedulerService', () => {
         sendWindowTimezoneMode: SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.RECIPIENT,
       },
       recipientTimeZones: {
+        ...Object.fromEntries(
+          blockedEnrollments.map((enrollment) => [
+            enrollment.personId,
+            'Europe/Helsinki',
+          ]),
+        ),
         [eligibleEmailEnrollment.personId]: 'America/New_York',
       },
     });

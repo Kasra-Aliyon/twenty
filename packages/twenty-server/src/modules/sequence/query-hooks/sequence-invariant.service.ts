@@ -16,7 +16,8 @@ import {
   type SequenceSettings,
   type SequenceStatus,
 } from 'twenty-shared/types';
-import { validateSpintax } from 'twenty-shared/utils';
+import { isDefined, validateSpintax } from 'twenty-shared/utils';
+import isEqual from 'lodash.isequal';
 import { In } from 'typeorm';
 
 import {
@@ -112,6 +113,25 @@ const KNOWN_TASK_CONTINUE_MODES: ReadonlySet<string> = new Set([
 const isNonNegativeFiniteNumber = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0;
 
+const isScheduleOnlySettingsUpdate = ({
+  currentSettings,
+  nextSettings,
+}: {
+  currentSettings: SequenceSettings;
+  nextSettings: SequenceSettings;
+}): boolean =>
+  nextSettings.activeDays.length > 0 &&
+  isEqual(nextSettings, {
+    ...currentSettings,
+    activeDays: nextSettings.activeDays,
+    windowStart: nextSettings.windowStart,
+    windowEnd: nextSettings.windowEnd,
+    emailWindowStart: nextSettings.emailWindowStart,
+    emailWindowEnd: nextSettings.emailWindowEnd,
+    timezone: nextSettings.timezone,
+    sendWindowTimezoneMode: nextSettings.sendWindowTimezoneMode,
+  });
+
 const MILLISECONDS_PER_MINUTE = 60 * 1000;
 const MILLISECONDS_PER_HOUR = 60 * MILLISECONDS_PER_MINUTE;
 const MILLISECONDS_PER_DAY = 24 * MILLISECONDS_PER_HOUR;
@@ -194,6 +214,25 @@ export class SequenceInvariantService {
       sequences.map((sequence) => [sequence.id, sequence]),
     );
 
+    const sequenceIdsWithStartingSteps = [
+      ...new Set(
+        data
+          .filter(({ currentStepId }) => isDefined(currentStepId))
+          .map(({ sequenceId }) => sequenceId as string),
+      ),
+    ];
+    const sequenceStepsBySequenceId = new Map(
+      await Promise.all(
+        sequenceIdsWithStartingSteps.map(
+          async (sequenceId) =>
+            [
+              sequenceId,
+              await this.getSequenceSteps({ authContext, sequenceId }),
+            ] as const,
+        ),
+      ),
+    );
+
     return data.map((input) => {
       const sequence = sequenceById.get(input.sequenceId as string);
 
@@ -207,6 +246,56 @@ export class SequenceInvariantService {
         );
       }
 
+      const requestedStartingStepId = input.currentStepId;
+      let currentStepPosition = -1;
+
+      if (isDefined(requestedStartingStepId)) {
+        const sequenceSteps =
+          sequenceStepsBySequenceId.get(input.sequenceId as string) ?? [];
+        const startingStep = sequenceSteps.find(
+          ({ id }) => id === requestedStartingStepId,
+        );
+
+        if (!isDefined(startingStep)) {
+          this.throwBadRequest(
+            'The starting step was not found in this sequence',
+          );
+        }
+
+        if (isDefined(startingStep.settings.branch)) {
+          this.throwBadRequest(
+            'People can only start at a root sequence step, not inside a condition branch',
+          );
+        }
+
+        if (
+          sequenceSteps.some(
+            (step) =>
+              step.id !== startingStep.id &&
+              !isDefined(step.settings.branch) &&
+              step.position === startingStep.position,
+          )
+        ) {
+          this.throwBadRequest(
+            'The starting step shares its position with another root step; reorder the sequence before enrolling at that step',
+          );
+        }
+
+        const previousRootStep = sequenceSteps
+          .filter(
+            (step) =>
+              !isDefined(step.settings.branch) &&
+              step.position < startingStep.position,
+          )
+          .sort(
+            (firstStep, secondStep) => secondStep.position - firstStep.position,
+          )[0];
+
+        currentStepPosition = isDefined(previousRootStep)
+          ? (previousRootStep.position + startingStep.position) / 2
+          : Math.min(-1, startingStep.position - 1);
+      }
+
       return {
         id: input.id,
         sequenceId: input.sequenceId,
@@ -214,7 +303,7 @@ export class SequenceInvariantService {
         position: input.position,
         status: SEQUENCE_ENROLLMENT_STATUSES.PENDING,
         currentStepId: null,
-        currentStepPosition: -1,
+        currentStepPosition,
         waitingOn: null,
         nextActionAt: null,
         senderConnectedAccountId:
@@ -305,18 +394,45 @@ export class SequenceInvariantService {
 
   async assertStepUpdateAllowed({
     authContext,
+    nextSettings,
     stepId,
     nextSequenceId,
+    updatedFields,
   }: {
     authContext: WorkspaceAuthContext;
+    nextSettings?: SequenceStepWorkspaceEntity['settings'] | null;
     stepId: string;
     nextSequenceId?: string;
+    updatedFields?: string[];
   }): Promise<void> {
     const steps = await this.getSteps({ authContext, stepIds: [stepId] });
     const step = steps[0];
 
     if (!step) {
       this.throwBadRequest('The sequence step was not found');
+    }
+
+    const currentBranch = step.settings.branch;
+    const nextBranch = nextSettings?.branch;
+    const keepsBranch =
+      !isDefined(currentBranch) || !isDefined(nextBranch)
+        ? !isDefined(currentBranch) && !isDefined(nextBranch)
+        : currentBranch.conditionStepId === nextBranch.conditionStepId &&
+          currentBranch.outcome === nextBranch.outcome;
+    const isContentOnlyUpdate =
+      updatedFields?.length === 1 &&
+      updatedFields[0] === 'settings' &&
+      isDefined(nextSettings) &&
+      nextSettings.type === step.settings.type &&
+      keepsBranch;
+
+    if (isContentOnlyUpdate) {
+      await this.assertSequencesAllowStepContentUpdates({
+        authContext,
+        sequenceIds: [step.sequenceId],
+      });
+
+      return;
     }
 
     await this.assertSequencesEditable({
@@ -410,21 +526,25 @@ export class SequenceInvariantService {
       );
     }
 
-    const changesSettingsOrSender = fieldNames.some((fieldName) =>
-      ['senderConnectedAccountId', 'settings'].includes(fieldName),
-    );
-
-    if (
-      sequence.status === SEQUENCE_STATUSES.ACTIVE &&
-      changesSettingsOrSender
-    ) {
-      this.throwBadRequest('Pause the sequence before changing its settings');
-    }
-
     const currentSettings = parseSequenceSettings(sequence.settings);
     const nextSettings = parseSequenceSettings(
       data.settings ?? sequence.settings,
     );
+    const changesSettings = fieldNames.includes('settings');
+    const changesSender = fieldNames.includes('senderConnectedAccountId');
+    const changesOnlyScheduleSettings =
+      changesSettings &&
+      isScheduleOnlySettingsUpdate({ currentSettings, nextSettings });
+
+    if (
+      sequence.status === SEQUENCE_STATUSES.ACTIVE &&
+      (changesSender || (changesSettings && !changesOnlyScheduleSettings))
+    ) {
+      this.throwBadRequest(
+        'Pause the sequence before changing non-schedule settings',
+      );
+    }
+
     const nextSenderConnectedAccountId = fieldNames.includes(
       'senderConnectedAccountId',
     )
@@ -1077,6 +1197,32 @@ export class SequenceInvariantService {
         sequenceIds: uniqueSequenceIds,
       }))
     ) {
+      this.throwBadRequest('Pause the sequence before changing its steps');
+    }
+  }
+
+  private async assertSequencesAllowStepContentUpdates({
+    authContext,
+    sequenceIds,
+  }: {
+    authContext: WorkspaceAuthContext;
+    sequenceIds: string[];
+  }): Promise<void> {
+    const uniqueSequenceIds = [...new Set(sequenceIds)];
+    const sequences = await this.getSequences({
+      authContext,
+      sequenceIds: uniqueSequenceIds,
+    });
+
+    if (sequences.length !== uniqueSequenceIds.length) {
+      this.throwBadRequest('One or more sequences were not found');
+    }
+
+    if (sequences.some(({ deletedAt }) => deletedAt !== null)) {
+      this.throwBadRequest('Archived sequences are read-only');
+    }
+
+    if (sequences.some(({ status }) => status === SEQUENCE_STATUSES.ACTIVE)) {
       this.throwBadRequest('Pause the sequence before changing its steps');
     }
   }

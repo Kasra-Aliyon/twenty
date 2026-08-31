@@ -106,7 +106,7 @@ export const computeStandardCompanyViewFields = (
         viewFieldName: 'addressCountry',
         fieldName: 'address',
         position: 7,
-        isVisible: false,
+        isVisible: true,
         size: 130,
         subFieldName: 'addressCountry',
         aggregateOperation: AggregateOperations.COUNT_NOT_EMPTY,

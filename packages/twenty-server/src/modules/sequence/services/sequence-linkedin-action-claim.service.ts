@@ -29,6 +29,7 @@ import {
 import { SequenceEnrollmentWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence-enrollment.workspace-entity';
 import { SequenceWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence.workspace-entity';
 import { parseSequenceSettings } from 'src/modules/sequence/utils/parse-sequence-settings.util';
+import { isWithinSendingWindow } from 'src/modules/sequence/utils/sequence-window.util';
 
 @Injectable()
 export class SequenceLinkedinActionClaimService {
@@ -243,6 +244,7 @@ export class SequenceLinkedinActionClaimService {
                       );
 
                       if (
+                        !isWithinSendingWindow(now, sequenceSettings) ||
                         this.requiresFreshReservation({
                           scheduledAt: lockedAction.scheduledAt,
                           now,

@@ -28,7 +28,12 @@ type MockSequence = {
     stopOnReply: boolean;
     senderConnectedAccountIds: string[];
   };
-  steps: Array<{ settings: SequenceStepSettings }>;
+  steps: Array<{
+    id: string;
+    name: string | null;
+    position: number;
+    settings: SequenceStepSettings;
+  }>;
 };
 
 let mockSequences: MockSequence[] = [
@@ -266,6 +271,9 @@ describe('AddToSequenceAction', () => {
     ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'First sequence' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Start from the beginning' }),
+    );
 
     await waitFor(() => {
       expect(mockFetchAllTargetedPeople).toHaveBeenCalledTimes(1);
@@ -304,6 +312,9 @@ describe('AddToSequenceAction', () => {
     render(<AddToSequenceAction objectNameSingular="person" />);
 
     fireEvent.click(screen.getByRole('button', { name: 'First sequence' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Start from the beginning' }),
+    );
 
     await waitFor(() => {
       expect(mockBatchCreateManyRecords).toHaveBeenCalledWith({
@@ -318,6 +329,63 @@ describe('AddToSequenceAction', () => {
     });
 
     expect(mockFetchAllTargetedPeople).not.toHaveBeenCalled();
+  });
+
+  it('enrolls selected people at a chosen root step', async () => {
+    mockCurrentCommandMenuContext = {
+      selectedRecords: [{ id: 'person-id-1' }, { id: 'person-id-2' }],
+      isSelectAll: false,
+      numberOfSelectedRecords: 2,
+    };
+    mockSequences = [
+      {
+        ...mockSequences[0],
+        steps: [
+          {
+            id: 'day-1-step-id',
+            name: 'Day 1',
+            position: 0,
+            settings: {
+              type: 'CREATE_TASK',
+              taskType: 'TODO',
+              titleTemplate: 'Day 1',
+              notesTemplate: '',
+              priority: 'MEDIUM',
+              assigneeWorkspaceMemberId: null,
+              continueMode: 'ON_DONE',
+              deadlineDays: null,
+            },
+          },
+          {
+            id: 'day-2-step-id',
+            name: 'Day 2',
+            position: 1,
+            settings: {
+              type: 'CONDITION',
+              condition: 'HAS_LINKEDIN_URL',
+            },
+          },
+        ],
+      },
+    ];
+
+    render(<AddToSequenceAction objectNameSingular="person" />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'First sequence' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Day 2' }));
+
+    await waitFor(() => {
+      expect(mockBatchCreateManyRecords).toHaveBeenCalledWith({
+        recordsToCreate: [
+          {
+            sequenceId: 'sequence-id',
+            personId: 'person-id-2',
+            stopOnReply: true,
+            currentStepId: 'day-2-step-id',
+          },
+        ],
+      });
+    });
   });
 
   it('allows enrollment when the sequence uses a mailbox pool without a legacy sender', async () => {
@@ -338,6 +406,9 @@ describe('AddToSequenceAction', () => {
     render(<AddToSequenceAction objectNameSingular="person" />);
 
     fireEvent.click(screen.getByRole('button', { name: 'First sequence' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Start from the beginning' }),
+    );
 
     await waitFor(() => {
       expect(mockBatchCreateManyRecords).toHaveBeenCalledWith({
@@ -365,6 +436,9 @@ describe('AddToSequenceAction', () => {
         },
         steps: [
           {
+            id: 'delay-step-id',
+            name: 'Wait one day',
+            position: 0,
             settings: {
               type: 'DELAY',
               days: 1,
@@ -373,6 +447,9 @@ describe('AddToSequenceAction', () => {
             },
           },
           {
+            id: 'task-step-id',
+            name: 'Follow up',
+            position: 1,
             settings: {
               type: 'CREATE_TASK',
               taskType: 'TODO',
@@ -385,6 +462,9 @@ describe('AddToSequenceAction', () => {
             },
           },
           {
+            id: 'condition-step-id',
+            name: 'Has email?',
+            position: 2,
             settings: {
               type: 'CONDITION',
               condition: 'HAS_EMAIL_ADDRESS',
@@ -397,6 +477,9 @@ describe('AddToSequenceAction', () => {
     render(<AddToSequenceAction objectNameSingular="person" />);
 
     fireEvent.click(screen.getByRole('button', { name: 'First sequence' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Start from the beginning' }),
+    );
 
     await waitFor(() => {
       expect(mockBatchCreateManyRecords).toHaveBeenCalledTimes(1);
@@ -416,6 +499,9 @@ describe('AddToSequenceAction', () => {
         },
         steps: [
           {
+            id: 'condition-step-id',
+            name: 'Accepted invite?',
+            position: 0,
             settings: {
               type: 'CONDITION',
               condition: 'ACCEPTED_LINKEDIN_INVITE',

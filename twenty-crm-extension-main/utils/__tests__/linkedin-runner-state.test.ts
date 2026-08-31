@@ -12,6 +12,7 @@ import {
   getLinkedinRunnerActionOwnershipError,
   getLinkedinRunnerClaimError,
   getLinkedinRunnerEnableError,
+  getRunnerStateAfterEnable,
   getRunnerStateAfterPause,
   getRunnerStateAfterTabRemoval,
   invokeLinkedinProviderOperationAfterStart,
@@ -248,6 +249,35 @@ describe('LinkedIn runner tab ownership', () => {
       LINKEDIN_RUNNER_ALREADY_OWNED_ERROR,
     );
     expect(getLinkedinRunnerEnableError(buildState(), 42)).toBeNull();
+  });
+
+  it('starts each newly enabled runner with fresh outcome counters', () => {
+    expect(
+      getRunnerStateAfterEnable({
+        runnerState: buildState({
+          enabled: false,
+          completedCount: 16,
+          failedCount: 3,
+        }),
+        tabId: 77,
+      }),
+    ).toEqual(
+      expect.objectContaining({
+        enabled: true,
+        tabId: 77,
+        completedCount: 0,
+        failedCount: 0,
+      }),
+    );
+  });
+
+  it('does not reset counters when the owning runner is already enabled', () => {
+    expect(
+      getRunnerStateAfterEnable({
+        runnerState: buildState({ completedCount: 4, failedCount: 1 }),
+        tabId: 42,
+      }),
+    ).toEqual(expect.objectContaining({ completedCount: 4, failedCount: 1 }));
   });
 
   it('rejects an execution mark from the wrong tab or claim lease', () => {
@@ -945,8 +975,7 @@ describe('LinkedIn runner action reports', () => {
   it('surfaces a lease conflict and does not count an outcome the server rejected', () => {
     const resolution = resolveRunnerActionReport({
       runnerState: buildState({ completedCount: 3, failedCount: 2 }),
-      reportAccepted: false,
-      status: 'COMPLETED',
+      reportedAction: null,
       now: 300,
     });
 
@@ -977,8 +1006,7 @@ describe('LinkedIn runner action reports', () => {
       expect(
         resolveRunnerActionReport({
           runnerState,
-          reportAccepted: false,
-          status: 'FAILED',
+          reportedAction: null,
           now: 300,
         }).runnerState,
       ).toEqual(
@@ -995,12 +1023,15 @@ describe('LinkedIn runner action reports', () => {
     },
   );
 
-  it('counts only an outcome accepted under the active claim lease', () => {
+  it('counts a completed persisted outcome under the active claim lease', () => {
     expect(
       resolveRunnerActionReport({
         runnerState: buildState(),
-        reportAccepted: true,
-        status: 'COMPLETED',
+        reportedAction: {
+          ...action,
+          status: 'COMPLETED',
+          executedAt: '2026-08-17T10:00:01.000Z',
+        },
         now: 300,
       }),
     ).toEqual({
@@ -1012,5 +1043,74 @@ describe('LinkedIn runner action reports', () => {
         failedCount: 0,
       }),
     });
+  });
+
+  it('does not count a client failure that the server persisted as scheduled', () => {
+    expect(
+      resolveRunnerActionReport({
+        runnerState: buildState({ completedCount: 3, failedCount: 2 }),
+        reportedAction: {
+          ...action,
+          status: 'SCHEDULED',
+          claimedAt: null,
+          claimedBy: null,
+          executedAt: null,
+        },
+        now: 300,
+      }),
+    ).toEqual({
+      error: null,
+      runnerState: expect.objectContaining({
+        activeAction: null,
+        lastExecutedAt: null,
+        completedCount: 3,
+        failedCount: 2,
+      }),
+    });
+  });
+
+  it('counts one persisted preflight failure without creating an outbound gap', () => {
+    expect(
+      resolveRunnerActionReport({
+        runnerState: buildState({
+          activeActionStartedAt: null,
+          failedCount: 2,
+        }),
+        reportedAction: {
+          ...action,
+          status: 'FAILED',
+          executedAt: null,
+        },
+        now: 300,
+      }),
+    ).toEqual({
+      error: null,
+      runnerState: expect.objectContaining({
+        activeAction: null,
+        lastExecutedAt: null,
+        completedCount: 0,
+        failedCount: 3,
+      }),
+    });
+  });
+
+  it('counts an authoritative preflight skip without creating an outbound gap', () => {
+    expect(
+      resolveRunnerActionReport({
+        runnerState: buildState({ activeActionStartedAt: null }),
+        reportedAction: {
+          ...action,
+          status: 'SKIPPED',
+          executedAt: null,
+        },
+        now: 300,
+      }).runnerState,
+    ).toEqual(
+      expect.objectContaining({
+        lastExecutedAt: null,
+        completedCount: 1,
+        failedCount: 0,
+      }),
+    );
   });
 });

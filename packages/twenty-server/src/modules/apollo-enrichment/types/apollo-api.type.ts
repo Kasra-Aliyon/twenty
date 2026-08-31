@@ -53,6 +53,8 @@ export type ApolloPerson = {
   title?: string | null;
   headline?: string | null;
   linkedin_url?: string | null;
+  country?: string | null;
+  time_zone?: string | null;
   phone?: string | null;
   sanitized_phone?: string | null;
   emails?: ApolloEmail[] | null;

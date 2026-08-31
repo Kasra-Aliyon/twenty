@@ -2487,6 +2487,7 @@ export type Mutation = {
   checkCustomDomainValidRecords?: Maybe<DomainValidRecords>;
   checkPublicDomainValidRecords?: Maybe<DomainValidRecords>;
   checkoutSession: BillingSession;
+  claimSequenceLinkedinAction?: Maybe<SequenceLinkedinActionClaim>;
   createApiKey: ApiKey;
   createApplicationRegistration: CreateApplicationRegistration;
   createApplicationRegistrationVariable: ApplicationRegistrationVariable;
@@ -2597,11 +2598,13 @@ export type Mutation = {
   /** @deprecated Use installApplication instead */
   installMarketplaceApp: Scalars['Boolean']['output'];
   refreshEnterpriseValidityToken: Scalars['Boolean']['output'];
+  releaseSequenceLinkedinActionClaim?: Maybe<SequenceLinkedinActionMutationResult>;
   removeQueryFromEventStream: Scalars['Boolean']['output'];
   removeRoleFromAgent: Scalars['Boolean']['output'];
   renameChatThread: AgentChatThread;
   renewApplicationToken: ApplicationTokenPair;
   renewToken: AuthTokens;
+  reportSequenceLinkedinAction?: Maybe<SequenceLinkedinActionMutationResult>;
   resendEmailVerificationToken: ResendEmailVerificationToken;
   resendWorkspaceInvitation: SendInvitations;
   resetCommandMenuItem: CommandMenuItem;
@@ -2628,6 +2631,7 @@ export type Mutation = {
   skipBookOnboardingStep: OnboardingStepSuccess;
   skipSyncEmailOnboardingStep: OnboardingStepSuccess;
   startChannelSync: ChannelSyncSuccess;
+  startSequenceLinkedinAction?: Maybe<SequenceLinkedinActionMutationResult>;
   stopAgentChatStream: Scalars['Boolean']['output'];
   switchBillingPlan: BillingUpdate;
   switchSubscriptionInterval: BillingUpdate;
@@ -2753,6 +2757,12 @@ export type MutationCheckoutSessionArgs = {
   recurringInterval: SubscriptionInterval;
   requirePaymentMethod?: Scalars['Boolean']['input'];
   successUrlPath?: InputMaybe<Scalars['String']['input']>;
+};
+
+
+export type MutationClaimSequenceLinkedinActionArgs = {
+  actionId: Scalars['UUID']['input'];
+  claimedBy: Scalars['String']['input'];
 };
 
 
@@ -3285,6 +3295,13 @@ export type MutationInstallMarketplaceAppArgs = {
 };
 
 
+export type MutationReleaseSequenceLinkedinActionClaimArgs = {
+  actionId: Scalars['UUID']['input'];
+  claimedAt: Scalars['DateTime']['input'];
+  claimedBy: Scalars['String']['input'];
+};
+
+
 export type MutationRemoveQueryFromEventStreamArgs = {
   input: RemoveQueryFromEventStreamInput;
 };
@@ -3308,6 +3325,14 @@ export type MutationRenewApplicationTokenArgs = {
 
 export type MutationRenewTokenArgs = {
   appToken: Scalars['String']['input'];
+};
+
+
+export type MutationReportSequenceLinkedinActionArgs = {
+  actionId: Scalars['UUID']['input'];
+  claimedAt: Scalars['DateTime']['input'];
+  claimedBy: Scalars['String']['input'];
+  data: SequenceLinkedinActionReportInput;
 };
 
 
@@ -3453,6 +3478,13 @@ export type MutationSignUpInWorkspaceArgs = {
 
 export type MutationStartChannelSyncArgs = {
   connectedAccountId: Scalars['UUID']['input'];
+};
+
+
+export type MutationStartSequenceLinkedinActionArgs = {
+  actionId: Scalars['UUID']['input'];
+  claimedAt: Scalars['DateTime']['input'];
+  claimedBy: Scalars['String']['input'];
 };
 
 
@@ -4411,6 +4443,9 @@ export type Query = {
   pieChartData: PieChartData;
   previewMessageCampaignAudience: CampaignAudiencePreviewDto;
   resolveViewToQueryParams: Scalars['JSON']['output'];
+  sequenceAnalytics: SequenceAnalyticsDto;
+  sequenceMutationCapabilities: SequenceMutationCapabilitiesDto;
+  sequenceReadiness: SequenceReadinessDto;
   skill?: Maybe<Skill>;
   skills: Array<Skill>;
   unsubscribePagePreviewUrl: Scalars['String']['output'];
@@ -4793,6 +4828,16 @@ export type QueryResolveViewToQueryParamsArgs = {
 };
 
 
+export type QuerySequenceAnalyticsArgs = {
+  sequenceId: Scalars['UUID']['input'];
+};
+
+
+export type QuerySequenceReadinessArgs = {
+  sequenceId: Scalars['UUID']['input'];
+};
+
+
 export type QuerySkillArgs = {
   id: Scalars['UUID']['input'];
 };
@@ -5080,6 +5125,81 @@ export type Sentry = {
   dsn?: Maybe<Scalars['String']['output']>;
   environment?: Maybe<Scalars['String']['output']>;
   release?: Maybe<Scalars['String']['output']>;
+};
+
+export type SequenceAnalyticsDto = {
+  __typename?: 'SequenceAnalyticsDTO';
+  completedCount: Scalars['Int']['output'];
+  contactedCount: Scalars['Int']['output'];
+  emailVariants: Array<SequenceEmailVariantAnalyticsDto>;
+  enrolledCount: Scalars['Int']['output'];
+  failedCount: Scalars['Int']['output'];
+  repliedCount: Scalars['Int']['output'];
+  /** Percentage of enrolled contacts with an observed email or LinkedIn reply, from 0 to 100. */
+  replyRate: Scalars['Float']['output'];
+  sentEmailCount: Scalars['Int']['output'];
+};
+
+export type SequenceEmailVariantAnalyticsDto = {
+  __typename?: 'SequenceEmailVariantAnalyticsDTO';
+  repliedCount: Scalars['Int']['output'];
+  /** Reply rate as a percentage from 0 to 100. */
+  replyRate: Scalars['Float']['output'];
+  sentCount: Scalars['Int']['output'];
+  stepId: Scalars['UUID']['output'];
+  stepName: Scalars['String']['output'];
+  variantId: Scalars['String']['output'];
+  variantName: Scalars['String']['output'];
+};
+
+export type SequenceLinkedinActionClaim = {
+  __typename?: 'SequenceLinkedinActionClaim';
+  claimedAt: Scalars['DateTime']['output'];
+  claimedBy: Scalars['String']['output'];
+  executedAt?: Maybe<Scalars['DateTime']['output']>;
+  id: Scalars['UUID']['output'];
+  linkedinUrl: Scalars['String']['output'];
+  noteText: Scalars['String']['output'];
+  scheduledAt: Scalars['DateTime']['output'];
+  status: Scalars['String']['output'];
+  type: Scalars['String']['output'];
+};
+
+export type SequenceLinkedinActionMutationResult = {
+  __typename?: 'SequenceLinkedinActionMutationResult';
+  claimedAt?: Maybe<Scalars['DateTime']['output']>;
+  claimedBy?: Maybe<Scalars['String']['output']>;
+  connectionState: Scalars['String']['output'];
+  errorMessage?: Maybe<Scalars['String']['output']>;
+  executedAt?: Maybe<Scalars['DateTime']['output']>;
+  id: Scalars['UUID']['output'];
+  linkedinUrl: Scalars['String']['output'];
+  noteText: Scalars['String']['output'];
+  scheduledAt: Scalars['DateTime']['output'];
+  status: Scalars['String']['output'];
+  type: Scalars['String']['output'];
+};
+
+export type SequenceLinkedinActionReportInput = {
+  connectionState: Scalars['String']['input'];
+  errorMessage?: InputMaybe<Scalars['String']['input']>;
+  status: Scalars['String']['input'];
+};
+
+export type SequenceMutationCapabilitiesDto = {
+  __typename?: 'SequenceMutationCapabilitiesDTO';
+  atomicSettingsPatch: Scalars['Boolean']['output'];
+  atomicSettingsPatchVersion: Scalars['Int']['output'];
+  atomicStepAppend: Scalars['Boolean']['output'];
+  atomicStepAppendVersion: Scalars['Int']['output'];
+  enrollmentStartStep: Scalars['Boolean']['output'];
+  enrollmentStartStepVersion: Scalars['Int']['output'];
+};
+
+export type SequenceReadinessDto = {
+  __typename?: 'SequenceReadinessDTO';
+  errors: Array<Scalars['String']['output']>;
+  ready: Scalars['Boolean']['output'];
 };
 
 export type SetupOidcSsoInput = {

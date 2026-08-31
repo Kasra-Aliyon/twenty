@@ -84,7 +84,7 @@ describe('SettingsOutreachSequenceScheduleCard', () => {
       />,
     );
 
-    fireEvent.change(screen.getByLabelText('Apply sending hours in'), {
+    fireEvent.change(screen.getByLabelText('Apply email window in'), {
       target: { value: SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.RECIPIENT },
     });
 
@@ -93,7 +93,7 @@ describe('SettingsOutreachSequenceScheduleCard', () => {
     });
   });
 
-  it('disables the fixed timezone and explains the UTC fallback in recipient mode', () => {
+  it('keeps the sequence timezone editable and explains split scheduling in recipient mode', () => {
     render(
       <SettingsOutreachSequenceScheduleCard
         settings={buildSettings({
@@ -104,9 +104,37 @@ describe('SettingsOutreachSequenceScheduleCard', () => {
       />,
     );
 
-    expect(screen.getByLabelText('Timezone')).toBeDisabled();
+    expect(screen.getByLabelText('Sequence time zone')).toBeEnabled();
+    expect(
+      screen.getByLabelText('LinkedIn and task window starts'),
+    ).toHaveValue('09:00');
+    expect(screen.getByLabelText('Email window starts')).toHaveValue('09:00');
     expect(
       screen.getByText(/Missing or invalid values fall back to UTC/),
     ).toBeInTheDocument();
+  });
+
+  it('shows distinct task and email windows', () => {
+    render(
+      <SettingsOutreachSequenceScheduleCard
+        settings={buildSettings({
+          windowStart: '10:00',
+          windowEnd: '18:00',
+          emailWindowStart: '08:00',
+          emailWindowEnd: '16:00',
+        })}
+        disabled={false}
+        onChange={jest.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByLabelText('LinkedIn and task window starts'),
+    ).toHaveValue('10:00');
+    expect(screen.getByLabelText('LinkedIn and task window ends')).toHaveValue(
+      '18:00',
+    );
+    expect(screen.getByLabelText('Email window starts')).toHaveValue('08:00');
+    expect(screen.getByLabelText('Email window ends')).toHaveValue('16:00');
   });
 });

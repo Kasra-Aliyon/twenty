@@ -116,8 +116,14 @@ export type SequenceSendWindowTimezoneMode =
 
 export type SequenceSettings = {
   activeDays: number[];
+  // Legacy fields remain the window for LinkedIn, calls, enrollment admission,
+  // and other non-email work.
   windowStart: string;
   windowEnd: string;
+  // Optional so settings persisted before split windows continue to use the
+  // legacy window for email steps.
+  emailWindowStart?: string;
+  emailWindowEnd?: string;
   timezone: string;
   sendWindowTimezoneMode: SequenceSendWindowTimezoneMode;
   senderConnectedAccountIds?: string[];

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
+import { IANA_TIME_ZONES } from 'twenty-shared/constants';
 import {
   type AddressMetadata,
   type ActorMetadata,
@@ -8,6 +9,7 @@ import {
   type FullNameMetadata,
   type LinksMetadata,
 } from 'twenty-shared/types';
+import { isDefined } from 'twenty-shared/utils';
 
 import {
   type ApolloOrganization,
@@ -38,16 +40,32 @@ export type ApolloCompanyMappedFields = Partial<
 export type ApolloPersonMappedFields = Partial<
   Pick<
     PersonWorkspaceEntity,
-    'name' | 'emails' | 'phones' | 'linkedinLink' | 'jobTitle' | 'companyId'
+    | 'name'
+    | 'emails'
+    | 'phones'
+    | 'linkedinLink'
+    | 'jobTitle'
+    | 'companyId'
+    | 'address'
+    | 'timeZone'
   >
 >;
+
+const VALID_IANA_TIME_ZONES = new Set<string>(IANA_TIME_ZONES);
 
 @Injectable()
 export class ApolloEnrichmentMapperService {
   shouldEnrichPerson(
     person: Pick<
       PersonWorkspaceEntity,
-      'name' | 'emails' | 'phones' | 'linkedinLink' | 'companyId' | 'createdBy'
+      | 'name'
+      | 'emails'
+      | 'phones'
+      | 'linkedinLink'
+      | 'companyId'
+      | 'createdBy'
+      | 'address'
+      | 'timeZone'
     >,
   ): boolean {
     return this.hasEnrichmentGap(person) && this.hasEnoughMatchInput(person);
@@ -63,6 +81,8 @@ export class ApolloEnrichmentMapperService {
       | 'jobTitle'
       | 'companyId'
       | 'createdBy'
+      | 'address'
+      | 'timeZone'
     >,
   ): boolean {
     const hasGeneralEnrichmentGap =
@@ -73,7 +93,9 @@ export class ApolloEnrichmentMapperService {
       !hasText(person.phones?.primaryPhoneNumber) ||
       !hasText(person.linkedinLink?.primaryLinkUrl) ||
       !hasText(person.jobTitle) ||
-      !hasText(person.companyId);
+      !hasText(person.companyId) ||
+      !hasText(person.address?.addressCountry) ||
+      !hasText(person.timeZone);
 
     return hasGeneralEnrichmentGap && this.hasEnoughMatchInput(person);
   }
@@ -104,6 +126,8 @@ export class ApolloEnrichmentMapperService {
       | 'companyId'
       | 'createdBy'
       | 'deletedAt'
+      | 'address'
+      | 'timeZone'
     >;
     after: Pick<
       PersonWorkspaceEntity,
@@ -114,6 +138,8 @@ export class ApolloEnrichmentMapperService {
       | 'companyId'
       | 'createdBy'
       | 'deletedAt'
+      | 'address'
+      | 'timeZone'
     >;
     changedFields: string[];
   }): boolean {
@@ -275,6 +301,25 @@ export class ApolloEnrichmentMapperService {
 
     if (!hasText(person.companyId) && hasText(companyId)) {
       update.companyId = companyId;
+    }
+
+    const address = this.mergeApolloCountry(
+      person.address,
+      apolloPerson.country,
+    );
+
+    if (isDefined(address)) {
+      update.address = address;
+    }
+
+    const timeZone = cleanText(apolloPerson.time_zone);
+
+    if (
+      !hasText(person.timeZone) &&
+      hasText(timeZone) &&
+      VALID_IANA_TIME_ZONES.has(timeZone)
+    ) {
+      update.timeZone = timeZone;
     }
 
     return update;
@@ -470,14 +515,16 @@ export class ApolloEnrichmentMapperService {
   private hasEnrichmentGap(
     person: Pick<
       PersonWorkspaceEntity,
-      'emails' | 'phones' | 'companyId' | 'createdBy'
+      'emails' | 'phones' | 'companyId' | 'createdBy' | 'address' | 'timeZone'
     >,
   ): boolean {
     return (
       !hasText(person.emails?.primaryEmail) ||
       this.canRefreshPrimaryEmailFromApollo(person) ||
       !hasText(person.phones?.primaryPhoneNumber) ||
-      !hasText(person.companyId)
+      !hasText(person.companyId) ||
+      !hasText(person.address?.addressCountry) ||
+      !hasText(person.timeZone)
     );
   }
 
@@ -696,6 +743,28 @@ export class ApolloEnrichmentMapperService {
       addressCountry: addressCountry ?? '',
       addressLat,
       addressLng,
+    };
+  }
+
+  private mergeApolloCountry(
+    currentAddress: AddressMetadata | null | undefined,
+    apolloCountry: string | null | undefined,
+  ): AddressMetadata | undefined {
+    const country = cleanText(apolloCountry);
+
+    if (hasText(currentAddress?.addressCountry) || !hasText(country)) {
+      return undefined;
+    }
+
+    return {
+      addressStreet1: currentAddress?.addressStreet1 ?? '',
+      addressStreet2: currentAddress?.addressStreet2 ?? '',
+      addressCity: currentAddress?.addressCity ?? '',
+      addressState: currentAddress?.addressState ?? '',
+      addressZipCode: currentAddress?.addressZipCode ?? '',
+      addressCountry: country,
+      addressLat: currentAddress?.addressLat ?? 0,
+      addressLng: currentAddress?.addressLng ?? 0,
     };
   }
 

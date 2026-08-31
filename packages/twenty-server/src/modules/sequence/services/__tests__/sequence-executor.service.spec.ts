@@ -16,7 +16,7 @@ import {
 } from 'twenty-shared/types';
 import { isDefined } from 'twenty-shared/utils';
 
-import { type ApolloEnrichmentService } from 'src/modules/apollo-enrichment/services/apollo-enrichment.service';
+import type { ApolloEnrichmentService } from 'src/modules/apollo-enrichment/services/apollo-enrichment.service';
 import {
   ApolloEnrichmentProviderNotStartedError,
   ApolloEnrichmentProviderRejectedError,
@@ -89,6 +89,8 @@ describe('SequenceExecutorService', () => {
       activeDays: [0, 1, 2, 3, 4, 5, 6],
       windowStart: '00:00',
       windowEnd: '23:59',
+      emailWindowStart: '00:00',
+      emailWindowEnd: '23:59',
       staggerMinutes: 0,
     },
   } as SequenceWorkspaceEntity;
@@ -1091,6 +1093,8 @@ describe('SequenceExecutorService', () => {
           timezone: 'UTC',
           windowStart: '09:00',
           windowEnd: '10:00',
+          emailWindowStart: '09:00',
+          emailWindowEnd: '10:00',
         },
       },
     });
@@ -2330,6 +2334,8 @@ describe('SequenceExecutorService', () => {
           activeDays: [1],
           windowStart: '09:00',
           windowEnd: '17:00',
+          emailWindowStart: '09:00',
+          emailWindowEnd: '17:00',
           timezone: 'Europe/Helsinki',
           sendWindowTimezoneMode: SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.RECIPIENT,
         },
@@ -2453,6 +2459,90 @@ describe('SequenceExecutorService', () => {
           titleTemplate: 'Write a personal note to {{ fullName }}',
           notesTemplate: 'Use the research in the contact record.',
           continueMode: 'ON_DONE',
+        }),
+      }),
+    );
+  });
+
+  it('does not surface a manual email task before the recipient local window', async () => {
+    const now = new Date('2024-01-01T10:00:00.000Z');
+
+    jest.useFakeTimers({ now });
+
+    const manualEmailStep = {
+      ...step,
+      settings: {
+        ...step.settings,
+        executionMode: SEQUENCE_ACTION_EXECUTION_MODES.MANUAL,
+      },
+    } as SequenceStepWorkspaceEntity;
+    const { createTask, enrollmentRepository, service } = setup({
+      currentEnrollment: {
+        ...enrollment,
+        waitingOn: SEQUENCE_WAITING_ON.DELAY,
+      },
+      currentSequence: {
+        ...sequence,
+        settings: {
+          ...sequence.settings,
+          activeDays: [1],
+          windowStart: '09:00',
+          windowEnd: '17:00',
+          emailWindowStart: '09:00',
+          emailWindowEnd: '17:00',
+          timezone: 'Europe/Helsinki',
+          sendWindowTimezoneMode: SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.RECIPIENT,
+        },
+      },
+      person: buildPerson(false, 'America/Los_Angeles'),
+      steps: [manualEmailStep],
+    });
+
+    await service.process({ workspaceId, enrollmentId });
+
+    expect(createTask).not.toHaveBeenCalled();
+    expect(enrollmentRepository.update).toHaveBeenCalledWith(
+      expect.objectContaining({ id: enrollmentId }),
+      { nextActionAt: new Date('2024-01-01T17:00:00.000Z') },
+    );
+  });
+
+  it('surfaces a manual email task inside the recipient window while Helsinki is closed', async () => {
+    jest.useFakeTimers({ now: new Date('2024-01-01T18:00:00.000Z') });
+
+    const manualEmailStep = {
+      ...step,
+      settings: {
+        ...step.settings,
+        executionMode: SEQUENCE_ACTION_EXECUTION_MODES.MANUAL,
+      },
+    } as SequenceStepWorkspaceEntity;
+    const { createTask, service } = setup({
+      currentEnrollment: {
+        ...enrollment,
+        waitingOn: SEQUENCE_WAITING_ON.DELAY,
+      },
+      currentSequence: {
+        ...sequence,
+        settings: {
+          ...sequence.settings,
+          activeDays: [1],
+          windowStart: '09:00',
+          windowEnd: '17:00',
+          timezone: 'Europe/Helsinki',
+          sendWindowTimezoneMode: SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.RECIPIENT,
+        },
+      },
+      person: buildPerson(false, 'America/Los_Angeles'),
+      steps: [manualEmailStep],
+    });
+
+    await service.process({ workspaceId, enrollmentId });
+
+    expect(createTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        settings: expect.objectContaining({
+          taskType: SEQUENCE_TASK_TYPES.EMAIL,
         }),
       }),
     );
@@ -2664,6 +2754,85 @@ describe('SequenceExecutorService', () => {
     );
   });
 
+  it('accepts a valid LinkedIn profile URL with a percent-encoded symbol', async () => {
+    const conditionStep = {
+      id: 'condition-step-id',
+      sequenceId: sequence.id,
+      position: 0,
+      type: SEQUENCE_STEP_TYPES.CONDITION,
+      settings: {
+        type: SEQUENCE_STEP_TYPES.CONDITION,
+        condition: SEQUENCE_CONDITION_TYPES.HAS_LINKEDIN_URL,
+      },
+    } as SequenceStepWorkspaceEntity;
+    const yesStep = {
+      id: 'yes-step-id',
+      sequenceId: sequence.id,
+      position: 1,
+      type: SEQUENCE_STEP_TYPES.CREATE_TASK,
+      settings: {
+        type: SEQUENCE_STEP_TYPES.CREATE_TASK,
+        branch: {
+          conditionStepId: conditionStep.id,
+          outcome: SEQUENCE_CONDITION_BRANCHES.YES,
+        },
+        taskType: SEQUENCE_TASK_TYPES.CUSTOM,
+        titleTemplate: 'LinkedIn profile available',
+        notesTemplate: '',
+        priority: TASK_PRIORITIES.MEDIUM,
+        assigneeWorkspaceMemberId: null,
+        continueMode: 'ON_DONE',
+        deadlineDays: null,
+      },
+    } as SequenceStepWorkspaceEntity;
+    const noStep = {
+      ...yesStep,
+      id: 'no-step-id',
+      position: 2,
+      settings: {
+        ...yesStep.settings,
+        branch: {
+          conditionStepId: conditionStep.id,
+          outcome: SEQUENCE_CONDITION_BRANCHES.NO,
+        },
+        titleTemplate: 'LinkedIn profile missing',
+      },
+    } as SequenceStepWorkspaceEntity;
+    const person = {
+      ...buildPerson(),
+      linkedinLink: {
+        primaryLinkUrl:
+          'https://linkedin.com/in/rebecca-dawson-lamond-phd-cmpp%E2%84%A2-224259162',
+        primaryLinkLabel: 'LinkedIn',
+        secondaryLinks: null,
+      },
+    } as PersonWorkspaceEntity;
+    const { service, createTask } = setup({
+      currentEnrollment: {
+        ...enrollment,
+        currentStepId: conditionStep.id,
+        currentStepPosition: conditionStep.position,
+        waitingOn: SEQUENCE_WAITING_ON.DELAY,
+      },
+      person,
+      steps: [conditionStep, yesStep, noStep],
+    });
+
+    await service.process({ workspaceId, enrollmentId });
+
+    expect(createTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        step: yesStep,
+        settings: expect.objectContaining({
+          titleTemplate: 'LinkedIn profile available',
+        }),
+      }),
+    );
+    expect(createTask).not.toHaveBeenCalledWith(
+      expect.objectContaining({ step: noStep }),
+    );
+  });
+
   it('sends an automated email that a condition branch selects', async () => {
     const conditionStep = {
       id: 'condition-step-id',
@@ -2820,6 +2989,54 @@ describe('SequenceExecutorService', () => {
 
     expect(send).not.toHaveBeenCalled();
     expect(enrollmentRepository.update).not.toHaveBeenCalled();
+  });
+
+  it('starts an elapsed-time delay even when the fixed execution window is closed', async () => {
+    const now = new Date('2026-07-20T03:00:00.000Z');
+
+    jest.useFakeTimers({ now });
+
+    const delayStep = {
+      id: 'elapsed-delay-step-id',
+      sequenceId: sequence.id,
+      position: 0,
+      type: SEQUENCE_STEP_TYPES.DELAY,
+      settings: {
+        type: SEQUENCE_STEP_TYPES.DELAY,
+        days: 0,
+        hours: 1,
+        minutes: 0,
+      },
+    } as SequenceStepWorkspaceEntity;
+    const { enrollmentRepository, service } = setup({
+      currentEnrollment: {
+        ...enrollment,
+        waitingOn: SEQUENCE_WAITING_ON.DELAY,
+      },
+      currentSequence: {
+        ...sequence,
+        settings: {
+          ...sequence.settings,
+          activeDays: [1],
+          windowStart: '09:00',
+          windowEnd: '17:00',
+          timezone: 'Europe/Helsinki',
+          sendWindowTimezoneMode: SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.RECIPIENT,
+        },
+      },
+      person: buildPerson(false, 'America/Los_Angeles'),
+      steps: [delayStep],
+    });
+
+    await service.process({ workspaceId, enrollmentId });
+
+    expect(enrollmentRepository.update).toHaveBeenCalledWith(
+      expect.objectContaining({ id: enrollmentId }),
+      expect.objectContaining({
+        currentStepId: delayStep.id,
+        nextActionAt: new Date('2026-07-20T04:00:00.000Z'),
+      }),
+    );
   });
 
   it('continues past a task step whose deadline elapsed', async () => {
@@ -4429,6 +4646,104 @@ describe('SequenceExecutorService', () => {
     expect(linkedinActionRepository.insert).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'SEND_CONNECTION_REQUEST' }),
       expect.anything(),
+    );
+  });
+
+  it('uses the fixed Helsinki window for LinkedIn despite the recipient timezone', async () => {
+    jest.useFakeTimers({ now: new Date('2026-07-20T07:00:00.000Z') });
+    const connectionStep = {
+      id: 'recipient-window-connection-step-id',
+      sequenceId: sequence.id,
+      position: 0,
+      settings: {
+        type: SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST,
+        noteTemplate: '',
+      },
+    } as SequenceStepWorkspaceEntity;
+    const person = {
+      ...buildPerson(false, 'America/Los_Angeles'),
+      linkedinLink: {
+        primaryLinkUrl: 'https://www.linkedin.com/in/ada-lovelace/',
+        primaryLinkLabel: 'LinkedIn',
+        secondaryLinks: null,
+      },
+    } as PersonWorkspaceEntity;
+    const { reserveSlot, service } = setup({
+      currentEnrollment: {
+        ...enrollment,
+        waitingOn: SEQUENCE_WAITING_ON.DELAY,
+      },
+      currentSequence: {
+        ...sequence,
+        settings: {
+          ...sequence.settings,
+          activeDays: [1],
+          windowStart: '09:00',
+          windowEnd: '17:00',
+          timezone: 'Europe/Helsinki',
+          sendWindowTimezoneMode: SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.RECIPIENT,
+        },
+      },
+      person,
+      steps: [connectionStep],
+    });
+
+    await service.process({ workspaceId, enrollmentId });
+
+    expect(reserveSlot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        settings: expect.objectContaining({
+          timezone: 'Europe/Helsinki',
+        }),
+      }),
+    );
+  });
+
+  it('defers LinkedIn work when Helsinki is closed even if the recipient window is open', async () => {
+    jest.useFakeTimers({ now: new Date('2026-07-20T16:00:00.000Z') });
+    const connectionStep = {
+      id: 'recipient-window-deferred-connection-step-id',
+      sequenceId: sequence.id,
+      position: 0,
+      settings: {
+        type: SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST,
+        noteTemplate: '',
+      },
+    } as SequenceStepWorkspaceEntity;
+    const person = {
+      ...buildPerson(false, 'America/Los_Angeles'),
+      linkedinLink: {
+        primaryLinkUrl: 'https://www.linkedin.com/in/ada-lovelace/',
+        primaryLinkLabel: 'LinkedIn',
+        secondaryLinks: null,
+      },
+    } as PersonWorkspaceEntity;
+    const { enrollmentRepository, reserveSlot, service } = setup({
+      currentEnrollment: {
+        ...enrollment,
+        waitingOn: SEQUENCE_WAITING_ON.DELAY,
+      },
+      currentSequence: {
+        ...sequence,
+        settings: {
+          ...sequence.settings,
+          activeDays: [1, 2],
+          windowStart: '09:00',
+          windowEnd: '17:00',
+          timezone: 'Europe/Helsinki',
+          sendWindowTimezoneMode: SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.RECIPIENT,
+        },
+      },
+      person,
+      steps: [connectionStep],
+    });
+
+    await service.process({ workspaceId, enrollmentId });
+
+    expect(reserveSlot).not.toHaveBeenCalled();
+    expect(enrollmentRepository.update).toHaveBeenCalledWith(
+      expect.objectContaining({ id: enrollmentId }),
+      { nextActionAt: new Date('2026-07-21T06:00:00.000Z') },
     );
   });
 

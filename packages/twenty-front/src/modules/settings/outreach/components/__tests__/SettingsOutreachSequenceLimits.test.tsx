@@ -13,6 +13,10 @@ const mockEnqueueErrorSnackBar = jest.fn();
 let mockSendWindowTimezoneMode: SequenceSettings['sendWindowTimezoneMode'] =
   SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.RECIPIENT;
 let mockActiveDays = [1, 2, 3, 4, 5];
+let mockSequenceStatus: SequenceRecordStatus = SEQUENCE_STATUSES.DRAFT;
+
+type SequenceRecordStatus =
+  (typeof SEQUENCE_STATUSES)[keyof typeof SEQUENCE_STATUSES];
 
 const mockBuildSettings = (): SequenceSettings => ({
   activeDays: mockActiveDays,
@@ -37,7 +41,7 @@ jest.mock('@/object-record/hooks/useFindManyRecords', () => ({
       {
         id: 'sequence-id',
         name: 'Sequence',
-        status: SEQUENCE_STATUSES.DRAFT,
+        status: mockSequenceStatus,
         settings: mockBuildSettings(),
       },
     ],
@@ -66,11 +70,17 @@ jest.mock('@/ui/input/components/Select', () => ({
 }));
 
 jest.mock('../SettingsOutreachSequenceScheduleCard', () => ({
-  SettingsOutreachSequenceScheduleCard: () => null,
+  SettingsOutreachSequenceScheduleCard: ({
+    disabled,
+  }: {
+    disabled: boolean;
+  }) => <button disabled={disabled}>Schedule control</button>,
 }));
 
 jest.mock('../SettingsOutreachSequenceLimitCard', () => ({
-  SettingsOutreachSequenceLimitCard: () => null,
+  SettingsOutreachSequenceLimitCard: ({ disabled }: { disabled: boolean }) => (
+    <button disabled={disabled}>Limit control</button>
+  ),
 }));
 
 jest.mock('twenty-ui/input', () => ({
@@ -103,6 +113,7 @@ describe('SettingsOutreachSequenceLimits', () => {
     mockUpdateOneRecord.mockResolvedValue({});
     mockSendWindowTimezoneMode = SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.RECIPIENT;
     mockActiveDays = [1, 2, 3, 4, 5];
+    mockSequenceStatus = SEQUENCE_STATUSES.DRAFT;
   });
 
   it('allows recipient-local mode when the unused fixed timezone is invalid', async () => {
@@ -157,5 +168,26 @@ describe('SettingsOutreachSequenceLimits', () => {
     expect(mockEnqueueErrorSnackBar).toHaveBeenCalledWith({
       message: 'Choose at least one active day.',
     });
+  });
+
+  it('allows schedule changes but keeps limits locked while active', () => {
+    mockSequenceStatus = SEQUENCE_STATUSES.ACTIVE;
+
+    render(<SettingsOutreachSequenceLimits />);
+
+    expect(
+      screen.getByRole('button', { name: 'Schedule control' }),
+    ).toBeEnabled();
+    expect(
+      screen.getByRole('button', { name: 'Limit control' }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: 'Save schedule and limits' }),
+    ).toBeEnabled();
+    expect(
+      screen.getByText(
+        'Schedule windows can be changed while this sequence is active. Pause it to change limits or other settings.',
+      ),
+    ).toBeInTheDocument();
   });
 });

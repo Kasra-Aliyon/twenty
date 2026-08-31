@@ -2,6 +2,7 @@ import {
   LINKEDIN_ACTION_STATUSES,
   LINKEDIN_ACTION_TYPES,
   SEQUENCE_ENROLLMENT_STATUSES,
+  SEQUENCE_SEND_WINDOW_TIMEZONE_MODES,
   SEQUENCE_STATUSES,
   SEQUENCE_WAITING_ON,
 } from 'twenty-shared/types';
@@ -39,6 +40,7 @@ describe('SequenceLinkedinActionClaimService', () => {
     claimedAt: null,
     claimedBy: null,
     ownerWorkspaceMemberId: workspaceMemberId,
+    personId: 'person-id',
     sequenceEnrollmentId: 'enrollment-id',
     sequenceStepId: 'step-id',
     linkedinUrl: 'https://www.linkedin.com/in/example/',
@@ -499,6 +501,100 @@ describe('SequenceLinkedinActionClaimService', () => {
       reserveLinkedinSlot.mock.invocationCallOrder[0],
     );
     expect(reserveClaimSlotIfTooEarly).not.toHaveBeenCalled();
+  });
+
+  it('re-slots an overdue linked action using the fixed sequence timezone', async () => {
+    const staleAction = {
+      ...action,
+      scheduledAt: new Date('2026-08-17T09:00:00.000Z'),
+    } as LinkedinActionWorkspaceEntity;
+    const freshSlot = new Date('2026-08-17T17:05:00.000Z');
+    const { actionRepository, reserveLinkedinSlot, service } = setup({
+      sequenceSettings: {
+        ...DEFAULT_SEQUENCE_SETTINGS,
+        sendWindowTimezoneMode: SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.RECIPIENT,
+        timezone: 'Europe/Helsinki',
+      },
+    });
+
+    actionRepository.findOne
+      .mockReset()
+      .mockResolvedValueOnce({
+        id: staleAction.id,
+        ownerWorkspaceMemberId: workspaceMemberId,
+        sequenceEnrollmentId: staleAction.sequenceEnrollmentId,
+      })
+      .mockResolvedValueOnce(staleAction);
+    reserveLinkedinSlot.mockResolvedValue(freshSlot);
+
+    await expect(
+      service.claim({
+        workspaceId,
+        workspaceMemberId,
+        actionId: staleAction.id,
+        claimedBy: 'extension-tab-42',
+        now: new Date('2026-08-17T17:00:00.000Z'),
+      }),
+    ).resolves.toBeNull();
+
+    expect(reserveLinkedinSlot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        settings: expect.objectContaining({
+          timezone: 'Europe/Helsinki',
+        }),
+      }),
+    );
+  });
+
+  it('re-slots a due action instead of claiming outside the fixed sequence window', async () => {
+    const dueAction = {
+      ...action,
+      scheduledAt: new Date('2026-08-17T04:59:30.000Z'),
+    } as LinkedinActionWorkspaceEntity;
+    const fixedWindowSlot = new Date('2026-08-17T06:00:00.000Z');
+    const { actionRepository, reserveLinkedinSlot, service } = setup({
+      sequenceSettings: {
+        ...DEFAULT_SEQUENCE_SETTINGS,
+        activeDays: [1],
+        windowStart: '09:00',
+        windowEnd: '17:00',
+        sendWindowTimezoneMode: SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.RECIPIENT,
+        timezone: 'Europe/Helsinki',
+      },
+    });
+
+    actionRepository.findOne
+      .mockReset()
+      .mockResolvedValueOnce({
+        id: dueAction.id,
+        ownerWorkspaceMemberId: workspaceMemberId,
+        sequenceEnrollmentId: dueAction.sequenceEnrollmentId,
+      })
+      .mockResolvedValueOnce(dueAction);
+    reserveLinkedinSlot.mockResolvedValue(fixedWindowSlot);
+
+    await expect(
+      service.claim({
+        workspaceId,
+        workspaceMemberId,
+        actionId: dueAction.id,
+        claimedBy: 'extension-tab-42',
+        now: new Date('2026-08-17T05:00:00.000Z'),
+      }),
+    ).resolves.toBeNull();
+
+    expect(reserveLinkedinSlot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        settings: expect.objectContaining({
+          timezone: 'Europe/Helsinki',
+        }),
+      }),
+    );
+    expect(actionRepository.update).toHaveBeenCalledWith(
+      expect.objectContaining({ id: dueAction.id }),
+      { scheduledAt: fixedWindowSlot },
+      transactionManager,
+    );
   });
 
   it('claims a freshly re-slotted action within the polling grace', async () => {

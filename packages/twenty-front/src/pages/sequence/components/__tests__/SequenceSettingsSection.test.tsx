@@ -9,6 +9,7 @@ import { SequenceSettingsSection } from '~/pages/sequence/components/SequenceSet
 import { type SequenceRecord } from '~/pages/sequence/types/SequenceRecords';
 
 const mockUpdateOneRecord = jest.fn();
+const mockEnqueueErrorSnackBar = jest.fn();
 
 jest.mock('@/object-record/hooks/useUpdateOneRecord', () => ({
   useUpdateOneRecord: () => ({ updateOneRecord: mockUpdateOneRecord }),
@@ -46,7 +47,7 @@ jest.mock('@/sequence/components/SequenceMailboxMultiSelect', () => ({
 jest.mock('@/ui/feedback/snack-bar-manager/hooks/useSnackBar', () => ({
   useSnackBar: () => ({
     enqueueSuccessSnackBar: jest.fn(),
-    enqueueErrorSnackBar: jest.fn(),
+    enqueueErrorSnackBar: mockEnqueueErrorSnackBar,
   }),
 }));
 
@@ -126,9 +127,22 @@ describe('SequenceSettingsSection', () => {
   });
 
   it('defaults legacy settings and persists recipient-local sending', async () => {
-    render(<SequenceSettingsSection sequence={sequence} canUpdate />);
+    render(
+      <SequenceSettingsSection
+        sequence={
+          {
+            ...sequence,
+            settings: {
+              ...sequence.settings,
+              dailyStartLimitEnabled: true,
+            },
+          } as SequenceRecord
+        }
+        canUpdate
+      />,
+    );
 
-    const timezoneMode = screen.getByLabelText('Apply sending hours in');
+    const timezoneMode = screen.getByLabelText('Apply email window in');
 
     expect(timezoneMode).toHaveValue(
       SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.SEQUENCE,
@@ -138,9 +152,15 @@ describe('SequenceSettingsSection', () => {
       target: { value: SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.RECIPIENT },
     });
 
-    expect(screen.getByDisplayValue('Europe/Helsinki')).toBeDisabled();
+    expect(screen.getByDisplayValue('Europe/Helsinki')).toBeEnabled();
     expect(
-      screen.getByText(/Missing or invalid values fall back to UTC/),
+      screen.getByText(/missing or invalid values fall back to UTC/i),
+    ).toBeInTheDocument();
+    expect(screen.getAllByDisplayValue('09:00')).toHaveLength(2);
+    expect(
+      screen.getByText(
+        'Pending enrollments are admitted up to this cap per UTC day.',
+      ),
     ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Save settings' }));
@@ -154,11 +174,41 @@ describe('SequenceSettingsSection', () => {
             settings: expect.objectContaining({
               sendWindowTimezoneMode:
                 SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.RECIPIENT,
+              emailWindowStart: '09:00',
+              emailWindowEnd: '17:00',
             }),
           }),
         }),
       );
     });
+  });
+
+  it('validates the sequence timezone in recipient email mode', async () => {
+    render(
+      <SequenceSettingsSection
+        sequence={
+          {
+            ...sequence,
+            settings: {
+              ...sequence.settings,
+              timezone: 'Not/A-Timezone',
+              sendWindowTimezoneMode:
+                SEQUENCE_SEND_WINDOW_TIMEZONE_MODES.RECIPIENT,
+            },
+          } as SequenceRecord
+        }
+        canUpdate
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save settings' }));
+
+    await waitFor(() => {
+      expect(mockEnqueueErrorSnackBar).toHaveBeenCalledWith({
+        message: 'Enter a valid IANA timezone such as Europe/Helsinki.',
+      });
+    });
+    expect(mockUpdateOneRecord).not.toHaveBeenCalled();
   });
 
   it('keeps accounts without inbox sync available for LinkedIn-only sequences', () => {

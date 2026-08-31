@@ -29,6 +29,8 @@ describe('ApolloEnrichmentMapperService', () => {
       linkedinLink: null,
       jobTitle: null,
       companyId: null,
+      address: null,
+      timeZone: null,
       ...overrides,
     }) as PersonWorkspaceEntity;
 
@@ -112,6 +114,50 @@ describe('ApolloEnrichmentMapperService', () => {
       companyId: 'company-id',
     });
     expect(update).not.toHaveProperty('city');
+  });
+
+  it('maps Apollo country and IANA time zone into empty Person fields', () => {
+    const update = mapper.mapApolloPersonToTwentyUpdate({
+      person: buildPerson({
+        address: {
+          addressStreet1: '',
+          addressStreet2: '',
+          addressCity: 'Existing city',
+          addressState: '',
+          addressZipCode: '',
+          addressCountry: '',
+          addressLat: 0,
+          addressLng: 0,
+        },
+      }),
+      apolloPerson: {
+        country: 'Finland',
+        time_zone: 'Europe/Helsinki',
+      },
+    });
+
+    expect(update).toMatchObject({
+      address: {
+        addressCity: 'Existing city',
+        addressCountry: 'Finland',
+        addressLat: 0,
+        addressLng: 0,
+      },
+      timeZone: 'Europe/Helsinki',
+    });
+  });
+
+  it('does not persist an invalid Apollo time zone', () => {
+    const update = mapper.mapApolloPersonToTwentyUpdate({
+      person: buildPerson(),
+      apolloPerson: {
+        country: 'Finland',
+        time_zone: 'Helsinki',
+      },
+    });
+
+    expect(update).not.toHaveProperty('timeZone');
+    expect(update.address?.addressCountry).toBe('Finland');
   });
 
   it('does not overwrite populated Twenty fields', () => {

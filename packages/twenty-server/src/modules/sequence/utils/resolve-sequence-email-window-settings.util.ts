@@ -26,16 +26,27 @@ export const resolveSequenceEmailWindowSettings = ({
   settings: SequenceSettings;
   recipientTimeZone: string | null | undefined;
 }): SequenceSettings => {
-  if (!isRecipientSequenceEmailWindow(settings)) {
+  const windowStart = settings.emailWindowStart ?? settings.windowStart;
+  const windowEnd = settings.emailWindowEnd ?? settings.windowEnd;
+  const isRecipientWindow = isRecipientSequenceEmailWindow(settings);
+
+  if (
+    !isRecipientWindow &&
+    windowStart === settings.windowStart &&
+    windowEnd === settings.windowEnd
+  ) {
     return settings;
   }
 
   return {
     ...settings,
-    timezone:
-      typeof recipientTimeZone === 'string' &&
-      isValidTimeZone(recipientTimeZone)
+    windowStart,
+    windowEnd,
+    timezone: isRecipientWindow
+      ? typeof recipientTimeZone === 'string' &&
+        isValidTimeZone(recipientTimeZone)
         ? recipientTimeZone
-        : 'UTC',
+        : 'UTC'
+      : settings.timezone,
   };
 };

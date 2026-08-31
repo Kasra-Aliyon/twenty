@@ -30,15 +30,14 @@ import { SequenceEnrollmentWorkspaceEntity } from 'src/modules/sequence/standard
 import { SequenceWorkspaceEntity } from 'src/modules/sequence/standard-objects/sequence.workspace-entity';
 import {
   DIRECT_LINKEDIN_ACTION_THROTTLE_SETTINGS,
+  SEQUENCE_ERROR_MESSAGE_MAX_LENGTH,
   SEQUENCE_EXECUTION_ERROR,
   SEQUENCE_LINKEDIN_ACTION_ENROLLMENT_MOVED_ERROR,
   SEQUENCE_LINKEDIN_ACTION_PAUSED_ERROR,
-  SEQUENCE_LINKEDIN_ACTION_UNSTARTED_RETRY_BASE_MILLISECONDS,
-  SEQUENCE_LINKEDIN_ACTION_UNSTARTED_RETRY_LIMIT,
 } from 'src/modules/sequence/sequence.constants';
 import { parseSequenceSettings } from 'src/modules/sequence/utils/parse-sequence-settings.util';
 import { isWithinSendingWindow } from 'src/modules/sequence/utils/sequence-window.util';
-import { WorkspaceMemberWorkspaceEntity } from 'src/modules/workspace-member/standard-objects/workspace-member.workspace-entity';
+import { type WorkspaceMemberWorkspaceEntity } from 'src/modules/workspace-member/standard-objects/workspace-member.workspace-entity';
 
 const REPORTABLE_LINKEDIN_ACTION_STATUSES = new Set<LinkedInActionStatus>([
   LINKEDIN_ACTION_STATUSES.COMPLETED,
@@ -128,10 +127,11 @@ export class SequenceLinkedinActionMutationService {
         // pacing and quota reservations. Capture server time only after that
         // lock is held so lock/reply delays cannot cross a UTC day or shorten
         // the next real provider gap.
-        const workspaceMemberRepository = transactionManager.getRepository(
-          WorkspaceMemberWorkspaceEntity,
-          { shouldBypassPermissionChecks: true },
-        );
+        const workspaceMemberRepository =
+          transactionManager.getRepository<WorkspaceMemberWorkspaceEntity>(
+            'workspaceMember',
+            { shouldBypassPermissionChecks: true },
+          );
         const owner = await workspaceMemberRepository.findOne({
           where: { id: workspaceMemberId },
           select: ['id'],
@@ -384,10 +384,10 @@ export class SequenceLinkedinActionMutationService {
       }) => {
         const providerWasStarted = isDefined(action.executedAt);
 
-        // Only start() can establish that a provider operation began. Any
-        // non-skip terminal report before that boundary is safely retried (or
-        // cancelled/failed under the locked lifecycle state) rather than
-        // trusting a browser-supplied timestamp or outcome.
+        // Only start() can establish that a provider operation began. An
+        // explicit pre-start report reached browser preflight and carries a
+        // deterministic diagnostic, so it must fail once. Silent expired
+        // claims remain independently retryable by the scheduler.
         if (
           !providerWasStarted &&
           data.status !== LINKEDIN_ACTION_STATUSES.SKIPPED
@@ -397,6 +397,7 @@ export class SequenceLinkedinActionMutationService {
             actionRepository,
             claimedAt,
             claimedBy,
+            errorMessage: data.errorMessage,
             enrollment,
             enrollmentRepository,
             now,
@@ -404,7 +405,6 @@ export class SequenceLinkedinActionMutationService {
             sequenceEnrollmentId,
             sequenceStepId,
             transactionManager,
-            workspaceId,
             workspaceMemberId,
           });
         }
@@ -590,6 +590,7 @@ export class SequenceLinkedinActionMutationService {
     actionRepository,
     claimedAt,
     claimedBy,
+    errorMessage: reportedErrorMessage,
     enrollment,
     enrollmentRepository,
     now,
@@ -597,13 +598,12 @@ export class SequenceLinkedinActionMutationService {
     sequenceEnrollmentId,
     sequenceStepId,
     transactionManager,
-    workspaceId,
     workspaceMemberId,
   }: LockedClaimContext & {
     claimedAt: Date;
     claimedBy: string;
+    errorMessage?: string | null;
     now: Date;
-    workspaceId: string;
     workspaceMemberId: string;
   }): Promise<SequenceLinkedinActionMutationResultDTO | null> {
     const isUnlinkedAction = !isDefined(sequenceEnrollmentId);
@@ -614,13 +614,13 @@ export class SequenceLinkedinActionMutationService {
       enrollment.status === SEQUENCE_ENROLLMENT_STATUSES.ACTIVE &&
       enrollment.waitingOn === SEQUENCE_WAITING_ON.LINKEDIN_ACTION &&
       enrollment.currentStepId === sequenceStepId;
-    const linkedActionCanRetry =
+    const linkedActionCanFail =
       !isUnlinkedAction &&
       isDefined(sequence) &&
       !isDefined(sequence.deletedAt) &&
       sequence.status === SEQUENCE_STATUSES.ACTIVE &&
       enrollmentStillWaitsForAction;
-    const canRetry = isUnlinkedAction || linkedActionCanRetry;
+    const canFail = isUnlinkedAction || linkedActionCanFail;
     const claimWhere = {
       id: action.id,
       ownerWorkspaceMemberId: workspaceMemberId,
@@ -633,7 +633,7 @@ export class SequenceLinkedinActionMutationService {
       claimedBy,
     };
 
-    if (!canRetry) {
+    if (!canFail) {
       const cancellationErrorMessage =
         enrollmentStillWaitsForAction && isDefined(sequence)
           ? SEQUENCE_LINKEDIN_ACTION_PAUSED_ERROR
@@ -693,85 +693,21 @@ export class SequenceLinkedinActionMutationService {
       });
     }
 
-    if (action.attemptCount >= SEQUENCE_LINKEDIN_ACTION_UNSTARTED_RETRY_LIMIT) {
-      const updateResult = await actionRepository.update(
-        claimWhere,
-        {
-          status: LINKEDIN_ACTION_STATUSES.FAILED,
-          connectionState: LINKEDIN_CONNECTION_STATES.UNKNOWN,
-          errorMessage: SEQUENCE_EXECUTION_ERROR.LINKEDIN_ACTION_UNSTARTED,
-          executedAt: null,
-        },
-        transactionManager,
-      );
-
-      if (updateResult.affected !== 1) {
-        return null;
-      }
-
-      if (!isUnlinkedAction && isDefined(enrollment)) {
-        const enrollmentUpdateResult = await enrollmentRepository.update(
-          {
-            id: enrollment.id,
-            status: SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
-            waitingOn: SEQUENCE_WAITING_ON.LINKEDIN_ACTION,
-            ...(isDefined(sequenceStepId)
-              ? { currentStepId: sequenceStepId }
-              : {}),
-          },
-          {
-            status: SEQUENCE_ENROLLMENT_STATUSES.FAILED,
-            waitingOn: null,
-            nextActionAt: null,
-            endedAt: now,
-            errorMessage: SEQUENCE_EXECUTION_ERROR.LINKEDIN_ACTION_UNSTARTED,
-          },
-          transactionManager,
-        );
-
-        if (enrollmentUpdateResult.affected !== 1) {
-          throw new Error(
-            `Could not fail enrollment ${enrollment.id} after exhausting LinkedIn action ${action.id}`,
-          );
-        }
-      }
-
-      return this.toResult({
-        ...action,
-        status: LINKEDIN_ACTION_STATUSES.FAILED,
-        connectionState: LINKEDIN_CONNECTION_STATES.UNKNOWN,
-        errorMessage: SEQUENCE_EXECUTION_ERROR.LINKEDIN_ACTION_UNSTARTED,
-        executedAt: null,
-      });
-    }
-
-    const minimumScheduledAt = new Date(
-      now.getTime() +
-        SEQUENCE_LINKEDIN_ACTION_UNSTARTED_RETRY_BASE_MILLISECONDS *
-          2 ** action.attemptCount,
-    );
-    const scheduledAt = await this.sequenceLinkedinThrottleService.reserveSlot({
-      workspaceId,
-      ownerWorkspaceMemberId: workspaceMemberId,
-      settings: isDefined(sequence)
-        ? parseSequenceSettings(sequence.settings)
-        : DIRECT_LINKEDIN_ACTION_THROTTLE_SETTINGS,
-      now,
-      transactionManager,
-      excludedActionId: action.id,
-      minimumScheduledAt,
-    });
+    const normalizedReportedError = reportedErrorMessage?.trim();
+    const unstartedErrorMessage = [
+      SEQUENCE_EXECUTION_ERROR.LINKEDIN_ACTION_UNSTARTED,
+      normalizedReportedError ||
+        `Runner reported an unstarted ${action.type} action as failed`,
+    ]
+      .join(': ')
+      .slice(0, SEQUENCE_ERROR_MESSAGE_MAX_LENGTH);
     const updateResult = await actionRepository.update(
       claimWhere,
       {
-        status: LINKEDIN_ACTION_STATUSES.SCHEDULED,
-        scheduledAt,
-        claimedAt: null,
-        claimedBy: null,
-        executedAt: null,
-        attemptCount: action.attemptCount + 1,
+        status: LINKEDIN_ACTION_STATUSES.FAILED,
         connectionState: LINKEDIN_CONNECTION_STATES.UNKNOWN,
-        errorMessage: null,
+        errorMessage: unstartedErrorMessage,
+        executedAt: null,
       },
       transactionManager,
     );
@@ -780,16 +716,39 @@ export class SequenceLinkedinActionMutationService {
       return null;
     }
 
+    if (!isUnlinkedAction && isDefined(enrollment)) {
+      const enrollmentUpdateResult = await enrollmentRepository.update(
+        {
+          id: enrollment.id,
+          status: SEQUENCE_ENROLLMENT_STATUSES.ACTIVE,
+          waitingOn: SEQUENCE_WAITING_ON.LINKEDIN_ACTION,
+          ...(isDefined(sequenceStepId)
+            ? { currentStepId: sequenceStepId }
+            : {}),
+        },
+        {
+          status: SEQUENCE_ENROLLMENT_STATUSES.FAILED,
+          waitingOn: null,
+          nextActionAt: null,
+          endedAt: now,
+          errorMessage: unstartedErrorMessage,
+        },
+        transactionManager,
+      );
+
+      if (enrollmentUpdateResult.affected !== 1) {
+        throw new Error(
+          `Could not fail enrollment ${enrollment.id} after LinkedIn preflight failed for action ${action.id}`,
+        );
+      }
+    }
+
     return this.toResult({
       ...action,
-      status: LINKEDIN_ACTION_STATUSES.SCHEDULED,
-      scheduledAt,
-      claimedAt: null,
-      claimedBy: null,
-      executedAt: null,
-      attemptCount: action.attemptCount + 1,
+      status: LINKEDIN_ACTION_STATUSES.FAILED,
       connectionState: LINKEDIN_CONNECTION_STATES.UNKNOWN,
-      errorMessage: null,
+      errorMessage: unstartedErrorMessage,
+      executedAt: null,
     });
   }
 

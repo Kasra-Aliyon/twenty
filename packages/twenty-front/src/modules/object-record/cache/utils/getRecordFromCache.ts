@@ -1,4 +1,5 @@
-import { type ApolloCache, gql } from '@apollo/client';
+import { type ApolloCache } from '@apollo/client';
+import { parse } from 'graphql';
 
 import { type EnrichedObjectMetadataItem } from '@/object-metadata/types/EnrichedObjectMetadataItem';
 import { mapObjectMetadataToGraphQLQuery } from '@/object-metadata/utils/mapObjectMetadataToGraphQLQuery';
@@ -46,7 +47,7 @@ export const getRecordFromCache = <T extends ObjectRecord = ObjectRecord>({
 
   const capitalizedObjectName = capitalize(objectMetadataItem.nameSingular);
 
-  const cacheReadFragment = gql`
+  const cacheReadFragment = parse(`
       fragment ${capitalizedObjectName}Fragment on ${capitalizedObjectName} ${mapObjectMetadataToGraphQLQuery(
         {
           objectMetadataItems,
@@ -55,7 +56,7 @@ export const getRecordFromCache = <T extends ObjectRecord = ObjectRecord>({
           objectPermissionsByObjectMetadataId,
         },
       )}
-    `;
+    `);
 
   const cachedRecordId = cache.identify({
     __typename: capitalize(objectMetadataItem.nameSingular),

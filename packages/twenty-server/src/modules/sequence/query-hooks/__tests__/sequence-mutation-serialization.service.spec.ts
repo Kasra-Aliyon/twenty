@@ -104,6 +104,7 @@ describe('SequenceMutationSerializationService', () => {
   } as SequenceStepWorkspaceEntity;
 
   let activeDays: number[];
+  let activeEnrollmentCount: number;
   let dailyStarts: number;
   let deletedAt: Date | null;
   let sequenceStatus: (typeof SEQUENCE_STATUSES)[keyof typeof SEQUENCE_STATUSES];
@@ -135,6 +136,7 @@ describe('SequenceMutationSerializationService', () => {
 
   beforeEach(() => {
     activeDays = [...DEFAULT_SEQUENCE_SETTINGS.activeDays];
+    activeEnrollmentCount = 0;
     dailyStarts = DEFAULT_SEQUENCE_SETTINGS.dailyStarts;
     deletedAt = null;
     sequenceStatus = SEQUENCE_STATUSES.PAUSED;
@@ -192,7 +194,7 @@ describe('SequenceMutationSerializationService', () => {
       ),
     };
     const enrollmentRepository = {
-      count: jest.fn().mockResolvedValue(0),
+      count: jest.fn(async () => activeEnrollmentCount),
       findOne: jest.fn(async (options) => {
         if (!options.lock) {
           onUnlockedEnrollmentRead?.();
@@ -284,7 +286,7 @@ describe('SequenceMutationSerializationService', () => {
       },
     );
     const settingsMutationAssertion = expect(settingsMutation).rejects.toThrow(
-      'Pause the sequence before changing its settings',
+      'Pause the sequence before changing non-schedule settings',
     );
 
     await sequenceRowMutex.waitUntilContended();
@@ -334,6 +336,47 @@ describe('SequenceMutationSerializationService', () => {
           DEFAULT_SEQUENCE_SETTINGS.linkedinDelayPatternMinutes,
       }),
     );
+  });
+
+  it('allows removing a connection request note when audit metadata is injected', async () => {
+    activeEnrollmentCount = 1;
+    sequenceSteps = [
+      {
+        ...firstStep,
+        settings: {
+          type: SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST,
+          noteTemplate: 'Existing invitation note',
+        },
+      } as SequenceStepWorkspaceEntity,
+    ];
+    const updateHook = new SequenceUpdateOnePreQueryHook(
+      service,
+      {} as SequenceLifecycleService,
+    );
+
+    const normalizedPayload = await runInTransaction((workspaceEntityManager) =>
+      updateHook.executeInTransaction(
+        authContext,
+        'sequenceStep',
+        {
+          id: firstStep.id,
+          data: {
+            settings: {
+              type: SEQUENCE_STEP_TYPES.SEND_CONNECTION_REQUEST,
+              noteTemplate: '',
+            },
+            updatedBy: {
+              source: 'MANUAL',
+              workspaceMemberId: 'workspace-member-id',
+              name: 'Workspace Member',
+            },
+          },
+        } as never,
+        workspaceEntityManager,
+      ),
+    );
+
+    expect(normalizedPayload.data.settings.noteTemplate).toBe('');
   });
 
   it('serializes concurrent sparse sequence patches without losing either setting', async () => {

@@ -24,7 +24,7 @@ import { CacheStorageService } from 'src/engine/core-modules/cache-storage/servi
 import { CacheStorageNamespace } from 'src/engine/core-modules/cache-storage/types/cache-storage-namespace.enum';
 import { type WorkspaceEntityManager } from 'src/engine/twenty-orm/entity-manager/workspace-entity-manager';
 import { type WorkspaceRepository } from 'src/engine/twenty-orm/repository/workspace.repository';
-import { LinkedinActionWorkspaceEntity } from 'src/modules/linkedin/standard-objects/linkedin-action.workspace-entity';
+import { type LinkedinActionWorkspaceEntity } from 'src/modules/linkedin/standard-objects/linkedin-action.workspace-entity';
 import {
   SEQUENCE_LINKEDIN_ACTION_LOCK_KEY_PREFIX,
   SEQUENCE_LINKEDIN_ACTION_LOCK_TTL,
@@ -37,7 +37,7 @@ import {
   isWithinSendingWindow,
   nextWindowOpen,
 } from 'src/modules/sequence/utils/sequence-window.util';
-import { WorkspaceMemberWorkspaceEntity } from 'src/modules/workspace-member/standard-objects/workspace-member.workspace-entity';
+import { type WorkspaceMemberWorkspaceEntity } from 'src/modules/workspace-member/standard-objects/workspace-member.workspace-entity';
 
 const LINKEDIN_THROTTLE_LOCK_RETRY_COUNT = 10;
 const LINKEDIN_THROTTLE_LOCK_RETRY_DELAY_MILLISECONDS = 10;
@@ -94,14 +94,16 @@ export class SequenceLinkedinThrottleService {
 
     this.assertActiveTransaction(transactionManager);
 
-    const workspaceMemberRepository = transactionManager.getRepository(
-      WorkspaceMemberWorkspaceEntity,
-      { shouldBypassPermissionChecks: true },
-    );
-    const linkedinActionRepository = transactionManager.getRepository(
-      LinkedinActionWorkspaceEntity,
-      { shouldBypassPermissionChecks: true },
-    );
+    const workspaceMemberRepository =
+      transactionManager.getRepository<WorkspaceMemberWorkspaceEntity>(
+        'workspaceMember',
+        { shouldBypassPermissionChecks: true },
+      );
+    const linkedinActionRepository =
+      transactionManager.getRepository<LinkedinActionWorkspaceEntity>(
+        'linkedinAction',
+        { shouldBypassPermissionChecks: true },
+      );
     const excludedActionCondition = isDefined(excludedActionId)
       ? { id: Not(excludedActionId) }
       : {};
@@ -323,14 +325,16 @@ export class SequenceLinkedinThrottleService {
   }): Promise<Date | null> {
     this.assertActiveTransaction(transactionManager);
 
-    const workspaceMemberRepository = transactionManager.getRepository(
-      WorkspaceMemberWorkspaceEntity,
-      { shouldBypassPermissionChecks: true },
-    );
-    const linkedinActionRepository = transactionManager.getRepository(
-      LinkedinActionWorkspaceEntity,
-      { shouldBypassPermissionChecks: true },
-    );
+    const workspaceMemberRepository =
+      transactionManager.getRepository<WorkspaceMemberWorkspaceEntity>(
+        'workspaceMember',
+        { shouldBypassPermissionChecks: true },
+      );
+    const linkedinActionRepository =
+      transactionManager.getRepository<LinkedinActionWorkspaceEntity>(
+        'linkedinAction',
+        { shouldBypassPermissionChecks: true },
+      );
     const owner = await workspaceMemberRepository.findOne({
       where: { id: ownerWorkspaceMemberId },
       select: ['id'],
@@ -450,14 +454,16 @@ export class SequenceLinkedinThrottleService {
       return null;
     }
 
-    const workspaceMemberRepository = transactionManager.getRepository(
-      WorkspaceMemberWorkspaceEntity,
-      { shouldBypassPermissionChecks: true },
-    );
-    const linkedinActionRepository = transactionManager.getRepository(
-      LinkedinActionWorkspaceEntity,
-      { shouldBypassPermissionChecks: true },
-    );
+    const workspaceMemberRepository =
+      transactionManager.getRepository<WorkspaceMemberWorkspaceEntity>(
+        'workspaceMember',
+        { shouldBypassPermissionChecks: true },
+      );
+    const linkedinActionRepository =
+      transactionManager.getRepository<LinkedinActionWorkspaceEntity>(
+        'linkedinAction',
+        { shouldBypassPermissionChecks: true },
+      );
     const owner = await workspaceMemberRepository.findOne({
       where: { id: ownerWorkspaceMemberId },
       select: ['id'],

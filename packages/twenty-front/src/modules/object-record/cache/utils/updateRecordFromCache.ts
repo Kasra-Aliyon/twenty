@@ -1,5 +1,5 @@
 import { type ApolloCache } from '@apollo/client/cache';
-import gql from 'graphql-tag';
+import { parse } from 'graphql';
 
 import { type EnrichedObjectMetadataItem } from '@/object-metadata/types/EnrichedObjectMetadataItem';
 import { mapObjectMetadataToGraphQLQuery } from '@/object-metadata/utils/mapObjectMetadataToGraphQLQuery';
@@ -35,7 +35,7 @@ export const updateRecordFromCache = <T extends ObjectRecord>({
 
   const capitalizedObjectName = capitalize(objectMetadataItem.nameSingular);
 
-  const cacheWriteFragment = gql`
+  const cacheWriteFragment = parse(`
       fragment ${capitalizedObjectName}Fragment on ${capitalizedObjectName} ${mapObjectMetadataToGraphQLQuery(
         {
           objectMetadataItems,
@@ -45,7 +45,7 @@ export const updateRecordFromCache = <T extends ObjectRecord>({
           objectPermissionsByObjectMetadataId,
         },
       )}
-    `;
+    `);
 
   const cachedRecordId = cache.identify({
     __typename: capitalize(objectMetadataItem.nameSingular),

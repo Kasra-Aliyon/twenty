@@ -1,11 +1,9 @@
-import { currentWorkspaceMemberState } from '@/auth/states/currentWorkspaceMemberState';
 import { useObjectMetadataItem } from '@/object-metadata/hooks/useObjectMetadataItem';
 import { useFindManyRecords } from '@/object-record/hooks/useFindManyRecords';
 import { useObjectPermissionsForObject } from '@/object-record/hooks/useObjectPermissionsForObject';
 import { PageCardHeader } from '@/ui/layout/page/components/PageCardHeader';
 import { PageCardLayout } from '@/ui/layout/page/components/PageCardLayout';
 import { PageContainer } from '@/ui/layout/page/components/PageContainer';
-import { useAtomStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomStateValue';
 import { useIsFeatureEnabled } from '@/workspace/hooks/useIsFeatureEnabled';
 import { t } from '@lingui/core/macro';
 import { useEffect, useState } from 'react';
@@ -14,25 +12,42 @@ import {
   AppPath,
   CoreObjectNameSingular,
   FeatureFlagKey,
+  SEQUENCE_TASK_TYPES,
+  type SequenceTaskType,
 } from 'twenty-shared/types';
 import { IconListCheck } from 'twenty-ui/icon';
 
 import {
+  TASK_CATEGORY_FILTERS,
   TaskQueueFilters,
+  type TaskCategoryFilter,
   type TaskPriorityFilter,
-  type TaskTypeFilter,
 } from './components/TaskQueueFilters';
 import { TaskQueueList } from './components/TaskQueueList';
 import { type TaskQueueRecord } from './types/TaskQueueRecord';
 
 const TASK_QUEUE_REFRESH_INTERVAL_MILLISECONDS = 15_000;
 const TASK_QUEUE_PAGE_SIZE = 50;
+const TASK_TYPES_BY_CATEGORY: Record<
+  Exclude<TaskCategoryFilter, typeof TASK_CATEGORY_FILTERS.ALL>,
+  SequenceTaskType[]
+> = {
+  [TASK_CATEGORY_FILTERS.LINKEDIN]: [
+    SEQUENCE_TASK_TYPES.LINKEDIN_CONNECTION,
+    SEQUENCE_TASK_TYPES.LINKEDIN_MESSAGE,
+  ],
+  [TASK_CATEGORY_FILTERS.CALL]: [SEQUENCE_TASK_TYPES.CALL],
+  [TASK_CATEGORY_FILTERS.EMAIL]: [SEQUENCE_TASK_TYPES.EMAIL],
+  [TASK_CATEGORY_FILTERS.TODO]: [SEQUENCE_TASK_TYPES.TODO],
+  [TASK_CATEGORY_FILTERS.CUSTOM]: [SEQUENCE_TASK_TYPES.CUSTOM],
+};
 
 const TaskQueuePageContent = () => {
-  const [typeFilter, setTypeFilter] = useState<TaskTypeFilter>('ALL');
+  const [categoryFilter, setCategoryFilter] = useState<TaskCategoryFilter>(
+    TASK_CATEGORY_FILTERS.ALL,
+  );
   const [priorityFilter, setPriorityFilter] =
     useState<TaskPriorityFilter>('ALL');
-  const currentWorkspaceMember = useAtomStateValue(currentWorkspaceMemberState);
   const { objectMetadataItem: taskObjectMetadataItem } = useObjectMetadataItem({
     objectNameSingular: CoreObjectNameSingular.Task,
   });
@@ -50,8 +65,10 @@ const TaskQueuePageContent = () => {
     filter: {
       and: [
         { status: { in: ['TODO', 'IN_PROGRESS'] } },
-        { assigneeId: { eq: currentWorkspaceMember?.id ?? '' } },
-        ...(typeFilter === 'ALL' ? [] : [{ type: { eq: typeFilter } }]),
+        { sequenceEnrollmentId: { is: 'NOT_NULL' } },
+        ...(categoryFilter === TASK_CATEGORY_FILTERS.ALL
+          ? []
+          : [{ type: { in: TASK_TYPES_BY_CATEGORY[categoryFilter] } }]),
         ...(priorityFilter === 'ALL'
           ? []
           : [{ priority: { eq: priorityFilter } }]),
@@ -77,20 +94,15 @@ const TaskQueuePageContent = () => {
       },
     },
     limit: TASK_QUEUE_PAGE_SIZE,
-    skip: !currentWorkspaceMember?.id,
   });
 
   useEffect(() => {
-    if (!currentWorkspaceMember?.id) {
-      return;
-    }
-
     const intervalId = window.setInterval(() => {
       void refetch().catch(() => undefined);
     }, TASK_QUEUE_REFRESH_INTERVAL_MILLISECONDS);
 
     return () => window.clearInterval(intervalId);
-  }, [currentWorkspaceMember?.id, refetch]);
+  }, [refetch]);
 
   return (
     <PageContainer>
@@ -98,14 +110,14 @@ const TaskQueuePageContent = () => {
         header={
           <PageCardHeader
             icon={<IconListCheck size={18} />}
-            title={t`My tasks`}
+            title={t`Sequence tasks`}
           />
         }
         secondaryBar={
           <TaskQueueFilters
-            typeFilter={typeFilter}
+            categoryFilter={categoryFilter}
             priorityFilter={priorityFilter}
-            onTypeFilterChange={setTypeFilter}
+            onCategoryFilterChange={setCategoryFilter}
             onPriorityFilterChange={setPriorityFilter}
           />
         }

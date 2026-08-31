@@ -208,6 +208,7 @@ export const SequenceContactsTable = ({
       id: true,
       status: true,
       currentStepId: true,
+      currentStepPosition: true,
       waitingOn: true,
       nextActionAt: true,
       errorMessage: true,
@@ -231,6 +232,7 @@ export const SequenceContactsTable = ({
     recordGqlFields: {
       id: true,
       position: true,
+      settings: true,
     },
     limit: SEQUENCE_STEPS_PAGE_SIZE,
   });
@@ -240,12 +242,35 @@ export const SequenceContactsTable = ({
       void fetchMoreSteps();
     }
   }, [areStepsLoading, fetchMoreSteps, hasMoreSteps]);
+  const sortedSteps = steps
+    .slice()
+    .sort((first, second) => first.position - second.position);
   const stepNumberById = new Map(
-    steps
-      .slice()
-      .sort((first, second) => first.position - second.position)
-      .map((step, index) => [step.id, index + 1]),
+    sortedSteps.map((step, index) => [step.id, index + 1]),
   );
+
+  const getEnrollmentStepLabel = (enrollment: SequenceEnrollmentRecord) => {
+    if (enrollment.currentStepId) {
+      return stepNumberById.get(enrollment.currentStepId) ?? '—';
+    }
+
+    if (
+      enrollment.status !== SEQUENCE_ENROLLMENT_STATUSES.PENDING ||
+      enrollment.currentStepPosition < 0
+    ) {
+      return '—';
+    }
+
+    const startingStep = sortedSteps.find(
+      (step) =>
+        !step.settings.branch && step.position > enrollment.currentStepPosition,
+    );
+    const startingStepNumber = startingStep
+      ? stepNumberById.get(startingStep.id)
+      : undefined;
+
+    return startingStepNumber ? t`Starts at step ${startingStepNumber}` : '—';
+  };
 
   if (enrollments.length === 0) {
     return (
@@ -289,11 +314,7 @@ export const SequenceContactsTable = ({
                 <StyledCell>
                   <StyledPill>{STATUS_LABELS[enrollment.status]}</StyledPill>
                 </StyledCell>
-                <StyledCell>
-                  {enrollment.currentStepId
-                    ? (stepNumberById.get(enrollment.currentStepId) ?? '—')
-                    : '—'}
-                </StyledCell>
+                <StyledCell>{getEnrollmentStepLabel(enrollment)}</StyledCell>
                 <StyledCell>{enrollment.waitingOn ?? '—'}</StyledCell>
                 <StyledCell>
                   {enrollment.nextActionAt

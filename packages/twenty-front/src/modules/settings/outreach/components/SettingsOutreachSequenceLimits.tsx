@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { useFindManyRecords } from '@/object-record/hooks/useFindManyRecords';
 import { useObjectPermissionsForObject } from '@/object-record/hooks/useObjectPermissionsForObject';
 import { useUpdateOneRecord } from '@/object-record/hooks/useUpdateOneRecord';
-import { getDefaultSequenceSettings } from '@/sequence/constants/default-sequence-settings';
+import { getSequenceSettingsWithDefaults } from '@/sequence/utils/getSequenceSettingsWithDefaults';
 import { useSnackBar } from '@/ui/feedback/snack-bar-manager/hooks/useSnackBar';
 import { Select } from '@/ui/input/components/Select';
 import { CombinedGraphQLErrors } from '@apollo/client/errors';
@@ -58,19 +58,18 @@ export const SettingsOutreachSequenceLimits = () => {
   const effectiveSettings =
     settingsDraft ??
     (selectedSequence !== undefined
-      ? {
-          ...getDefaultSequenceSettings(),
-          ...selectedSequence.settings,
-        }
+      ? getSequenceSettingsWithDefaults(selectedSequence.settings)
       : null);
   const sequenceOptions: SelectOption<string>[] = sequences.map((sequence) => ({
     label: sequence.name,
     value: sequence.id,
   }));
-  const canUpdateSequenceSettings =
+  const canUpdateSequenceSchedule =
     selectedSequence !== undefined &&
-    selectedSequence.status !== SEQUENCE_STATUSES.ACTIVE &&
     sequencePermissions.canUpdateObjectRecords;
+  const canUpdateSequenceLimits =
+    canUpdateSequenceSchedule &&
+    selectedSequence.status !== SEQUENCE_STATUSES.ACTIVE;
 
   const selectSequence = (sequenceId: string) => {
     const sequence = sequences.find(({ id }) => id === sequenceId);
@@ -78,10 +77,7 @@ export const SettingsOutreachSequenceLimits = () => {
     setSelectedSequenceId(sequenceId);
     setSettingsDraft(
       sequence !== undefined
-        ? {
-            ...getDefaultSequenceSettings(),
-            ...sequence.settings,
-          }
+        ? getSequenceSettingsWithDefaults(sequence.settings)
         : null,
     );
   };
@@ -101,7 +97,7 @@ export const SettingsOutreachSequenceLimits = () => {
     if (
       selectedSequence === undefined ||
       effectiveSettings === null ||
-      !canUpdateSequenceSettings
+      !canUpdateSequenceSchedule
     ) {
       return;
     }
@@ -176,29 +172,31 @@ export const SettingsOutreachSequenceLimits = () => {
             <>
               <SettingsOutreachSequenceScheduleCard
                 settings={effectiveSettings}
-                disabled={!canUpdateSequenceSettings}
+                disabled={!canUpdateSequenceSchedule}
                 onChange={updateSettingsDraft}
               />
               <SettingsOutreachSequenceLimitCard
                 settings={effectiveSettings}
-                disabled={!canUpdateSequenceSettings}
+                disabled={!canUpdateSequenceLimits}
                 onChange={updateSettingsDraft}
               />
             </>
           )}
-          {!canUpdateSequenceSettings && selectedSequence !== undefined && (
-            <StyledNotice>
-              {selectedSequence.status === SEQUENCE_STATUSES.ACTIVE
-                ? t`Pause this sequence before changing its schedule or limits.`
-                : t`You do not have permission to update this sequence.`}
-            </StyledNotice>
-          )}
+          {selectedSequence !== undefined &&
+            (!canUpdateSequenceSchedule ||
+              selectedSequence.status === SEQUENCE_STATUSES.ACTIVE) && (
+              <StyledNotice>
+                {!canUpdateSequenceSchedule
+                  ? t`You do not have permission to update this sequence.`
+                  : t`Schedule windows can be changed while this sequence is active. Pause it to change limits or other settings.`}
+              </StyledNotice>
+            )}
           <StyledActionRow>
             <Button
               title={t`Save schedule and limits`}
               onClick={() => void save()}
               isLoading={isSaving}
-              disabled={!canUpdateSequenceSettings}
+              disabled={!canUpdateSequenceSchedule}
             />
           </StyledActionRow>
         </>

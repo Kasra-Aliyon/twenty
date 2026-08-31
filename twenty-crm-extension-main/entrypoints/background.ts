@@ -34,6 +34,7 @@ import {
   getLinkedinRunnerActionOwnershipError,
   getLinkedinRunnerClaimError,
   getLinkedinRunnerEnableError,
+  getRunnerStateAfterEnable,
   getRunnerStateAfterPause,
   getRunnerStateAfterTabRemoval,
   reconcileRunnerActionOnEnable,
@@ -1101,8 +1102,7 @@ async function handleMessage(
           });
           const reportResolution = resolveRunnerActionReport({
             runnerState,
-            reportAccepted: action !== null,
-            status,
+            reportedAction: action,
           });
 
           await setLinkedinRunnerState(reportResolution.runnerState);
@@ -1573,9 +1573,10 @@ async function handleMessage(
             runnerState = getRunnerStateAfterPause({ runnerState });
           }
 
-          const nextState = enabled
-            ? { ...runnerState, enabled: true, tabId: tabId ?? null }
-            : runnerState;
+          const nextState =
+            enabled && typeof tabId === 'number'
+              ? getRunnerStateAfterEnable({ runnerState, tabId })
+              : runnerState;
 
           await setLinkedinRunnerState(nextState);
 

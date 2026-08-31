@@ -40,6 +40,8 @@ describe('SequenceReadinessResolver', () => {
       atomicSettingsPatchVersion: 1,
       atomicStepAppend: true,
       atomicStepAppendVersion: 1,
+      enrollmentStartStep: true,
+      enrollmentStartStepVersion: 1,
     });
   });
 

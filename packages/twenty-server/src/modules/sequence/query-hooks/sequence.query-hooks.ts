@@ -254,6 +254,11 @@ export class SequenceUpdateOnePreQueryHook implements WorkspacePreQueryHookInsta
             payload.data as Partial<SequenceStepWorkspaceEntity>
           ).position,
           requestedSettings,
+          // The audit hook injects updatedBy before transactional hooks run.
+          // It is engine-owned metadata, not a user-requested structural edit.
+          updatedFields: Object.keys(payload.data).filter(
+            (fieldName) => fieldName !== 'updatedBy',
+          ),
           workspaceEntityManager,
         });
 

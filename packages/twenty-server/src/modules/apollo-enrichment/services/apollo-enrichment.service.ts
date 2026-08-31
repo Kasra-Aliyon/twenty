@@ -1049,11 +1049,18 @@ export class ApolloEnrichmentService {
       companyUpdate.annualRevenue = mappedCompany.annualRevenue;
     }
 
-    if (
-      this.isAddressEmpty(company.address) &&
-      isDefined(mappedCompany.address)
-    ) {
-      companyUpdate.address = mappedCompany.address;
+    if (isDefined(mappedCompany.address)) {
+      if (this.isAddressEmpty(company.address)) {
+        companyUpdate.address = mappedCompany.address;
+      } else if (
+        !hasText(company.address?.addressCountry) &&
+        hasText(mappedCompany.address.addressCountry)
+      ) {
+        companyUpdate.address = {
+          ...company.address,
+          addressCountry: mappedCompany.address.addressCountry,
+        };
+      }
     }
 
     if (Object.keys(companyUpdate).length === 0) {

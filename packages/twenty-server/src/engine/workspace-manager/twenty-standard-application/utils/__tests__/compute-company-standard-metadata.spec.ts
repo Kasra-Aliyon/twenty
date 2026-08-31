@@ -108,4 +108,18 @@ describe('Company standard metadata build', () => {
       ]),
     );
   });
+
+  it('shows Company country as its own list column', () => {
+    expect(
+      allFlatEntityMaps.flatViewFieldMaps.byUniversalIdentifier[
+        STANDARD_OBJECTS.company.views.allCompanies.viewFields.addressCountry
+          .universalIdentifier
+      ],
+    ).toMatchObject({
+      fieldMetadataUniversalIdentifier:
+        STANDARD_OBJECTS.company.fields.address.universalIdentifier,
+      isVisible: true,
+      subFieldName: 'addressCountry',
+    });
+  });
 });

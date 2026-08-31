@@ -13,4 +13,10 @@ export class SequenceMutationCapabilitiesDTO {
 
   @Field(() => Int)
   atomicStepAppendVersion: number;
+
+  @Field(() => Boolean)
+  enrollmentStartStep: boolean;
+
+  @Field(() => Int)
+  enrollmentStartStepVersion: number;
 }

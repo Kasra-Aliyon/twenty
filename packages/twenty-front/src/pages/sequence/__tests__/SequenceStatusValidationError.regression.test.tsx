@@ -11,6 +11,7 @@ import { getSequenceStatusErrorMessage } from '~/pages/sequence/utils/get-sequen
 const mockUpdateOneRecord = jest.fn();
 const mockEnqueueErrorSnackBar = jest.fn();
 const mockRefetch = jest.fn();
+const mockEnrollmentCounts = { all: 0, active: 0 };
 
 const mockCreateSequenceRecord = () => ({
   id: 'sequence-id',
@@ -60,13 +61,17 @@ jest.mock('@/object-record/hooks/useFindOneRecord', () => ({
 jest.mock('@/object-record/hooks/useFindManyRecords', () => ({
   useFindManyRecords: ({
     objectNameSingular,
+    filter,
   }: {
     objectNameSingular: string;
+    filter?: { and?: Array<{ status?: unknown }> };
   }) =>
     objectNameSingular === 'sequenceEnrollment'
       ? {
           records: [],
-          totalCount: 0,
+          totalCount: filter?.and?.some(({ status }) => status)
+            ? mockEnrollmentCounts.active
+            : mockEnrollmentCounts.all,
           refetch: mockRefetch,
         }
       : {
@@ -159,7 +164,22 @@ jest.mock('../components/SequenceSettingsSection', () => ({
 }));
 
 jest.mock('../components/SequenceStepList', () => ({
-  SequenceStepList: () => null,
+  SequenceStepList: ({
+    canAddOrReorder,
+    canDeleteSteps,
+    canUpdateSteps,
+  }: {
+    canAddOrReorder: boolean;
+    canDeleteSteps: boolean;
+    canUpdateSteps: boolean;
+  }) => (
+    <div
+      data-testid="sequence-step-list"
+      data-can-add-or-reorder={String(canAddOrReorder)}
+      data-can-delete={String(canDeleteSteps)}
+      data-can-update={String(canUpdateSteps)}
+    />
+  ),
 }));
 
 jest.mock('twenty-ui/input', () => ({
@@ -199,6 +219,52 @@ describe('sequence status validation errors', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockRefetch.mockResolvedValue({});
+    mockEnrollmentCounts.all = 0;
+    mockEnrollmentCounts.active = 0;
+  });
+
+  it('shows the live enrollment count when the stored counter is stale', () => {
+    mockEnrollmentCounts.all = 20;
+
+    render(
+      <MemoryRouter
+        initialEntries={['/sequences/sequence-id']}
+        future={{
+          v7_relativeSplatPath: true,
+          v7_startTransition: true,
+        }}
+      >
+        <Routes>
+          <Route path="/sequences/:sequenceId" element={<SequencePage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText('Contacts (20)')).toBeInTheDocument();
+  });
+
+  it('allows step content edits but keeps structure locked when paused with active enrollments', () => {
+    mockEnrollmentCounts.active = 1;
+
+    render(
+      <MemoryRouter
+        initialEntries={['/sequences/sequence-id']}
+        future={{
+          v7_relativeSplatPath: true,
+          v7_startTransition: true,
+        }}
+      >
+        <Routes>
+          <Route path="/sequences/:sequenceId" element={<SequencePage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    const stepList = screen.getByTestId('sequence-step-list');
+
+    expect(stepList).toHaveAttribute('data-can-update', 'true');
+    expect(stepList).toHaveAttribute('data-can-add-or-reorder', 'false');
+    expect(stepList).toHaveAttribute('data-can-delete', 'false');
   });
 
   it('shows the server validation reason on the sequence page', async () => {

@@ -118,6 +118,17 @@ const SequencePageContent = () => {
     },
   });
   const {
+    records: enrollments,
+    totalCount: enrollmentCount,
+    refetch: refetchEnrollments,
+  } = useFindManyRecords<SequenceEnrollmentRecord>({
+    objectNameSingular: 'sequenceEnrollment',
+    filter: { sequenceId: { eq: sequenceId ?? '' } },
+    recordGqlFields: { id: true },
+    limit: 1,
+    skip: !sequenceId || Boolean(sequence?.deletedAt),
+  });
+  const {
     records: activeEnrollments,
     totalCount: activeEnrollmentCount,
     refetch: refetchActiveEnrollments,
@@ -140,11 +151,19 @@ const SequencePageContent = () => {
     }
 
     const intervalId = window.setInterval(() => {
-      void refetchActiveEnrollments().catch(() => undefined);
+      void Promise.all([
+        refetchEnrollments(),
+        refetchActiveEnrollments(),
+      ]).catch(() => undefined);
     }, ACTIVE_ENROLLMENT_REFRESH_INTERVAL_MILLISECONDS);
 
     return () => window.clearInterval(intervalId);
-  }, [refetchActiveEnrollments, sequence?.deletedAt, sequenceId]);
+  }, [
+    refetchActiveEnrollments,
+    refetchEnrollments,
+    sequence?.deletedAt,
+    sequenceId,
+  ]);
 
   if (loading || !sequenceId) {
     return <RecordIndexSkeletonLoader />;
@@ -158,6 +177,7 @@ const SequencePageContent = () => {
   const isArchived = sequence.deletedAt !== null;
   const hasActiveEnrollments =
     (activeEnrollmentCount ?? activeEnrollments.length) > 0;
+  const displayedEnrollmentCount = enrollmentCount ?? enrollments.length;
 
   const toggleSequence = async () => {
     try {
@@ -170,7 +190,11 @@ const SequencePageContent = () => {
             : SEQUENCE_STATUSES.ACTIVE,
         },
       });
-      await refetch();
+      await Promise.all([
+        refetch(),
+        refetchEnrollments(),
+        refetchActiveEnrollments(),
+      ]);
     } catch (error) {
       enqueueErrorSnackBar({
         message: getSequenceStatusErrorMessage({
@@ -210,11 +234,19 @@ const SequencePageContent = () => {
                   canArchive={sequencePermissions.canSoftDeleteObjectRecords}
                   canDestroy={sequencePermissions.canDestroyObjectRecords}
                   onArchived={async () => {
-                    await Promise.all([refetch(), refetchActiveEnrollments()]);
+                    await Promise.all([
+                      refetch(),
+                      refetchEnrollments(),
+                      refetchActiveEnrollments(),
+                    ]);
                   }}
                   onDestroyed={() => navigate(AppPath.SequencesPage)}
                   onRestored={async () => {
-                    await Promise.all([refetch(), refetchActiveEnrollments()]);
+                    await Promise.all([
+                      refetch(),
+                      refetchEnrollments(),
+                      refetchActiveEnrollments(),
+                    ]);
                   }}
                 />
               </StyledHeaderActions>
@@ -235,7 +267,7 @@ const SequencePageContent = () => {
               isActive={activeTab === 'contacts'}
               onClick={() => setActiveTab('contacts')}
             >
-              {t`Contacts`} ({sequence.enrolledCount})
+              {t`Contacts`} ({displayedEnrollmentCount})
             </StyledTab>
             <StyledTab
               type="button"
@@ -273,7 +305,6 @@ const SequencePageContent = () => {
               canUpdateSteps={
                 !isArchived &&
                 !isActive &&
-                !hasActiveEnrollments &&
                 sequenceStepPermissions.canUpdateObjectRecords
               }
               canDeleteSteps={
@@ -292,7 +323,11 @@ const SequencePageContent = () => {
                 sequenceEnrollmentPermissions.canUpdateObjectRecords
               }
               onEnrollmentUpdated={async () => {
-                await Promise.all([refetch(), refetchActiveEnrollments()]);
+                await Promise.all([
+                  refetch(),
+                  refetchEnrollments(),
+                  refetchActiveEnrollments(),
+                ]);
               }}
             />
           )}
