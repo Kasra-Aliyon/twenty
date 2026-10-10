@@ -185,6 +185,14 @@ jobs:
             }).then(async response => {
               if (!response.ok || !(await response.json()).result?.tools?.length) process.exit(1);
             }).catch(() => process.exit(1));'
+      - name: Verify backup and database restore on disposable CI data
+        run: |
+          sudo bash packages/twenty-docker/production/backup.sh backup
+          docker compose -p twenty-release-smoke -f packages/twenty-docker/production/compose.yml exec -T db createdb -U twenty restore_test
+          snapshot=$(sudo find /var/backups/twenty -name COMPLETE -print -quit)
+          test -n "$snapshot"
+          sudo cat "${snapshot%/COMPLETE}/database.dump" | docker compose -p twenty-release-smoke -f packages/twenty-docker/production/compose.yml exec -T db pg_restore -U twenty -d restore_test --no-owner --exit-on-error
+          docker compose -p twenty-release-smoke -f packages/twenty-docker/production/compose.yml exec -T db psql -U twenty -d restore_test -c 'SELECT count(*) FROM core.workspace;'
       - name: Logs on failure (disposable CI data only)
         if: failure()
         run: docker compose -p twenty-release-smoke -f packages/twenty-docker/production/compose.yml logs --tail 100
