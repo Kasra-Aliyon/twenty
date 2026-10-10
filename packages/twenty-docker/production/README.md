@@ -40,6 +40,8 @@ Use repository variables for URLs needed by the extension build. Secrets belong 
 
 The chosen CRM origin is `https://crm.sevenscholar.com`; the companion MCP hostname is `https://mcp.sevenscholar.com`. GitHub variables have been configured for both. Default placeholder extension URLs are for build verification only. Builds are named `1.2.2.<workflow run number>`; adjust the version scheme before run number 65536.
 
+The GitHub `production` environment is created and restricted to the `main` branch. Deployment remains disabled until host credentials and the first live checks are complete. The local database inventory on 2026-10-10 found PostgreSQL 16.14, one workspace, about 149 MB, and the `unaccent`/`uuid-ossp` extensions; the production database image uses the matching PostgreSQL patch version.
+
 ## MCP sessions
 
 The API key handles ordinary CRM tools. User-scoped LinkedIn/email tools additionally need a dedicated user session. Store its token-pair JSON (the `tokens` object returned by Twenty sign-in) at `/state/user-session.json` in the MCP volume, owned by UID 1000 with mode 0600. Set `TWENTY_USER_SESSION_FILE=/state/user-session.json`. The server renews expiring access tokens and atomically persists rotated refresh tokens. Reauthentication is still required after session revocation or refresh-token expiry. Run a single MCP replica with this session file.

@@ -71,6 +71,8 @@ jobs:
         with:
           name: linkedin-extension-${{ github.sha }}
           path: twenty-crm-extension-main/.output/*-chrome.zip
+          # WXT's output directory is hidden; the pattern includes only the built ZIP.
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 7
 

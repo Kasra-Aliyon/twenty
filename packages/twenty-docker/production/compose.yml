@@ -43,7 +43,7 @@ x-twenty-environment: &twenty-environment
 
 services:
   db:
-    image: postgres:16.13-alpine
+    image: postgres:16.14-alpine
     restart: unless-stopped
     logging: *logging
     labels:
