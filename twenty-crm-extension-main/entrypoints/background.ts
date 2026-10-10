@@ -855,11 +855,27 @@ async function testConnection(): Promise<boolean> {
 // Handle messages
 async function handleMessage(
   message: ExtensionMessage,
-  sender?: { tab?: { id?: number } },
+  sender?: { url?: string; tab?: { id?: number; url?: string } },
 ): Promise<ExtensionResponse> {
   console.log('Received message:', message.type);
 
   try {
+    if (
+      message.type === 'SYNC_TWENTY_TOKEN_PAIR' ||
+      message.type === 'SYNC_LINKEDIN_SAFETY_SETTINGS'
+    ) {
+      const settings = await getSettings();
+      const senderUrl = sender?.url;
+
+      // Local and production tabs can be open together; only the selected CRM owns this session.
+      if (!senderUrl || !haveSameOrigin(senderUrl, settings.twentyAppUrl)) {
+        return {
+          success: false,
+          error: 'Token bridge origin is not the configured Twenty app',
+        };
+      }
+    }
+
     switch (message.type) {
       case 'SYNC_TWENTY_TOKEN_PAIR': {
         const tokenPair = message.payload as TwentyTokenPair | null;

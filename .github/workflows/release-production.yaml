@@ -61,6 +61,8 @@ jobs:
           echo "EXTENSION_VERSION=1.2.2.$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
       - run: npm ci
         working-directory: twenty-crm-extension-main
+      - run: npm test
+        working-directory: twenty-crm-extension-main
       - run: npm run compile
         working-directory: twenty-crm-extension-main
       - run: npm run zip
@@ -239,27 +241,3 @@ jobs:
           TWENTY_MCP_PUBLIC_URL: ${{ vars.TWENTY_MCP_PUBLIC_URL }}
           TWENTY_MCP_HTTP_BEARER_TOKEN: ${{ secrets.TWENTY_MCP_HTTP_BEARER_TOKEN }}
         run: node packages/twenty-docker/production/deploy.mjs
-
-  publish-extension:
-    needs: deploy
-    if: vars.CHROME_PUBLISH_ENABLED == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    environment: production
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        with:
-          node-version: 24
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-        with:
-          name: linkedin-extension-${{ github.sha }}
-          path: extension-package
-      - name: Submit extension for store review
-        env:
-          CHROME_CLIENT_ID: ${{ secrets.CHROME_CLIENT_ID }}
-          CHROME_CLIENT_SECRET: ${{ secrets.CHROME_CLIENT_SECRET }}
-          CHROME_REFRESH_TOKEN: ${{ secrets.CHROME_REFRESH_TOKEN }}
-          CHROME_PUBLISHER_ID: ${{ vars.CHROME_PUBLISHER_ID }}
-          CHROME_EXTENSION_ID: ${{ vars.CHROME_EXTENSION_ID }}
-        run: node packages/twenty-docker/production/publish-extension.mjs extension-package/*-chrome.zip

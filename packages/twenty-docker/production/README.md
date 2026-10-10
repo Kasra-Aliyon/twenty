@@ -4,7 +4,7 @@ This directory prepares deployment of the customized fork. It does not provision
 
 ## Release flow
 
-Local changes → commit and push to `main` → tests → immutable app/MCP images and extension ZIP → backup with writers stopped → Coolify deployment → migration and health checks → optional Chrome Web Store submission.
+Local changes → commit and push to `main` → tests → immutable app/MCP images and extension ZIP → backup with writers stopped → Coolify deployment → migration and health checks → extension ZIP ready to reload locally.
 
 - `.github/workflows/release-production.yaml` builds on `main` and the initial deployment branch. Only `main` can deploy.
 - All three artifacts must build before the CRM/MCP deployment runs.
@@ -34,13 +34,11 @@ Use repository variables for URLs needed by the extension build. Secrets belong 
 | Kind | Names | Purpose |
 | --- | --- | --- |
 | Repository variables | `TWENTY_PUBLIC_URL`, `TWENTY_MCP_PUBLIC_URL`, `COOLIFY_URL`, `COOLIFY_APP_UUID` | Production HTTPS origins and application identifier |
-| Repository variables | `PRODUCTION_DEPLOY_ENABLED=true`, `CHROME_PUBLISH_ENABLED=true` | Separate opt-in gates; leave unset during bootstrap |
+| Repository variables | `PRODUCTION_DEPLOY_ENABLED=true` | Opt-in deployment gate; leave unset during bootstrap |
 | Production secrets | `COOLIFY_TOKEN`, `TWENTY_MCP_HTTP_BEARER_TOKEN` | Deployment and authenticated MCP verification |
 | Production secrets | `PRODUCTION_SSH_TARGET`, `PRODUCTION_SSH_KEY`, `PRODUCTION_SSH_KNOWN_HOSTS` | Restricted backup command; target `root@HOST`; verified host key |
-| Repository variables | `CHROME_PUBLISHER_ID`, `CHROME_EXTENSION_ID` | Existing store listing |
-| Production secrets | `CHROME_CLIENT_ID`, `CHROME_CLIENT_SECRET`, `CHROME_REFRESH_TOKEN` | Chrome Web Store API authorization |
 
-Default placeholder extension URLs are for build verification only. Set the real repository variable before enabling deployment or distributing the ZIP. Builds are named `1.2.2.<workflow run number>`; adjust the version scheme before run number 65536 or publishing a higher manually assigned version.
+The chosen CRM origin is `https://crm.sevenscholar.com`; the companion MCP hostname is `https://mcp.sevenscholar.com`. GitHub variables have been configured for both. Default placeholder extension URLs are for build verification only. Builds are named `1.2.2.<workflow run number>`; adjust the version scheme before run number 65536.
 
 ## MCP sessions
 
@@ -52,12 +50,12 @@ Use a dedicated session rather than sharing the browser extension's rotating ref
 
 The extension runs in the user's Chrome browser with their LinkedIn session. Hosting does not move that browser session onto the VPS. Local development still defaults to ports 2001/2000. Production builds include the configured HTTPS CRM origin in defaults, host permissions and the token bridge.
 
-The workflow creates a ZIP on every successful build. Automatic installed-extension updates require a Chrome Web Store listing and one-time publisher setup/sign-in; an unpacked extension does not automatically update from a ZIP. Configure an unlisted listing if appropriate, privacy disclosures, OAuth publishing credentials and the first installation. Follow the [official API setup](https://developer.chrome.com/docs/webstore/using-api). Avoid an OAuth testing configuration that expires its refresh token after seven days.
+The owner chose the free unpacked extension, so there is no Web Store publishing, registration fee, or Google review. The workflow creates a ZIP on every successful build for `https://crm.sevenscholar.com`. Download the ZIP from a successful release run, extract it into the same folder loaded by Chrome, and click **Reload** in `chrome://extensions`. Preserve the extension's folder path to preserve its unpacked identity and local settings. Do not install a second copy alongside it.
 
-After the deployment passes, the optional job uploads and submits that ZIP for review. Google approval and client rollout are separate from server deployment. Maintain backward-compatible extension/API contracts during that window. The job does not cancel an existing review automatically; investigate store conflicts instead of silently replacing a pending submission.
+Alternatively, build from the local checkout with `WXT_TWENTY_APP_URL=https://crm.sevenscholar.com WXT_TWENTY_API_URL=https://crm.sevenscholar.com npm run build` in `twenty-crm-extension-main`, then reload the existing unpacked extension. Set its CRM app/API settings to the production origin once the CRM is live and sign in. The server updates automatically; Chrome still needs the local reload for code changes. Extension/API contracts must remain compatible while an older extension is running.
 
 ## Recovery
 
 If backup fails, the script attempts to restart the existing writers and the deployment job stops. If deployment/migration fails after backup, inspect Coolify logs and leave writers stopped until the database state is understood. For a destructive migration rollback, restore the matching backup, uploads, Redis/session state and old image digests together. Never use `docker compose down -v` in production.
 
-Useful official references: [Coolify Compose](https://coolify.io/docs/applications/build-packs/docker-compose), [deployment API](https://coolify.io/docs/api/endpoints/deployments/deploy-by-tag-or-uuid), [environment API](https://coolify.io/docs/api/endpoints/applications/update-envs-by-application-uuid), [Chrome upload states](https://developer.chrome.com/docs/webstore/api/reference/rest/v2/UploadState).
+Useful official references: [Coolify Compose](https://coolify.io/docs/applications/build-packs/docker-compose), [deployment API](https://coolify.io/docs/api/endpoints/deployments/deploy-by-tag-or-uuid), [environment API](https://coolify.io/docs/api/endpoints/applications/update-envs-by-application-uuid).

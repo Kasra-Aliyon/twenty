@@ -26,7 +26,16 @@ mkdir -p "$directory"
 resume=true
 cleanup() {
   if [[ "$resume" == true ]]; then
-    docker start "$server" "$worker" "$mcp" >/dev/null
+    docker start "$server" >/dev/null
+    for attempt in $(seq 1 120); do
+      if [[ "$(docker inspect --format '{{.State.Health.Status}}' "$server")" == healthy ]]; then
+        docker start "$worker" "$mcp" >/dev/null
+        return
+      fi
+      sleep 5
+    done
+    echo 'CRM did not become healthy after backup; worker and MCP remain stopped.' >&2
+    return 1
   fi
 }
 trap cleanup EXIT

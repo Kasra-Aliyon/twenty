@@ -83,6 +83,18 @@ export async function getSettings(): Promise<ExtensionSettings> {
 export async function saveSettings(
   settings: Partial<ExtensionSettings>,
 ): Promise<void> {
+  const previous = await getSettings();
+
+  if (
+    (settings.twentyAppUrl !== undefined &&
+      settings.twentyAppUrl !== previous.twentyAppUrl) ||
+    (settings.twentyApiUrl !== undefined &&
+      settings.twentyApiUrl !== previous.twentyApiUrl)
+  ) {
+    // A token issued by the previous CRM must never be sent to the newly selected server.
+    await twentyTokenPairStorage.setValue(null);
+  }
+
   if (settings.twentyAppUrl !== undefined) {
     await twentyAppUrlStorage.setValue(settings.twentyAppUrl);
   }

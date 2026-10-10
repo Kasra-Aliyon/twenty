@@ -12,14 +12,18 @@
     "zip": "wxt zip",
     "zip:firefox": "wxt zip -b firefox",
     "compile": "vue-tsc --noEmit",
-    "postinstall": "wxt prepare"
+    "postinstall": "wxt prepare",
+    "test": "vitest run"
   },
   "dependencies": {
     "vue": "^3.5.25"
   },
   "devDependencies": {
     "@wxt-dev/module-vue": "^1.0.3",
+    "jsdom": "29.1.1",
     "typescript": "^5.9.3",
+    "vite": "7.3.0",
+    "vitest": "4.1.8",
     "vue-tsc": "^3.1.8",
     "wxt": "^0.20.6"
   }
