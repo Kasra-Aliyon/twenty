@@ -169,7 +169,7 @@ jobs:
     env:
       TWENTY_IMAGE: ${{ needs.app-image.outputs.image }}
       TWENTY_MCP_IMAGE: ${{ needs.mcp-image.outputs.image }}
-      TWENTY_PUBLIC_URL: http://server:3000
+      TWENTY_PUBLIC_URL: https://crm.example.com
       POSTGRES_PASSWORD: disposable-ci-database-password
       APP_SECRET: disposable-ci-app-secret-01234567890123456789
       ENCRYPTION_KEY: disposable-ci-encryption-key-01234567890123456789
