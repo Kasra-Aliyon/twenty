@@ -3,3 +3,13 @@
 **/node_modules
 .nx/cache
 packages/twenty-server/.env
+**/.env
+**/.env.*
+**/.local-storage
+**/.mcpb-build
+**/.output
+packages/twenty-front/build
+.mcp.json
+.codex
+.agents
+analysis

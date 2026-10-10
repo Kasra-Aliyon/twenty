@@ -3,6 +3,7 @@ import type {
   LinkedInSafetySettings,
   TwentyTokenPair,
 } from '../types';
+import { getDeploymentOrigin } from '../utils/deployment';
 
 const TOKEN_PAIR_LOCAL_STORAGE_KEY = 'tokenPairState';
 const LINKEDIN_SAFETY_SETTINGS_LOCAL_STORAGE_KEY =
@@ -56,6 +57,7 @@ function parseLinkedInSafetySettings(
 
 export default defineContentScript({
   matches: [
+    `${getDeploymentOrigin(import.meta.env.WXT_TWENTY_APP_URL, 'http://localhost:2001')}/*`,
     'http://localhost:2001/*',
     'http://127.0.0.1:2001/*',
     'http://localhost:3001/*',

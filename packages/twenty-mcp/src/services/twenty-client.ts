@@ -10,6 +10,7 @@ import {
   apiErrorFromResponse,
   TwentyApiError,
 } from './errors.js';
+import { UserSession } from './user-session.js';
 
 type FetchImplementation = typeof fetch;
 
@@ -59,6 +60,7 @@ export class TwentyClient {
   private readonly baseUrl: URL;
   private readonly apiKey: string;
   private readonly userToken: string | undefined;
+  private readonly userSession: UserSession | undefined;
   private readonly requestTimeoutMs: number;
   private readonly maxRetries: number;
   private readonly fetchImplementation: FetchImplementation;
@@ -66,20 +68,33 @@ export class TwentyClient {
   constructor(
     config: Pick<
       TwentyMcpConfig,
-      'apiKey' | 'baseUrl' | 'maxRetries' | 'requestTimeoutMs' | 'userToken'
+      | 'apiKey'
+      | 'baseUrl'
+      | 'maxRetries'
+      | 'requestTimeoutMs'
+      | 'userToken'
+      | 'userSessionFile'
     >,
     fetchImplementation: FetchImplementation = fetch,
   ) {
     this.baseUrl = config.baseUrl;
     this.apiKey = config.apiKey;
     this.userToken = config.userToken;
+    this.userSession = config.userSessionFile
+      ? new UserSession(
+          config.userSessionFile,
+          config.baseUrl,
+          config.requestTimeoutMs,
+          fetchImplementation,
+        )
+      : undefined;
     this.requestTimeoutMs = config.requestTimeoutMs;
     this.maxRetries = config.maxRetries;
     this.fetchImplementation = fetchImplementation;
   }
 
   hasUserToken(): boolean {
-    return this.userToken !== undefined;
+    return this.userToken !== undefined || this.userSession !== undefined;
   }
 
   async rest(
@@ -144,9 +159,15 @@ export class TwentyClient {
     return url;
   }
 
-  private getToken(tokenType: 'api' | 'user' | undefined): string {
+  private async getToken(
+    tokenType: 'api' | 'user' | undefined,
+  ): Promise<string> {
     if (tokenType !== 'user') {
       return this.apiKey;
+    }
+
+    if (this.userSession !== undefined) {
+      return this.userSession.getToken();
     }
 
     if (this.userToken === undefined) {
@@ -166,7 +187,7 @@ export class TwentyClient {
     options: RestRequestOptions,
   ): Promise<unknown> {
     const url = this.buildUrl(path, options.query);
-    const token = this.getToken(options.token);
+    const token = await this.getToken(options.token);
 
     for (let attempt = 0; attempt <= this.maxRetries; attempt += 1) {
       try {
