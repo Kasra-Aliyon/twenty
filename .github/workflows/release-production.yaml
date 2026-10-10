@@ -23,6 +23,9 @@ jobs:
         with:
           node-version: 24
       - run: yarn workspaces focus twenty-mcp-server
+        env:
+          # The focused install omits the root-only constraints plugin dependencies.
+          YARN_ENABLE_CONSTRAINTS_CHECKS: 'false'
       - run: yarn workspace twenty-mcp-server typecheck
       - run: yarn workspace twenty-mcp-server test --runInBand
       - run: node --test packages/twenty-docker/production/*.test.mjs twenty-crm-extension-main/utils/__tests__/deployment.test.mjs
@@ -145,8 +148,50 @@ jobs:
           cache-from: type=gha,scope=twenty-mcp
           cache-to: type=gha,scope=twenty-mcp,mode=min
 
-  deploy:
+  smoke-stack:
     needs: [app-image, mcp-image, extension]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: read
+    env:
+      TWENTY_IMAGE: ${{ needs.app-image.outputs.image }}
+      TWENTY_MCP_IMAGE: ${{ needs.mcp-image.outputs.image }}
+      TWENTY_PUBLIC_URL: http://server:3000
+      POSTGRES_PASSWORD: disposable-ci-database-password
+      APP_SECRET: disposable-ci-app-secret-01234567890123456789
+      ENCRYPTION_KEY: disposable-ci-encryption-key-01234567890123456789
+      TWENTY_API_KEY: disposable-ci-placeholder
+      TWENTY_MCP_HTTP_BEARER_TOKEN: disposable-ci-mcp-access
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Start isolated release stack and run migrations
+        run: docker compose -p twenty-release-smoke -f packages/twenty-docker/production/compose.yml up -d --wait --wait-timeout 600
+      - name: Verify authenticated MCP tool discovery
+        run: |
+          docker compose -p twenty-release-smoke -f packages/twenty-docker/production/compose.yml exec -T mcp node -e '
+            fetch("http://127.0.0.1:3333/mcp", {
+              method: "POST",
+              headers: { Authorization: "Bearer disposable-ci-mcp-access", "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
+              body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} })
+            }).then(async response => {
+              if (!response.ok || !(await response.json()).result?.tools?.length) process.exit(1);
+            }).catch(() => process.exit(1));'
+      - name: Logs on failure (disposable CI data only)
+        if: failure()
+        run: docker compose -p twenty-release-smoke -f packages/twenty-docker/production/compose.yml logs --tail 100
+      - name: Remove disposable CI stack
+        if: always()
+        run: docker compose -p twenty-release-smoke -f packages/twenty-docker/production/compose.yml down --volumes
+
+  deploy:
+    needs: [app-image, mcp-image, extension, smoke-stack]
     if: github.ref == 'refs/heads/main' && vars.PRODUCTION_DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
