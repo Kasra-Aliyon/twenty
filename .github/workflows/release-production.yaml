@@ -1,0 +1,220 @@
+name: Release production
+
+on:
+  push:
+    branches: [main, codex/production-deployment]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-release
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: github.repository == 'Kasra-Aliyon/twenty'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+      - run: yarn workspaces focus twenty-mcp-server
+      - run: yarn workspace twenty-mcp-server typecheck
+      - run: yarn workspace twenty-mcp-server test --runInBand
+      - run: node --test packages/twenty-docker/production/*.test.mjs twenty-crm-extension-main/utils/__tests__/deployment.test.mjs
+      - name: Validate Compose without printing secrets
+        env:
+          TWENTY_PUBLIC_URL: https://crm.example.com
+          POSTGRES_PASSWORD: validation-only
+          APP_SECRET: validation-only
+          ENCRYPTION_KEY: validation-only
+          TWENTY_API_KEY: validation-only
+          TWENTY_MCP_HTTP_BEARER_TOKEN: validation-only
+          TWENTY_IMAGE: ghcr.io/example/twenty:test
+          TWENTY_MCP_IMAGE: ghcr.io/example/mcp:test
+        run: docker compose -f packages/twenty-docker/production/compose.yml config --quiet
+
+  extension:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      WXT_TWENTY_APP_URL: ${{ vars.TWENTY_PUBLIC_URL || 'https://crm.example.com' }}
+      WXT_TWENTY_API_URL: ${{ vars.TWENTY_PUBLIC_URL || 'https://crm.example.com' }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: twenty-crm-extension-main/package-lock.json
+      - name: Set increasing Chrome version
+        run: |
+          test "$GITHUB_RUN_NUMBER" -le 65535
+          echo "EXTENSION_VERSION=1.2.2.$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
+      - run: npm ci
+        working-directory: twenty-crm-extension-main
+      - run: npm run compile
+        working-directory: twenty-crm-extension-main
+      - run: npm run zip
+        working-directory: twenty-crm-extension-main
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: linkedin-extension-${{ github.sha }}
+          path: twenty-crm-extension-main/.output/*-chrome.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  app-image:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.name.outputs.image }}@${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - name: Image name
+        id: name
+        run: echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/twenty-production" >> "$GITHUB_OUTPUT"
+      - name: Free build disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+        with:
+          buildkitd-config-inline: |
+            [worker.oci]
+              max-parallelism = 1
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        id: build
+        with:
+          context: .
+          file: packages/twenty-docker/twenty/Dockerfile
+          target: twenty
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.name.outputs.image }}:${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          build-args: APP_VERSION=${{ github.sha }}
+          cache-from: type=gha,scope=twenty-production
+          cache-to: type=gha,scope=twenty-production,mode=min
+
+  mcp-image:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.name.outputs.image }}@${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - name: Image name
+        id: name
+        run: echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/twenty-mcp" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        id: build
+        with:
+          context: .
+          file: packages/twenty-mcp/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.name.outputs.image }}:${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=twenty-mcp
+          cache-to: type=gha,scope=twenty-mcp,mode=min
+
+  deploy:
+    needs: [app-image, mcp-image, extension]
+    if: github.ref == 'refs/heads/main' && vars.PRODUCTION_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    env:
+      COOLIFY_URL: ${{ vars.COOLIFY_URL }}
+      COOLIFY_APP_UUID: ${{ vars.COOLIFY_APP_UUID }}
+      COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      TWENTY_IMAGE: ${{ needs.app-image.outputs.image }}
+      TWENTY_MCP_IMAGE: ${{ needs.mcp-image.outputs.image }}
+      TWENTY_PUBLIC_URL: ${{ vars.TWENTY_PUBLIC_URL }}
+      TWENTY_MCP_PUBLIC_URL: ${{ vars.TWENTY_MCP_PUBLIC_URL }}
+      TWENTY_MCP_HTTP_BEARER_TOKEN: ${{ secrets.TWENTY_MCP_HTTP_BEARER_TOKEN }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+      - name: Require production addresses
+        env:
+          CRM_URL: ${{ vars.TWENTY_PUBLIC_URL }}
+          MCP_URL: ${{ vars.TWENTY_MCP_PUBLIC_URL }}
+        run: test -n "$CRM_URL" && test -n "$MCP_URL"
+      - name: Check configuration before stopping production
+        run: node packages/twenty-docker/production/deploy.mjs --check
+      - name: Stop writers and back up database, uploads, keys and queue
+        env:
+          SSH_KEY: ${{ secrets.PRODUCTION_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.PRODUCTION_SSH_KNOWN_HOSTS }}
+          SSH_TARGET: ${{ secrets.PRODUCTION_SSH_TARGET }}
+        run: |
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=30 "$SSH_TARGET" prepare
+      - name: Deploy and verify the tested image pair
+        env:
+          COOLIFY_URL: ${{ vars.COOLIFY_URL }}
+          COOLIFY_APP_UUID: ${{ vars.COOLIFY_APP_UUID }}
+          COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+          TWENTY_IMAGE: ${{ needs.app-image.outputs.image }}
+          TWENTY_MCP_IMAGE: ${{ needs.mcp-image.outputs.image }}
+          TWENTY_PUBLIC_URL: ${{ vars.TWENTY_PUBLIC_URL }}
+          TWENTY_MCP_PUBLIC_URL: ${{ vars.TWENTY_MCP_PUBLIC_URL }}
+          TWENTY_MCP_HTTP_BEARER_TOKEN: ${{ secrets.TWENTY_MCP_HTTP_BEARER_TOKEN }}
+        run: node packages/twenty-docker/production/deploy.mjs
+
+  publish-extension:
+    needs: deploy
+    if: vars.CHROME_PUBLISH_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: linkedin-extension-${{ github.sha }}
+          path: extension-package
+      - name: Submit extension for store review
+        env:
+          CHROME_CLIENT_ID: ${{ secrets.CHROME_CLIENT_ID }}
+          CHROME_CLIENT_SECRET: ${{ secrets.CHROME_CLIENT_SECRET }}
+          CHROME_REFRESH_TOKEN: ${{ secrets.CHROME_REFRESH_TOKEN }}
+          CHROME_PUBLISHER_ID: ${{ vars.CHROME_PUBLISHER_ID }}
+          CHROME_EXTENSION_ID: ${{ vars.CHROME_EXTENSION_ID }}
+        run: node packages/twenty-docker/production/publish-extension.mjs extension-package/*-chrome.zip

@@ -1,0 +1,9 @@
+[Unit]
+Description=Back up Twenty database, uploads, queue and credentials
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/twenty/backup.sh backup
+UMask=0077

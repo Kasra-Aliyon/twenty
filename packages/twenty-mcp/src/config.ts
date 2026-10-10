@@ -63,6 +63,28 @@ export const readConfig = (
   const transport = readTransport(environment.TRANSPORT);
   const host = environment.HOST ?? DEFAULT_HTTP_HOST;
   const httpBearerToken = environment.TWENTY_MCP_HTTP_BEARER_TOKEN;
+  const allowedOrigins = (environment.TWENTY_MCP_ALLOWED_ORIGINS ?? '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean)
+    .map((origin) => {
+      const url = new URL(origin);
+
+      if (
+        url.protocol !== 'https:' ||
+        url.username ||
+        url.password ||
+        url.pathname !== '/' ||
+        url.search ||
+        url.hash
+      ) {
+        throw new Error(
+          'TWENTY_MCP_ALLOWED_ORIGINS must contain HTTPS origins',
+        );
+      }
+
+      return url.origin;
+    });
 
   if (
     transport === 'http' &&
@@ -79,6 +101,9 @@ export const readConfig = (
     apiKey,
     ...(environment.TWENTY_USER_TOKEN
       ? { userToken: environment.TWENTY_USER_TOKEN }
+      : {}),
+    ...(environment.TWENTY_USER_SESSION_FILE
+      ? { userSessionFile: environment.TWENTY_USER_SESSION_FILE }
       : {}),
     metadataCacheTtlMs: readPositiveInteger(
       environment.TWENTY_METADATA_CACHE_TTL_MS,
@@ -97,6 +122,7 @@ export const readConfig = (
     ),
     enableAdvanced: environment.TWENTY_ENABLE_ADVANCED === 'true',
     transport,
+    allowedOrigins,
     host,
     port: readPositiveInteger(environment.PORT, DEFAULT_HTTP_PORT, 'PORT'),
     ...(httpBearerToken === undefined || httpBearerToken.trim() === ''

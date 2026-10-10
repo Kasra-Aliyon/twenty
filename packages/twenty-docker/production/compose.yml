@@ -1,0 +1,149 @@
+name: twenty-production
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: '3'
+
+x-twenty-environment: &twenty-environment
+  NODE_ENV: production
+  NODE_PORT: 3000
+  SERVER_URL: ${TWENTY_PUBLIC_URL:?Set the public HTTPS CRM origin}
+  PG_DATABASE_URL: postgres://twenty:${POSTGRES_PASSWORD:?Set a URL-safe database password}@db:5432/default
+  REDIS_URL: redis://redis:6379
+  APP_SECRET: ${APP_SECRET:?Set a persistent app secret}
+  ENCRYPTION_KEY: ${ENCRYPTION_KEY:?Preserve the encryption key when migrating existing data}
+  STORAGE_TYPE: local
+  STORAGE_LOCAL_PATH: .local-storage
+  IS_MULTIWORKSPACE_ENABLED: 'false'
+  SIGN_IN_PREFILLED: 'false'
+  DISABLE_DB_MIGRATIONS: 'true'
+  DISABLE_CRON_JOBS_REGISTRATION: 'true'
+  FAIL_ON_UPGRADE_ERROR: 'true'
+  EMAIL_DRIVER: ${EMAIL_DRIVER:-logger}
+  EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS:-}
+  EMAIL_FROM_NAME: ${EMAIL_FROM_NAME:-Twenty}
+  EMAIL_SMTP_HOST: ${EMAIL_SMTP_HOST:-}
+  EMAIL_SMTP_PORT: ${EMAIL_SMTP_PORT:-587}
+  EMAIL_SMTP_USER: ${EMAIL_SMTP_USER:-}
+  EMAIL_SMTP_PASSWORD: ${EMAIL_SMTP_PASSWORD:-}
+  MESSAGING_PROVIDER_GMAIL_ENABLED: ${MESSAGING_PROVIDER_GMAIL_ENABLED:-false}
+  CALENDAR_PROVIDER_GOOGLE_ENABLED: ${CALENDAR_PROVIDER_GOOGLE_ENABLED:-false}
+  AUTH_GOOGLE_CLIENT_ID: ${AUTH_GOOGLE_CLIENT_ID:-}
+  AUTH_GOOGLE_CLIENT_SECRET: ${AUTH_GOOGLE_CLIENT_SECRET:-}
+  AUTH_GOOGLE_CALLBACK_URL: ${AUTH_GOOGLE_CALLBACK_URL:-}
+  AUTH_GOOGLE_APIS_CALLBACK_URL: ${AUTH_GOOGLE_APIS_CALLBACK_URL:-}
+  MESSAGING_PROVIDER_MICROSOFT_ENABLED: ${MESSAGING_PROVIDER_MICROSOFT_ENABLED:-false}
+  CALENDAR_PROVIDER_MICROSOFT_ENABLED: ${CALENDAR_PROVIDER_MICROSOFT_ENABLED:-false}
+  AUTH_MICROSOFT_CLIENT_ID: ${AUTH_MICROSOFT_CLIENT_ID:-}
+  AUTH_MICROSOFT_CLIENT_SECRET: ${AUTH_MICROSOFT_CLIENT_SECRET:-}
+  AUTH_MICROSOFT_CALLBACK_URL: ${AUTH_MICROSOFT_CALLBACK_URL:-}
+  AUTH_MICROSOFT_APIS_CALLBACK_URL: ${AUTH_MICROSOFT_APIS_CALLBACK_URL:-}
+
+services:
+  db:
+    image: postgres:16.13-alpine
+    restart: unless-stopped
+    logging: *logging
+    labels:
+      com.twenty.deployment: production
+      com.twenty.role: db
+    environment:
+      POSTGRES_USER: twenty
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      POSTGRES_DB: default
+    volumes:
+      - database:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U twenty -d default']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7.4.8-alpine
+    restart: unless-stopped
+    logging: *logging
+    labels:
+      com.twenty.deployment: production
+      com.twenty.role: redis
+    command: [redis-server, --appendonly, 'yes', --maxmemory-policy, noeviction]
+    volumes:
+      - redis:/data
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  server:
+    image: ${TWENTY_IMAGE:?}
+    restart: unless-stopped
+    logging: *logging
+    labels:
+      com.twenty.deployment: production
+      com.twenty.role: server
+    environment:
+      <<: *twenty-environment
+      DISABLE_DB_MIGRATIONS: 'false'
+      DISABLE_CRON_JOBS_REGISTRATION: 'false'
+    expose:
+      - '3000'
+    volumes:
+      - uploads:/app/packages/twenty-server/.local-storage
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, curl, --fail, http://127.0.0.1:3000/healthz]
+      interval: 15s
+      timeout: 5s
+      start_period: 60s
+      retries: 20
+
+  worker:
+    image: ${TWENTY_IMAGE:?}
+    restart: unless-stopped
+    logging: *logging
+    labels:
+      com.twenty.deployment: production
+      com.twenty.role: worker
+    command: [yarn, 'worker:prod']
+    environment:
+      <<: *twenty-environment
+    volumes:
+      - uploads:/app/packages/twenty-server/.local-storage
+    depends_on:
+      server:
+        condition: service_healthy
+
+  mcp:
+    image: ${TWENTY_MCP_IMAGE:?Set the tested MCP image digest}
+    restart: unless-stopped
+    logging: *logging
+    labels:
+      com.twenty.deployment: production
+      com.twenty.role: mcp
+    environment:
+      TWENTY_BASE_URL: http://server:3000
+      TWENTY_API_KEY: ${TWENTY_API_KEY:?Set a role-scoped CRM API key}
+      TWENTY_USER_TOKEN: ${TWENTY_USER_TOKEN:-}
+      TWENTY_USER_SESSION_FILE: ${TWENTY_USER_SESSION_FILE:-}
+      TWENTY_MCP_HTTP_BEARER_TOKEN: ${TWENTY_MCP_HTTP_BEARER_TOKEN:?Set the private MCP access token}
+      TWENTY_MCP_ALLOWED_ORIGINS: ${TWENTY_MCP_ALLOWED_ORIGINS:-}
+    expose:
+      - '3333'
+    volumes:
+      - mcp-state:/state
+    depends_on:
+      server:
+        condition: service_healthy
+
+volumes:
+  database:
+  redis:
+  uploads:
+  mcp-state:

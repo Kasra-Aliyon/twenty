@@ -4,7 +4,11 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { createMcpServer } from '../server.js';
 import type { ToolDependencies, TwentyMcpConfig } from '../types.js';
 
-const isAllowedOrigin = (origin: string | undefined, host: string): boolean => {
+const isAllowedOrigin = (
+  origin: string | undefined,
+  host: string,
+  allowedOrigins: string[] = [],
+): boolean => {
   if (origin === undefined) {
     return true;
   }
@@ -12,7 +16,12 @@ const isAllowedOrigin = (origin: string | undefined, host: string): boolean => {
   try {
     const originUrl = new URL(origin);
 
+    if (originUrl.origin !== origin) {
+      return false;
+    }
+
     return (
+      allowedOrigins.includes(origin) ||
       originUrl.hostname === host ||
       originUrl.hostname === '127.0.0.1' ||
       originUrl.hostname === 'localhost'
@@ -24,7 +33,10 @@ const isAllowedOrigin = (origin: string | undefined, host: string): boolean => {
 
 export const startHttpTransport = async (
   dependencies: ToolDependencies,
-  config: Pick<TwentyMcpConfig, 'host' | 'httpBearerToken' | 'port'>,
+  config: Pick<
+    TwentyMcpConfig,
+    'host' | 'httpBearerToken' | 'port' | 'allowedOrigins'
+  >,
 ): Promise<void> => {
   const app = createMcpExpressApp({ host: config.host });
 
@@ -49,7 +61,13 @@ export const startHttpTransport = async (
         return;
       }
 
-      if (!isAllowedOrigin(request.get('origin'), config.host)) {
+      if (
+        !isAllowedOrigin(
+          request.get('origin'),
+          config.host,
+          config.allowedOrigins,
+        )
+      ) {
         response.status(403).json({
           jsonrpc: '2.0',
           error: {
@@ -64,6 +82,7 @@ export const startHttpTransport = async (
       const server = createMcpServer(dependencies);
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: undefined,
+        enableJsonResponse: true,
       });
 
       response.on('close', () => {

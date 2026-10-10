@@ -1,8 +1,15 @@
 import { storage } from '#imports';
 import type { ExtensionSettings, TwentyTokenPair } from '../types';
+import { getDeploymentOrigin } from './deployment';
 
-export const DEFAULT_TWENTY_APP_URL = 'http://localhost:2001';
-export const DEFAULT_TWENTY_API_URL = 'http://localhost:2000';
+export const DEFAULT_TWENTY_APP_URL = getDeploymentOrigin(
+  import.meta.env.WXT_TWENTY_APP_URL,
+  'http://localhost:2001',
+);
+export const DEFAULT_TWENTY_API_URL = getDeploymentOrigin(
+  import.meta.env.WXT_TWENTY_API_URL,
+  'http://localhost:2000',
+);
 const LEGACY_DEFAULT_TWENTY_APP_URL = 'http://localhost:3001';
 const LEGACY_DEFAULT_TWENTY_API_URL = 'http://localhost:3000';
 

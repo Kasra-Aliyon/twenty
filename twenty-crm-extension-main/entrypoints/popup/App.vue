@@ -307,8 +307,7 @@ async function testConnection() {
 
     if (!hasToken.value) {
       isConnected.value = false;
-      error.value =
-        'No local Twenty login token synced yet. Open http://localhost:2001, log in, then click this extension while that Twenty tab is active.';
+      error.value = `No Twenty login token synced yet. Open ${twentyAppUrl.value}, log in, then click this extension while that Twenty tab is active.`;
       return;
     }
 
@@ -393,7 +392,7 @@ function formatDate(timestamp: number): string {
             v-model="twentyAppUrl"
             type="url"
             class="input"
-            placeholder="http://localhost:2001"
+            :placeholder="DEFAULT_TWENTY_APP_URL"
             @keyup.enter="saveSettings"
           />
           <p class="hint">Local Twenty frontend URL for opening records</p>
@@ -406,7 +405,7 @@ function formatDate(timestamp: number): string {
             v-model="twentyApiUrl"
             type="url"
             class="input"
-            placeholder="http://localhost:2000"
+            :placeholder="DEFAULT_TWENTY_API_URL"
             @keyup.enter="saveSettings"
           />
           <p class="hint">Local Twenty server URL used for GraphQL</p>

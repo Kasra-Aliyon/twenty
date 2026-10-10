@@ -9,6 +9,7 @@ export type TwentyMcpConfig = {
   baseUrl: URL;
   apiKey: string;
   userToken?: string;
+  userSessionFile?: string;
   metadataCacheTtlMs: number;
   requestTimeoutMs: number;
   maxRetries: number;
@@ -17,6 +18,7 @@ export type TwentyMcpConfig = {
   host: string;
   port: number;
   httpBearerToken?: string;
+  allowedOrigins?: string[];
 };
 
 export type RestQueryValue =

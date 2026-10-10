@@ -21,6 +21,10 @@ setup_and_migrate_db() {
     fi
 
     if ! yarn command:prod upgrade; then
+        if [ "${FAIL_ON_UPGRADE_ERROR}" = "true" ]; then
+            echo "Database upgrade failed; refusing to start production."
+            exit 1
+        fi
         echo "Warning: Upgrade completed with errors. Some workspaces may not be fully migrated. Check logs for details."
     fi
 
@@ -41,6 +45,10 @@ register_background_jobs() {
     if yarn command:prod cron:register:all; then
         echo "Successfully registered all background sync jobs!"
     else
+        if [ "${FAIL_ON_UPGRADE_ERROR}" = "true" ]; then
+            echo "Background job registration failed; refusing to start production."
+            exit 1
+        fi
         echo "Warning: Failed to register background jobs, but continuing startup..."
     fi
 }
