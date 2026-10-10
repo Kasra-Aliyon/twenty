@@ -116,7 +116,7 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
           build-args: APP_VERSION=${{ github.sha }}
           cache-from: type=gha,scope=twenty-production
-          cache-to: type=gha,scope=twenty-production,mode=min
+          cache-to: type=gha,scope=twenty-production,mode=max
 
   mcp-image:
     needs: verify
@@ -150,7 +150,7 @@ jobs:
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha,scope=twenty-mcp
-          cache-to: type=gha,scope=twenty-mcp,mode=min
+          cache-to: type=gha,scope=twenty-mcp,mode=max
 
   smoke-stack:
     needs: [app-image, mcp-image, extension]
