@@ -5,7 +5,7 @@
       "command": "bash",
       "args": [
         "-c",
-        "source packages/twenty-server/.env && npx -y @modelcontextprotocol/server-postgres \"$PG_DATABASE_URL\""
+        "set -a && source packages/twenty-server/.env && set +a && npx -y @modelcontextprotocol/server-postgres \"$PG_DATABASE_URL\""
       ],
       "env": {}
     },

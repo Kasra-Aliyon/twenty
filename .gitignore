@@ -54,6 +54,8 @@ dump.rdb
 mcp.json
 /.junie/
 /.agents/plugins/marketplace.json
+/.agents/
+/analysis/
 TRANSLATION_QA_REPORT.md
 .playwright-mcp/
 .playwright-cli/
