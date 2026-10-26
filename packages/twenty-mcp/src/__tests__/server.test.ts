@@ -5,11 +5,15 @@ import { createMcpServer } from '../server.js';
 import type { MetadataService } from '../services/metadata.service.js';
 import type { TwentyClient } from '../services/twenty-client.js';
 
-const listToolNames = async (enableAdvanced: boolean): Promise<string[]> => {
+const listToolNames = async (
+  enableAdvanced: boolean,
+  enableSchemaTools = false,
+): Promise<string[]> => {
   const server = createMcpServer({
     client: {} as TwentyClient,
     metadata: {} as MetadataService,
     enableAdvanced,
+    enableSchemaTools,
   });
   const client = new Client({
     name: 'twenty-mcp-test-client',
@@ -78,6 +82,27 @@ describe('MCP server registration', () => {
       ]),
     );
     expect(names).not.toContain('twenty_destroy_record');
+    expect(names).not.toContain('twenty_create_object');
+    expect(names).not.toContain('twenty_update_object');
+    expect(names).not.toContain('twenty_create_field');
+    expect(names).not.toContain('twenty_update_field');
+  });
+
+  it('adds only the four schema tools when the schema flag is enabled', async () => {
+    const names = await listToolNames(false, true);
+
+    expect(names).toHaveLength(130);
+    expect(names).toEqual(
+      expect.arrayContaining([
+        'twenty_create_object',
+        'twenty_update_object',
+        'twenty_create_field',
+        'twenty_update_field',
+      ]),
+    );
+    expect(names).not.toContain('twenty_destroy_record');
+    expect(names).not.toContain('twenty_delete_object');
+    expect(names).not.toContain('twenty_delete_field');
   });
 
   it('adds opt-in advanced read and permanent-destroy tools', async () => {

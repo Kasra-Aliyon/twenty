@@ -251,6 +251,17 @@ export const buildObjectInputSchema = (
       if (field.type === 'RELATION' || field.type === 'MORPH_RELATION') {
         shape[`${field.name}Id`] = z.string().nullable().optional();
       }
+
+      if (field.type === 'MORPH_RELATION') {
+        for (const relation of field.morphRelations ?? []) {
+          const name = relation.targetObjectMetadata?.nameSingular;
+
+          if (name !== undefined && name.length > 0) {
+            shape[`${field.name}${name[0]?.toUpperCase()}${name.slice(1)}Id`] =
+              z.string().nullable().optional();
+          }
+        }
+      }
     }
   }
 

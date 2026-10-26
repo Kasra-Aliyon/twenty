@@ -69,6 +69,7 @@ export const registerDiscoveryTools = (
           object_count: objects.length,
           unibox_user_token_configured: dependencies.client.hasUserToken(),
           advanced_tools_enabled: dependencies.enableAdvanced,
+          schema_tools_enabled: dependencies.enableSchemaTools === true,
         };
       }, response_format),
   );

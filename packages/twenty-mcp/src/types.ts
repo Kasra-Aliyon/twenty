@@ -14,6 +14,7 @@ export type TwentyMcpConfig = {
   requestTimeoutMs: number;
   maxRetries: number;
   enableAdvanced: boolean;
+  enableSchemaTools: boolean;
   transport: TransportMode;
   host: string;
   port: number;
@@ -119,6 +120,7 @@ export type ToolDependencies = {
   client: TwentyClient;
   metadata: MetadataService;
   enableAdvanced: boolean;
+  enableSchemaTools?: boolean;
 };
 import type { MetadataService } from './services/metadata.service.js';
 import type { TwentyClient } from './services/twenty-client.js';

@@ -121,6 +121,7 @@ export const readConfig = (
       'TWENTY_MAX_RETRIES',
     ),
     enableAdvanced: environment.TWENTY_ENABLE_ADVANCED === 'true',
+    enableSchemaTools: environment.TWENTY_ENABLE_SCHEMA_TOOLS === 'true',
     transport,
     allowedOrigins,
     host,

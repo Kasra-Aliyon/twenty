@@ -15,6 +15,7 @@ import { registerListTools } from './lists.tools.js';
 import { registerOpportunityTools } from './opportunities.tools.js';
 import { registerPeopleTools } from './people.tools.js';
 import { registerRecordTools } from './records.tools.js';
+import { registerSchemaTools } from './schema.tools.js';
 import { registerSequenceTools } from './sequences.tools.js';
 import { registerTaskAndNoteTools } from './tasks-notes.tools.js';
 import { registerUniboxTools } from './unibox.tools.js';
@@ -41,6 +42,10 @@ export const registerAllTools = (
   registerLinkedinActivitySearchTool(server, dependencies);
   registerUniboxTools(server, dependencies);
   registerViewTools(server, dependencies);
+
+  if (dependencies.enableSchemaTools === true) {
+    registerSchemaTools(server, dependencies);
+  }
 
   if (dependencies.enableAdvanced) {
     registerAdvancedReadTools(server, dependencies);

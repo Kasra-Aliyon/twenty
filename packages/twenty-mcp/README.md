@@ -5,7 +5,7 @@ agents a metadata-aware interface to standard objects, custom objects, and commo
 CRM workflows without coupling the MCP process to the Twenty server runtime.
 
 The server exposes 126 tools by default and five additional tools when advanced
-mode is enabled. It uses stdio by default and also supports stateless Streamable
+mode is enabled. Four schema tools are separately opt-in. It uses stdio by default and also supports stateless Streamable
 HTTP.
 
 For end-to-end setup across Codex, ChatGPT, Claude Code, Claude Desktop, and
@@ -86,6 +86,7 @@ Optional:
 | `TWENTY_REQUEST_TIMEOUT_MS`    |     `15000` | Per-request timeout.                                                                                             |
 | `TWENTY_MAX_RETRIES`           |         `2` | Retries for rate limits, 5xx responses, and transient fetch failures.                                            |
 | `TWENTY_ENABLE_ADVANCED`       |     `false` | Enables permanent destruction and high-volume message/attachment reads.                                          |
+| `TWENTY_ENABLE_SCHEMA_TOOLS` | `false` | Enables four confirmed schema tools; the API key's role also needs `DATA_MODEL`. |
 | `TRANSPORT`                    |     `stdio` | `stdio` or `http`.                                                                                               |
 | `HOST`                         | `127.0.0.1` | HTTP bind host.                                                                                                  |
 | `PORT`                         |      `3333` | HTTP bind port.                                                                                                  |
@@ -111,6 +112,7 @@ env_vars = [
   "TWENTY_API_KEY",
   "TWENTY_USER_TOKEN",
   "TWENTY_ENABLE_ADVANCED",
+  "TWENTY_ENABLE_SCHEMA_TOOLS",
 ]
 startup_timeout_sec = 20
 tool_timeout_sec = 60
@@ -136,7 +138,8 @@ Claude Code expands environment variables in project `.mcp.json` files:
         "TWENTY_BASE_URL": "${TWENTY_BASE_URL}",
         "TWENTY_API_KEY": "${TWENTY_API_KEY}",
         "TWENTY_USER_TOKEN": "${TWENTY_USER_TOKEN:-}",
-        "TWENTY_ENABLE_ADVANCED": "${TWENTY_ENABLE_ADVANCED:-false}"
+        "TWENTY_ENABLE_ADVANCED": "${TWENTY_ENABLE_ADVANCED:-false}",
+        "TWENTY_ENABLE_SCHEMA_TOOLS": "${TWENTY_ENABLE_SCHEMA_TOOLS:-false}"
       }
     }
   }
@@ -202,6 +205,52 @@ Advanced mode additionally exposes:
 - `twenty_list_message_threads`
 
 ## Usage guidance
+
+### Schema changes
+
+Set `TWENTY_ENABLE_SCHEMA_TOOLS=true` on the MCP process and restart it to
+register these tools. Grant the `DATA_MODEL` settings permission to the role
+assigned to its API key under Settings → Roles. Reconnect the MCP client after
+enabling the flag. `twenty_health_check` reports `schema_tools_enabled`.
+
+| Tool | Accepted changes |
+| --- | --- |
+| `twenty_create_object` | Singular/plural internal names and labels, description, icon |
+| `twenty_update_object` | Workspace-custom object labels, description, icon |
+| `twenty_create_field` | A new field on any object, with options, default, settings or relation target |
+| `twenty_update_field` | A workspace-custom object's field label, description, icon, options, default or active state |
+
+Every schema tool defaults to `confirm: false` and returns the exact GraphQL
+mutation input without sending a mutation. Previews may read metadata to resolve
+names and verify ownership. Review that input and obtain approval for the exact
+change before repeating the call with `confirm: true`.
+
+Object arguments accept live singular or plural names. New internal names use
+lower camel case. Select options are ordered `{value, label, color?}` entries;
+values use upper snake case. Omitted colors default to gray for new options and
+retain existing colors on updates. Existing option IDs are preserved by value.
+Select defaults accept a value such as `OPEN`; multi-select defaults accept an
+array. The tool converts these to the metadata API's quoted values.
+
+Relations use `relation: {target_object, type, inverse_label, inverse_icon?}`.
+The type defaults to `MANY_TO_ONE` and also accepts `ONE_TO_MANY`; the inverse
+icon defaults to `IconLink`.
+
+Dropping an option is refused unless `allow_option_removal: true` is explicitly
+provided. Records holding a removed option lose that value. Clear or replace a
+default that refers to a removed option in the same change.
+
+Standard and installed-application objects and their fields cannot be updated
+or deactivated. New fields can be added to them. Workspace-custom objects can
+have any field relabeled, including their built-in name field, while retaining
+its internal name. There are no object/field deletion tools. Successful schema
+mutations clear the metadata cache immediately.
+
+`twenty_attach_note`, `twenty_attach_task` and `twenty_list_activities` accept
+custom objects when live metadata exposes both note and task targets. Plural
+aliases resolve to the canonical singular target column.
+
+### Records
 
 Start unfamiliar generic workflows with `twenty_list_objects`, then call
 `twenty_describe_object`. Create and update tools validate field names, scalar
