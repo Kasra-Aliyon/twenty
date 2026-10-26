@@ -8,7 +8,7 @@ import { beautifyExactDate, hasDatePassed } from '~/utils/date-utils';
 import { ActivityRow } from '@/activities/components/ActivityRow';
 import { useActivityTargetsComponentInstanceId } from '@/activities/inline-cell/hooks/useActivityTargetsComponentInstanceId';
 import { type Task } from '@/activities/types/Task';
-import { useOpenRecordInSidePanel } from '@/side-panel/hooks/useOpenRecordInSidePanel';
+import { useOpenSequenceTimeline } from '@/sequence/hooks/useOpenSequenceTimeline';
 import { CoreObjectNameSingular } from 'twenty-shared/types';
 import { StopPropagationContainer } from '@/object-record/record-board/record-board-card/components/StopPropagationContainer';
 import { RecordFieldsScopeContextProvider } from '@/object-record/record-field-list/contexts/RecordFieldsScopeContext';
@@ -87,7 +87,7 @@ const StyledCheckboxContainer = styled.div`
 
 export const TaskRow = ({ task }: { task: Task }) => {
   const { theme } = useContext(ThemeContext);
-  const { openRecordInSidePanel } = useOpenRecordInSidePanel();
+  const { openSequenceTimeline } = useOpenSequenceTimeline();
 
   const body = getActivitySummary(task?.bodyV2?.blocknote ?? null);
 
@@ -101,10 +101,7 @@ export const TaskRow = ({ task }: { task: Task }) => {
   return (
     <ActivityRow
       onClick={() => {
-        openRecordInSidePanel({
-          recordId: task.id,
-          objectNameSingular: CoreObjectNameSingular.Task,
-        });
+        openSequenceTimeline({ taskId: task.id });
       }}
     >
       <StyledLeftSideContainer>

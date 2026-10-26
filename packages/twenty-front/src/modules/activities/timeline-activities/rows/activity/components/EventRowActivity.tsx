@@ -5,7 +5,8 @@ import { type EventRowDynamicComponentProps } from '@/activities/timeline-activi
 import { EventRowItem } from '@/activities/timeline-activities/rows/components/EventRowItem';
 import { isTimelineActivityWithLinkedRecord } from '@/activities/timeline-activities/types/TimelineActivity';
 import { useOpenRecordInSidePanel } from '@/side-panel/hooks/useOpenRecordInSidePanel';
-import { type CoreObjectNameSingular } from 'twenty-shared/types';
+import { useOpenSequenceTimeline } from '@/sequence/hooks/useOpenSequenceTimeline';
+import { CoreObjectNameSingular } from 'twenty-shared/types';
 import { useGetRecordFromCache } from '@/object-record/cache/hooks/useGetRecordFromCache';
 import { isNonEmptyString } from '@sniptt/guards';
 import { OverflowingTextWithTooltip } from 'twenty-ui/surfaces';
@@ -94,6 +95,7 @@ export const EventRowActivity = ({
   const activityTitle = computeActivityTitle();
 
   const { openRecordInSidePanel } = useOpenRecordInSidePanel();
+  const { openSequenceTimeline } = useOpenSequenceTimeline();
 
   return (
     <StyledEventRow>
@@ -104,12 +106,16 @@ export const EventRowActivity = ({
             {t`${eventAction} a related ${eventObject}`}
           </EventRowItem>
           <StyledLinkedActivity
-            onClick={() =>
+            onClick={() => {
+              if (objectNameSingular === CoreObjectNameSingular.Task) {
+                openSequenceTimeline({ taskId: event.linkedRecordId });
+                return;
+              }
               openRecordInSidePanel({
                 recordId: event.linkedRecordId,
                 objectNameSingular,
-              })
-            }
+              });
+            }}
           >
             <OverflowingTextWithTooltip text={activityTitle} />
           </StyledLinkedActivity>

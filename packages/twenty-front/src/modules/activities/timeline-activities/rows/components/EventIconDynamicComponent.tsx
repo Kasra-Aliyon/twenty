@@ -7,6 +7,8 @@ import {
   IconEditCircle,
   IconRestore,
   IconTrash,
+  IconPhone,
+  IconTimelineEvent,
 } from 'twenty-ui/icon';
 
 export const EventIconDynamicComponent = ({
@@ -16,6 +18,14 @@ export const EventIconDynamicComponent = ({
   event: TimelineActivity;
   linkedObjectMetadataItem: EnrichedObjectMetadataItem | null;
 }) => {
+  if (event.name.startsWith('sequence.')) {
+    return event.name === 'sequence.call-recorded' ? (
+      <IconPhone />
+    ) : (
+      <IconTimelineEvent />
+    );
+  }
+
   if (event.name.startsWith('linkedin.')) {
     return <IconBrandLinkedin />;
   }

@@ -100,6 +100,11 @@ const TaskQueuePageContent = () => {
         id: true,
         targetPerson: {
           id: true,
+          phones: {
+            primaryPhoneNumber: true,
+            primaryPhoneCallingCode: true,
+            additionalPhones: true,
+          },
           linkedinLink: {
             primaryLinkUrl: true,
           },
