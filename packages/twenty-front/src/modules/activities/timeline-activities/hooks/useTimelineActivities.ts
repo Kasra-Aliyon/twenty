@@ -17,16 +17,18 @@ import { capitalize, isDefined } from 'twenty-shared/utils';
 // do we need to test this?
 export const useTimelineActivities = (
   targetableObject: ActivityTargetableObject,
+  activityFilter?: RecordGqlOperationFilter,
 ) => {
   const targetableObjectFieldIdName = `target${capitalize(targetableObject.targetObjectNameSingular)}Id`;
 
   const filter: RecordGqlOperationFilter = useMemo(
     () => ({
+      ...activityFilter,
       [targetableObjectFieldIdName]: {
         eq: targetableObject.id,
       },
     }),
-    [targetableObjectFieldIdName, targetableObject.id],
+    [targetableObjectFieldIdName, targetableObject.id, activityFilter],
   );
 
   const { objectMetadataItem: timelineActivityMetadata } =
@@ -55,6 +57,8 @@ export const useTimelineActivities = (
     loading: loadingTimelineActivities,
     fetchMoreRecords,
     refetch,
+    hasNextPage,
+    error,
   } = useFindManyRecords<TimelineActivity>({
     skip: !hasTimelineActivityField,
     objectNameSingular: CoreObjectNameSingular.TimelineActivity,
@@ -82,7 +86,7 @@ export const useTimelineActivities = (
   );
 
   useListenToEventsForQuery({
-    queryId: `timeline-activities-${targetableObject.targetObjectNameSingular}-${targetableObject.id}`,
+    queryId: `timeline-activities-${targetableObject.targetObjectNameSingular}-${targetableObject.id}-${activityFilter ? 'filtered' : 'all'}`,
     operationSignature,
     skip: !hasTimelineActivityField,
   });
@@ -118,5 +122,8 @@ export const useTimelineActivities = (
     firstQueryLoading,
     loadingMore,
     fetchMoreRecords,
+    refetch,
+    hasNextPage,
+    error,
   };
 };

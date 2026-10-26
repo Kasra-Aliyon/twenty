@@ -27,6 +27,7 @@ import { SidePanelWorkflowRunViewStep } from '@/side-panel/pages/workflow/step/v
 import { SidePanelWorkflowViewStep } from '@/side-panel/pages/workflow/step/view/components/SidePanelWorkflowViewStep';
 import { SidePanelWorkflowSelectTriggerType } from '@/side-panel/pages/workflow/trigger-type/components/SidePanelWorkflowSelectTriggerType';
 import { SidePanelPages } from 'twenty-shared/types';
+import { SidePanelSequenceTimeline } from '@/sequence/components/SidePanelSequenceTimeline';
 
 export const SIDE_PANEL_PAGES_CONFIG = new Map<SidePanelPages, React.ReactNode>(
   [
@@ -35,6 +36,7 @@ export const SIDE_PANEL_PAGES_CONFIG = new Map<SidePanelPages, React.ReactNode>(
       <SidePanelCommandMenuItemDisplayPage />,
     ],
     [SidePanelPages.ViewRecord, <SidePanelRecordPage />],
+    [SidePanelPages.SequenceTimeline, <SidePanelSequenceTimeline />],
     [SidePanelPages.MergeRecords, <SidePanelMergeRecordPage />],
     [SidePanelPages.UpdateRecords, <SidePanelUpdateMultipleRecords />],
     [SidePanelPages.EditRichText, <SidePanelEditRichTextPage />],

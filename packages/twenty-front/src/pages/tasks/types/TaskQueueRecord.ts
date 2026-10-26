@@ -8,6 +8,7 @@ export type TaskQueueRecord = ObjectRecord & {
   type: SequenceTaskType | null;
   priority: TaskPriority | null;
   sequenceEnrollmentId: string | null;
+  bodyV2?: { markdown: string | null } | null;
   taskTargets: Array<{
     id: string;
     targetPerson: {

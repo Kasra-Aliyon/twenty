@@ -1,15 +1,24 @@
 import { useUpdateOneRecord } from '@/object-record/hooks/useUpdateOneRecord';
-import { useOpenRecordInSidePanel } from '@/side-panel/hooks/useOpenRecordInSidePanel';
+import { useOpenSequenceTimeline } from '@/sequence/hooks/useOpenSequenceTimeline';
 import { useSnackBar } from '@/ui/feedback/snack-bar-manager/hooks/useSnackBar';
 import { styled } from '@linaria/react';
 import { t } from '@lingui/core/macro';
-import { CoreObjectNameSingular } from 'twenty-shared/types';
-import { IconBrandLinkedin, IconCalendar, IconSend } from 'twenty-ui/icon';
-import { Checkbox, CheckboxShape } from 'twenty-ui/input';
+import {
+  CoreObjectNameSingular,
+  SEQUENCE_TASK_TYPES,
+} from 'twenty-shared/types';
+import {
+  IconBrandLinkedin,
+  IconCalendar,
+  IconPhone,
+  IconSend,
+} from 'twenty-ui/icon';
+import { Button, Checkbox, CheckboxShape } from 'twenty-ui/input';
 import { themeCssVariables } from 'twenty-ui/theme-constants';
 import { beautifyExactDateTime } from '~/utils/date-utils';
 
 import { type TaskQueueRecord } from '../types/TaskQueueRecord';
+import { getTaskCallPhoneNumber } from '../utils/get-task-call-phone-number';
 
 const StyledRow = styled.div`
   align-items: center;
@@ -74,11 +83,13 @@ export const TaskQueueRow = ({
   canUpdate,
 }: TaskQueueRowProps) => {
   const { updateOneRecord } = useUpdateOneRecord();
-  const { openRecordInSidePanel } = useOpenRecordInSidePanel();
+  const { openSequenceTimeline } = useOpenSequenceTimeline();
   const { enqueueErrorSnackBar } = useSnackBar();
   const linkedinUrl = task.taskTargets?.find(
     (taskTarget) => taskTarget.targetPerson?.linkedinLink?.primaryLinkUrl,
   )?.targetPerson?.linkedinLink?.primaryLinkUrl;
+  const isCallTask = task.type === SEQUENCE_TASK_TYPES.CALL;
+  const phoneNumber = isCallTask ? getTaskCallPhoneNumber(task) : undefined;
 
   const completeTask = async (isCompleted: boolean) => {
     if (!canUpdate) {
@@ -100,14 +111,7 @@ export const TaskQueueRow = ({
   };
 
   return (
-    <StyledRow
-      onClick={() =>
-        openRecordInSidePanel({
-          recordId: task.id,
-          objectNameSingular: CoreObjectNameSingular.Task,
-        })
-      }
-    >
+    <StyledRow onClick={() => openSequenceTimeline({ taskId: task.id })}>
       <div onClick={(event) => event.stopPropagation()}>
         <Checkbox
           checked={task.status === 'DONE'}
@@ -117,8 +121,41 @@ export const TaskQueueRow = ({
         />
       </div>
       {task.sequenceEnrollmentId && <IconSend size={16} />}
-      <StyledTitle>{task.title || t`Untitled task`}</StyledTitle>
+      <StyledTitle
+        role="button"
+        tabIndex={0}
+        aria-label={t`Open sequence timeline: ${task.title || t`Untitled task`}`}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            openSequenceTimeline({ taskId: task.id });
+          }
+        }}
+      >
+        {task.title || t`Untitled task`}
+      </StyledTitle>
       <StyledMeta>
+        {isCallTask && (
+          <div
+            title={phoneNumber ?? t`No valid phone number available`}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <Button
+              Icon={IconPhone}
+              title={phoneNumber ? t`Call in CloudTalk` : t`No phone number`}
+              ariaLabel={t`Call in CloudTalk`}
+              size="small"
+              variant="secondary"
+              disabled={!phoneNumber}
+              onClick={() => {
+                if (phoneNumber) {
+                  window.open(`ct+tel:${phoneNumber}`, '_self');
+                  openSequenceTimeline({ taskId: task.id });
+                }
+              }}
+            />
+          </div>
+        )}
         {linkedinUrl && (
           <StyledLinkedinLink
             href={linkedinUrl}

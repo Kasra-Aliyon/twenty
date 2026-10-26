@@ -4,9 +4,14 @@ import { CustomResolverFetchMoreLoader } from '@/activities/components/CustomRes
 import { SkeletonLoader } from '@/activities/components/SkeletonLoader';
 import { EventList } from '@/activities/timeline-activities/components/EventList';
 import { useTimelineActivities } from '@/activities/timeline-activities/hooks/useTimelineActivities';
+import { useOpenSequenceTimeline } from '@/sequence/hooks/useOpenSequenceTimeline';
+import { useIsFeatureEnabled } from '@/workspace/hooks/useIsFeatureEnabled';
 import { useLayoutRenderingContext } from '@/ui/layout/contexts/LayoutRenderingContext';
 import { useTargetRecord } from '@/ui/layout/contexts/useTargetRecord';
 import { t } from '@lingui/core/macro';
+import { CoreObjectNameSingular, FeatureFlagKey } from 'twenty-shared/types';
+import { Button } from 'twenty-ui/input';
+import { IconTimelineEvent } from 'twenty-ui/icon';
 import {
   AnimatedPlaceholder,
   AnimatedPlaceholderEmptyContainer,
@@ -45,9 +50,30 @@ const StyledSidePanelPlaceholderWrapper = styled.div`
   }
 `;
 
+const StyledActions = styled.div`
+  padding: ${themeCssVariables.spacing[3]} ${themeCssVariables.spacing[6]} 0;
+`;
+
 export const TimelineCard = () => {
   const targetRecord = useTargetRecord();
   const { isInSidePanel } = useLayoutRenderingContext();
+  const { openSequenceTimeline } = useOpenSequenceTimeline();
+  const sequencesEnabled = useIsFeatureEnabled(
+    FeatureFlagKey.IS_OUTREACH_SEQUENCES_ENABLED,
+  );
+  const sequenceTimelineButton =
+    sequencesEnabled &&
+    targetRecord.targetObjectNameSingular === CoreObjectNameSingular.Person ? (
+      <StyledActions>
+        <Button
+          Icon={IconTimelineEvent}
+          title={t`Sequence timeline`}
+          variant="secondary"
+          size="small"
+          onClick={() => openSequenceTimeline({ personId: targetRecord.id })}
+        />
+      </StyledActions>
+    ) : null;
   const {
     timelineActivities,
     firstQueryLoading,
@@ -58,7 +84,12 @@ export const TimelineCard = () => {
   const isTimelineActivitiesEmpty = timelineActivities.length === 0;
 
   if (firstQueryLoading === true) {
-    return <SkeletonLoader withSubSections />;
+    return (
+      <>
+        {sequenceTimelineButton}
+        <SkeletonLoader withSubSections />
+      </>
+    );
   }
 
   if (isTimelineActivitiesEmpty) {
@@ -79,26 +110,34 @@ export const TimelineCard = () => {
       </AnimatedPlaceholderEmptyContainer>
     );
 
-    return isInSidePanel ? (
-      <StyledSidePanelPlaceholderWrapper>
-        {placeholderContent}
-      </StyledSidePanelPlaceholderWrapper>
-    ) : (
-      placeholderContent
+    return (
+      <>
+        {sequenceTimelineButton}
+        {isInSidePanel ? (
+          <StyledSidePanelPlaceholderWrapper>
+            {placeholderContent}
+          </StyledSidePanelPlaceholderWrapper>
+        ) : (
+          placeholderContent
+        )}
+      </>
     );
   }
 
   return (
-    <StyledMainContainer>
-      <EventList
-        targetableObject={targetRecord}
-        title={t`All`}
-        events={timelineActivities ?? []}
-      />
-      <CustomResolverFetchMoreLoader
-        loading={loadingMore}
-        onLastRowVisible={fetchMoreRecords}
-      />
-    </StyledMainContainer>
+    <>
+      {sequenceTimelineButton}
+      <StyledMainContainer>
+        <EventList
+          targetableObject={targetRecord}
+          title={t`All`}
+          events={timelineActivities ?? []}
+        />
+        <CustomResolverFetchMoreLoader
+          loading={loadingMore}
+          onLastRowVisible={fetchMoreRecords}
+        />
+      </StyledMainContainer>
+    </>
   );
 };
