@@ -20,6 +20,7 @@ describe('readConfig', () => {
       requestTimeoutMs: DEFAULT_REQUEST_TIMEOUT_MS,
       maxRetries: DEFAULT_MAX_RETRIES,
       enableAdvanced: false,
+      enableSchemaTools: false,
       transport: 'stdio',
       host: DEFAULT_HTTP_HOST,
       port: DEFAULT_HTTP_PORT,
@@ -33,6 +34,7 @@ describe('readConfig', () => {
       TWENTY_API_KEY: 'test-api-key',
       TWENTY_USER_TOKEN: 'test-user-token',
       TWENTY_ENABLE_ADVANCED: 'true',
+      TWENTY_ENABLE_SCHEMA_TOOLS: 'true',
       TRANSPORT: 'http',
       HOST: '0.0.0.0',
       PORT: '4444',
@@ -43,6 +45,7 @@ describe('readConfig', () => {
     expect(config).toMatchObject({
       userToken: 'test-user-token',
       enableAdvanced: true,
+      enableSchemaTools: true,
       transport: 'http',
       host: '0.0.0.0',
       port: 4444,
@@ -50,6 +53,19 @@ describe('readConfig', () => {
       httpBearerToken: 'mcp-http-token',
     });
   });
+
+  it.each(['false', 'TRUE', '1', ''])(
+    'keeps schema tools disabled for %j',
+    (flag) => {
+      expect(
+        readConfig({
+          TWENTY_BASE_URL: 'https://crm.example.com',
+          TWENTY_API_KEY: 'test-api-key',
+          TWENTY_ENABLE_SCHEMA_TOOLS: flag,
+        }).enableSchemaTools,
+      ).toBe(false);
+    },
+  );
 
   it.each([
     [{ TWENTY_API_KEY: 'key' }, 'TWENTY_BASE_URL is required'],

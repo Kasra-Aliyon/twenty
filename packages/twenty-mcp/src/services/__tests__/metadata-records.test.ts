@@ -30,6 +30,55 @@ const clientWith = ({
 }): TwentyClient => ({ rest, graphql }) as unknown as TwentyClient;
 
 describe('MetadataService', () => {
+  it.each([
+    ['workspace-custom', 'custom-application-id', true],
+    ['standard', 'standard-application-id', false],
+    ['installed-application', 'installed-application-id', false],
+  ])(
+    'proves %s object ownership from application ids, even with isSystem=false',
+    async (_kind, applicationId, expected) => {
+      const graphql = jest.fn().mockResolvedValue({
+        currentWorkspace: {
+          workspaceCustomApplicationId: 'custom-application-id',
+        },
+        object: { applicationId },
+      });
+      const service = new MetadataService(
+        clientWith({ rest: jest.fn(), graphql }),
+        60_000,
+      );
+      const object = { ...personObject, isSystem: false };
+      await expect(service.isCustomObject(object)).resolves.toBe(expected);
+      await expect(service.isCustomObject(object)).resolves.toBe(expected);
+      expect(graphql).toHaveBeenCalledTimes(1);
+      expect(graphql).toHaveBeenCalledWith(
+        expect.stringContaining('currentWorkspace'),
+        { id: object.id },
+        { endpoint: 'metadata' },
+      );
+      service.clearCache();
+      await service.isCustomObject(object);
+      expect(graphql).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it('fails closed when object ownership cannot be proved', async () => {
+    const graphql = jest
+      .fn()
+      .mockResolvedValue({ object: { applicationId: 'unknown' } });
+    const service = new MetadataService(
+      clientWith({ rest: jest.fn(), graphql }),
+      60_000,
+    );
+    await expect(service.isCustomObject(personObject)).rejects.toThrow(
+      'Unable to verify object ownership',
+    );
+    await expect(
+      service.isCustomObject({ ...personObject, isSystem: true }),
+    ).resolves.toBe(false);
+    expect(graphql).toHaveBeenCalledTimes(1);
+  });
+
   it('normalizes REST metadata and caches it for the configured TTL', async () => {
     const rest = jest.fn().mockResolvedValue({
       data: { objects: [rawPersonObject] },

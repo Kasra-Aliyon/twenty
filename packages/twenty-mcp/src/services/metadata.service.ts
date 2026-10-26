@@ -336,6 +336,10 @@ export class MetadataService {
   private readonly client: TwentyClient;
   private readonly ttlMs: number;
   private cache: { loadedAt: number; objects: MetadataObject[] } | undefined;
+  private readonly ownershipCache = new Map<
+    string,
+    { loadedAt: number; isCustom: boolean }
+  >();
 
   constructor(client: TwentyClient, ttlMs: number) {
     this.client = client;
@@ -344,6 +348,48 @@ export class MetadataService {
 
   clearCache(): void {
     this.cache = undefined;
+    this.ownershipCache.clear();
+  }
+
+  async isCustomObject(object: MetadataObject): Promise<boolean> {
+    if (object.isSystem === true) {
+      return false;
+    }
+
+    const cached = this.ownershipCache.get(object.id);
+    const now = Date.now();
+
+    if (cached !== undefined && now - cached.loadedAt < this.ttlMs) {
+      return cached.isCustom;
+    }
+
+    const result = await this.client.graphql<{
+      currentWorkspace?: { workspaceCustomApplicationId?: string } | null;
+      object?: { applicationId?: string } | null;
+    }>(
+      `query TwentyMcpObjectOwnership($id: UUID!) {
+        currentWorkspace { workspaceCustomApplicationId }
+        object(id: $id) { applicationId }
+      }`,
+      { id: object.id },
+      { endpoint: 'metadata' },
+    );
+    const customApplicationId =
+      result.currentWorkspace?.workspaceCustomApplicationId;
+    const objectApplicationId = result.object?.applicationId;
+
+    if (!customApplicationId || !objectApplicationId) {
+      throw new TwentyApiError({
+        message:
+          'Unable to verify object ownership. Refresh metadata and check Data Model access.',
+        code: 'OBJECT_OWNERSHIP_UNAVAILABLE',
+      });
+    }
+
+    const isCustom = customApplicationId === objectApplicationId;
+    this.ownershipCache.set(object.id, { loadedAt: now, isCustom });
+
+    return isCustom;
   }
 
   async listObjects(

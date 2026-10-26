@@ -14,6 +14,7 @@ const main = async (): Promise<void> => {
     client,
     metadata,
     enableAdvanced: config.enableAdvanced,
+    enableSchemaTools: config.enableSchemaTools,
   };
 
   if (config.transport === 'http') {

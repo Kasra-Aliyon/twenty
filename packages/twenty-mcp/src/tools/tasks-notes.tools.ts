@@ -6,6 +6,7 @@ import { runTool } from '../formatting/format-tool-result.js';
 import {
   depthSchema,
   listLimitSchema,
+  objectSlugSchema,
   recordIdSchema,
   responseFormatSchema,
   TOOL_OUTPUT_SCHEMA,
@@ -13,6 +14,7 @@ import {
 import { filterCondition } from '../services/filter-builder.js';
 import { RecordsService } from '../services/records.service.js';
 import type { ToolDependencies } from '../types.js';
+import { resolveActivityTargetField } from './activity-target.js';
 import { buildRichTextValue, compactRecord } from './tool-data-builders.js';
 
 const taskFieldsSchema = z.object({
@@ -40,12 +42,14 @@ const noteFieldsSchema = z.object({
 });
 
 const targetSchema = z.object({
-  target_object: z.enum(['company', 'person', 'opportunity']),
+  target_object: objectSlugSchema.describe(
+    'Singular or plural object name with note and task targets, including custom objects.',
+  ),
   target_record_id: recordIdSchema,
 });
 
 const targetRelationInput = (
-  targetObject: 'company' | 'opportunity' | 'person',
+  targetObject: string,
   recordId: string,
 ): Record<string, unknown> => ({
   [`target${targetObject[0]?.toLocaleUpperCase()}${targetObject.slice(1)}Id`]:
@@ -221,7 +225,7 @@ export const registerTaskAndNoteTools = (
     {
       title: 'Attach a note to a record',
       description:
-        'Creates the noteTarget join that attaches a note to a person, company, or opportunity.',
+        'Attaches a note to any object with note and task targets, discovered from live metadata.',
       inputSchema: targetSchema.extend({
         note_id: recordIdSchema,
         response_format: responseFormatSchema,
@@ -231,12 +235,15 @@ export const registerTaskAndNoteTools = (
     },
     async ({ note_id, target_object, target_record_id, response_format }) =>
       runTool(
-        () =>
+        async () =>
           records.create({
             object: STANDARD_OBJECTS.noteTargets,
             data: {
               noteId: note_id,
-              ...targetRelationInput(target_object, target_record_id),
+              [await resolveActivityTargetField(
+                dependencies.metadata,
+                target_object,
+              )]: target_record_id,
             },
           }),
         response_format,
@@ -248,7 +255,7 @@ export const registerTaskAndNoteTools = (
     {
       title: 'Attach a task to a record',
       description:
-        'Creates the taskTarget join that attaches a task to a person, company, or opportunity.',
+        'Attaches a task to any object with note and task targets, discovered from live metadata.',
       inputSchema: targetSchema.extend({
         task_id: recordIdSchema,
         response_format: responseFormatSchema,
@@ -258,12 +265,15 @@ export const registerTaskAndNoteTools = (
     },
     async ({ task_id, target_object, target_record_id, response_format }) =>
       runTool(
-        () =>
+        async () =>
           records.create({
             object: STANDARD_OBJECTS.taskTargets,
             data: {
               taskId: task_id,
-              ...targetRelationInput(target_object, target_record_id),
+              [await resolveActivityTargetField(
+                dependencies.metadata,
+                target_object,
+              )]: target_record_id,
             },
           }),
         response_format,
@@ -275,7 +285,7 @@ export const registerTaskAndNoteTools = (
     {
       title: 'List record activities',
       description:
-        'Returns attached tasks, notes, and timeline activities for a person, company, or opportunity.',
+        'Returns attached tasks, notes, and timeline activities for an object with note and task targets, including custom objects.',
       inputSchema: targetSchema.extend({
         limit: listLimitSchema,
         response_format: responseFormatSchema,
@@ -285,7 +295,10 @@ export const registerTaskAndNoteTools = (
     },
     async ({ target_object, target_record_id, limit, response_format }) =>
       runTool(async () => {
-        const targetField = `target${target_object[0]?.toLocaleUpperCase()}${target_object.slice(1)}Id`;
+        const targetField = await resolveActivityTargetField(
+          dependencies.metadata,
+          target_object,
+        );
         const filter = filterCondition(targetField, 'eq', target_record_id);
         const [tasks, notes, timeline] = await Promise.all([
           records.list({
