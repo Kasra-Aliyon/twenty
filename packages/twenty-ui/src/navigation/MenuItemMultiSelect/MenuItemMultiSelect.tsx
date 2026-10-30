@@ -51,7 +51,10 @@ export const MenuItemMultiSelect = ({
       onClick={handleOnClick}
     >
       <div className={styles.leftContentWithCheckboxContainer}>
-        <Checkbox checked={selected} disabled={disabled} aria-label={text} />
+        {/* The option owns selection; its checkbox is only a visual indicator. */}
+        <span inert aria-hidden>
+          <Checkbox checked={selected} disabled={disabled} />
+        </span>
         {color ? (
           <Tag color={color} text={text} Icon={LeftIcon} />
         ) : (
