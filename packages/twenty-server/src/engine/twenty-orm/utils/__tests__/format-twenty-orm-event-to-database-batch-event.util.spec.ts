@@ -26,6 +26,7 @@ describe('formatTwentyOrmEventToDatabaseBatchEvent', () => {
       workspaceId,
       objectMetadataId,
       isNullable: true,
+      isActive: true,
       isLabelSyncedWithName: true,
       createdAt: new Date(),
       updatedAt: new Date(),

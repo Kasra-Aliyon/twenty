@@ -246,6 +246,7 @@ export type LinkedInSyncLock = {
 };
 
 export type TwentyTokenPair = {
+  sessionSource?: 'extension';
   accessOrWorkspaceAgnosticToken: {
     token: string;
     expiresAt: string;

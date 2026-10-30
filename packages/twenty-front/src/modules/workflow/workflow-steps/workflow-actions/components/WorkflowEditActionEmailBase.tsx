@@ -139,6 +139,7 @@ export const WorkflowEditActionEmailBase = ({
     client: apolloCoreClient,
     variables: { connectedAccountId: configuredAccountId },
     skip:
+      myAccountsLoading ||
       !isDefined(configuredAccountId) ||
       configuredAccountId === '' ||
       isSenderVariable ||

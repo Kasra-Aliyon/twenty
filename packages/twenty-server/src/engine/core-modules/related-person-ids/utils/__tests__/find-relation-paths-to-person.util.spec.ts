@@ -54,6 +54,7 @@ const buildGraphFixtures = (graph: Record<string, RelationSpec[]>) => {
       flatFieldMetadataMaps.byUniversalIdentifier[id] = {
         id,
         type: 'RELATION',
+        isActive: true,
       } as unknown as FlatFieldMetadata;
       flatFieldMetadataMaps.universalIdentifierById[id] = id;
 

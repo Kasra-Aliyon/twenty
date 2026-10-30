@@ -401,6 +401,10 @@ describe('SequenceExecutorService safety regressions', () => {
     };
   };
 
+  beforeEach(() => {
+    jest.useFakeTimers({ now: new Date('2026-08-20T12:00:00.000Z') });
+  });
+
   afterEach(() => {
     jest.useRealTimers();
   });

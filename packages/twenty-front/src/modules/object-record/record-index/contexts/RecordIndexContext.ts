@@ -70,3 +70,15 @@ export const recordIndexRequiredFilterFamilyState = createAtomFamilyState<
   key: 'recordIndexRequiredFilterFamilyState',
   defaultValue: undefined,
 });
+
+export const recordIndexCreationOptionsFamilyState = createAtomFamilyState<
+  | Pick<
+      RecordIndexContextValue,
+      'onRecordCreated' | 'skipPostOptimisticEffectOnRecordCreate'
+    >
+  | undefined,
+  string
+>({
+  key: 'recordIndexCreationOptionsFamilyState',
+  defaultValue: undefined,
+});

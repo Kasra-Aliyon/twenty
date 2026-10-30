@@ -21,6 +21,7 @@ const buildMockField = (
     workspaceId: 'ws-id',
     label: name,
     isNullable: true,
+    isActive: true,
     isLabelSyncedWithName: true,
     createdAt: new Date(),
     updatedAt: new Date(),

@@ -67,27 +67,33 @@ export default defineContentScript({
 
   main() {
     let lastSyncedRawTokenPair: string | null | undefined;
+    let isSyncingTokenPair = false;
     let lastSyncedRawLinkedInSafetySettings: string | null | undefined;
 
     async function syncTokenPair() {
+      if (isSyncingTokenPair) return;
+
       const rawTokenPair = localStorage.getItem(TOKEN_PAIR_LOCAL_STORAGE_KEY);
 
       if (rawTokenPair === lastSyncedRawTokenPair) {
         return;
       }
 
-      lastSyncedRawTokenPair = rawTokenPair;
-
+      isSyncingTokenPair = true;
       try {
-        (await browser.runtime.sendMessage({
+        const response = (await browser.runtime.sendMessage({
           type: 'SYNC_TWENTY_TOKEN_PAIR',
           payload: parseTokenPair(rawTokenPair),
         })) as ExtensionResponse;
+
+        if (response.success) lastSyncedRawTokenPair = rawTokenPair;
       } catch (error) {
         console.error(
           '[Twenty Extension] Failed to sync local token pair:',
           error,
         );
+      } finally {
+        isSyncingTokenPair = false;
       }
     }
 

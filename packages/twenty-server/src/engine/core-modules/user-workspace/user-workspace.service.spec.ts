@@ -19,6 +19,7 @@ import { UserWorkspaceEntity } from 'src/engine/core-modules/user-workspace/user
 import { UserWorkspaceService } from 'src/engine/core-modules/user-workspace/user-workspace.service';
 import { UserEntity } from 'src/engine/core-modules/user/user.entity';
 import { WorkspaceInvitationService } from 'src/engine/core-modules/workspace-invitation/services/workspace-invitation.service';
+import { AuthProviderEnum } from 'src/engine/core-modules/workspace/types/workspace.type';
 import { type WorkspaceEntity } from 'src/engine/core-modules/workspace/workspace.entity';
 import { ObjectMetadataEntity } from 'src/engine/metadata-modules/object-metadata/object-metadata.entity';
 import { PermissionsException } from 'src/engine/metadata-modules/permissions/permissions.exception';
@@ -37,6 +38,7 @@ describe('UserWorkspaceService', () => {
   let globalWorkspaceOrmManager: GlobalWorkspaceOrmManager;
   let userRoleService: UserRoleService;
   let onboardingService: OnboardingService;
+  let loginTokenService: LoginTokenService;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -135,7 +137,11 @@ describe('UserWorkspaceService', () => {
         },
         {
           provide: LoginTokenService,
-          useValue: {},
+          useValue: {
+            generateLoginToken: jest
+              .fn()
+              .mockResolvedValue({ token: 'login-token' }),
+          },
         },
         {
           provide: OnboardingService,
@@ -179,10 +185,66 @@ describe('UserWorkspaceService', () => {
 
     userRoleService = module.get<UserRoleService>(UserRoleService);
     onboardingService = module.get<OnboardingService>(OnboardingService);
+    loginTokenService = module.get<LoginTokenService>(LoginTokenService);
   });
 
   it('should be defined', () => {
     expect(service).toBeDefined();
+  });
+
+  describe('available workspace login sessions', () => {
+    it.each([
+      AuthProviderEnum.Google,
+      AuthProviderEnum.Microsoft,
+      AuthProviderEnum.Password,
+    ])(
+      'should preserve the %s authentication provider when creating a login token',
+      async (authProvider) => {
+        const workspace = {
+          id: 'workspace-id',
+          isGoogleAuthEnabled: true,
+          isMicrosoftAuthEnabled: true,
+          isPasswordAuthEnabled: true,
+        } as WorkspaceEntity;
+
+        const result =
+          await service.setLoginTokenToAvailableWorkspacesWhenAuthProviderMatch(
+            {
+              availableWorkspacesForSignIn: [{ workspace }],
+              availableWorkspacesForSignUp: [],
+            },
+            { email: 'user@example.com' },
+            authProvider,
+          );
+
+        expect(loginTokenService.generateLoginToken).toHaveBeenCalledWith(
+          'user@example.com',
+          workspace.id,
+          authProvider,
+        );
+        expect(result.availableWorkspacesForSignIn[0].loginToken).toBe(
+          'login-token',
+        );
+      },
+    );
+
+    it('should not create a login token for a disabled provider', async () => {
+      const workspace = {
+        id: 'workspace-id',
+        isGoogleAuthEnabled: false,
+      } as WorkspaceEntity;
+
+      await service.setLoginTokenToAvailableWorkspacesWhenAuthProviderMatch(
+        {
+          availableWorkspacesForSignIn: [{ workspace }],
+          availableWorkspacesForSignUp: [],
+        },
+        { email: 'user@example.com' },
+        AuthProviderEnum.Google,
+      );
+
+      expect(loginTokenService.generateLoginToken).not.toHaveBeenCalled();
+    });
   });
 
   describe('create', () => {

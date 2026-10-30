@@ -358,6 +358,30 @@ const testCases: {
   { loc: AppPath.NotFound, hasAccessTokenPair: true, isWorkspaceSuspended: false, onboardingStatus: OnboardingStatus.BOOK_ONBOARDING, res: AppPath.BookCallDecision },
   { loc: AppPath.NotFound, hasAccessTokenPair: true, isWorkspaceSuspended: false, onboardingStatus: OnboardingStatus.COMPLETED, res: undefined },
 
+  ...[
+    AppPath.RecordListsPage,
+    AppPath.RecordListCreatePage,
+    AppPath.RecordListPage,
+    AppPath.SequencesPage,
+    AppPath.SequenceCreatePage,
+    AppPath.SequencePage,
+    AppPath.TaskQueuePage,
+    AppPath.UniboxPage,
+    AppPath.LinkedinPage,
+  ].flatMap((loc) => [
+    { loc, hasAccessTokenPair: false, isWorkspaceSuspended: false, onboardingStatus: undefined, res: AppPath.SignInUp },
+    { loc, hasAccessTokenPair: true, isWorkspaceSuspended: true, onboardingStatus: OnboardingStatus.COMPLETED, res: getSettingsPath(SettingsPath.Billing) },
+    ...[
+      { onboardingStatus: OnboardingStatus.PLAN_REQUIRED, res: AppPath.PlanRequired },
+      { onboardingStatus: OnboardingStatus.WORKSPACE_ACTIVATION, res: AppPath.WorkspaceActivation },
+      { onboardingStatus: OnboardingStatus.PROFILE_CREATION, res: AppPath.CreateProfile },
+      { onboardingStatus: OnboardingStatus.SYNC_EMAIL, res: AppPath.SyncEmails },
+      { onboardingStatus: OnboardingStatus.INVITE_TEAM, res: AppPath.InviteTeam },
+      { onboardingStatus: OnboardingStatus.BOOK_ONBOARDING, res: AppPath.BookCallDecision },
+      { onboardingStatus: OnboardingStatus.COMPLETED, res: undefined },
+    ].map(({ onboardingStatus, res }) => ({ loc, hasAccessTokenPair: true, isWorkspaceSuspended: false, onboardingStatus, res })),
+  ]),
+
   // returnToPath: should redirect to saved path instead of defaultHomePagePath
   { loc: AppPath.Verify, hasAccessTokenPair: true, isWorkspaceSuspended: false, onboardingStatus: OnboardingStatus.COMPLETED, returnToPath: '/authorize?clientId=abc', res: '/authorize?clientId=abc' },
   { loc: AppPath.SignInUp, hasAccessTokenPair: true, isWorkspaceSuspended: false, onboardingStatus: OnboardingStatus.COMPLETED, returnToPath: '/objects/tasks', res: '/objects/tasks' },
