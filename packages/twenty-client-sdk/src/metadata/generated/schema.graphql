@@ -732,6 +732,7 @@ type ViewField {
   size: Float!
   position: Float!
   aggregateOperation: AggregateOperations
+  subFieldName: String
   viewId: UUID!
   viewFieldGroupId: UUID
   workspaceId: UUID!
@@ -858,6 +859,7 @@ type View {
   id: UUID!
   name: String!
   objectMetadataId: UUID!
+  recordListId: UUID
   type: ViewType!
   key: ViewKey
   icon: String!
@@ -950,6 +952,7 @@ type Workspace {
   isMicrosoftAuthBypassEnabled: Boolean!
   isCustomDomainEnabled: Boolean!
   isInternalMessagesImportEnabled: Boolean!
+  isPlainTextEmailEnabled: Boolean!
   editableProfileFields: [String!]
   defaultRole: Role
   fastModel: String!
@@ -1779,6 +1782,9 @@ enum FeatureFlagKey {
   IS_LOGIC_FUNCTION_PREBUILT_MODE_ENABLED
   IS_SETTINGS_DISCOVERY_HERO_ENABLED
   IS_CALL_RECORDING_ENABLED
+  IS_RECORD_LISTS_ENABLED
+  IS_OUTREACH_SEQUENCES_ENABLED
+  IS_UNIBOX_ENABLED
 }
 
 type WorkspaceUrls {
@@ -2276,6 +2282,8 @@ type ConnectedAccountPublicDTO {
   applicationId: UUID
   name: String
   visibility: String!
+  sequenceDailyEmailLimitEnabled: Boolean!
+  sequenceDailyEmailLimit: Int!
   createdAt: DateTime!
   updatedAt: DateTime!
   connectionParameters: PublicImapSmtpCaldavConnectionParameters
@@ -2697,6 +2705,17 @@ type RunAgentResult {
   success: Boolean!
 }
 
+type ApolloEnrichmentBatchResultDTO {
+  requestedCount: Int!
+  updatedCount: Int!
+  pendingCount: Int!
+  skippedCount: Int!
+  notMatchedCount: Int!
+  notFoundCount: Int!
+  failedCount: Int!
+  disabled: Boolean!
+}
+
 type ChannelSyncSuccess {
   success: Boolean!
 }
@@ -3018,6 +3037,73 @@ type MinimalMetadata {
   collectionHashes: [CollectionHash!]!
 }
 
+type SequenceEmailVariantAnalyticsDTO {
+  stepId: UUID!
+  stepName: String!
+  variantId: String!
+  variantName: String!
+  sentCount: Int!
+  repliedCount: Int!
+
+  """Reply rate as a percentage from 0 to 100."""
+  replyRate: Float!
+}
+
+type SequenceAnalyticsDTO {
+  enrolledCount: Int!
+  contactedCount: Int!
+  sentEmailCount: Int!
+  repliedCount: Int!
+  completedCount: Int!
+  failedCount: Int!
+
+  """
+  Percentage of enrolled contacts with an observed email or LinkedIn reply, from 0 to 100.
+  """
+  replyRate: Float!
+  emailVariants: [SequenceEmailVariantAnalyticsDTO!]!
+}
+
+type SequenceLinkedinActionClaim {
+  id: UUID!
+  type: String!
+  status: String!
+  scheduledAt: DateTime!
+  claimedAt: DateTime!
+  claimedBy: String!
+  executedAt: DateTime
+  linkedinUrl: String!
+  noteText: String!
+}
+
+type SequenceLinkedinActionMutationResult {
+  id: UUID!
+  type: String!
+  status: String!
+  scheduledAt: DateTime!
+  claimedAt: DateTime
+  claimedBy: String
+  executedAt: DateTime
+  linkedinUrl: String!
+  noteText: String!
+  connectionState: String!
+  errorMessage: String
+}
+
+type SequenceMutationCapabilitiesDTO {
+  atomicSettingsPatch: Boolean!
+  atomicSettingsPatchVersion: Int!
+  atomicStepAppend: Boolean!
+  atomicStepAppendVersion: Int!
+  enrollmentStartStep: Boolean!
+  enrollmentStartStepVersion: Int!
+}
+
+type SequenceReadinessDTO {
+  ready: Boolean!
+  errors: [String!]!
+}
+
 type Query {
   navigationMenuItems: [NavigationMenuItem!]!
   navigationMenuItem(id: UUID!): NavigationMenuItem
@@ -3030,6 +3116,7 @@ type Query {
   getViewFilter(id: String!): ViewFilter
   getViews(objectMetadataId: String, viewTypes: [ViewType!]): [View!]!
   getView(id: String!): View
+  resolveViewToQueryParams(id: String!): JSON!
   getViewSorts(viewId: String): [ViewSort!]!
   getViewSort(id: String!): ViewSort
   getViewFields(viewId: String!): [ViewField!]!
@@ -3108,6 +3195,9 @@ type Query {
   ): FieldConnection!
   getViewGroups(viewId: String): [ViewGroup!]!
   getViewGroup(id: String!): ViewGroup
+  sequenceAnalytics(sequenceId: UUID!): SequenceAnalyticsDTO!
+  sequenceMutationCapabilities: SequenceMutationCapabilitiesDTO!
+  sequenceReadiness(sequenceId: UUID!): SequenceReadinessDTO!
   myMessageFolders(messageChannelId: UUID): [MessageFolder!]!
   myCalendarChannels(connectedAccountId: UUID): [CalendarChannel!]!
   findApplicationRegistrationByClientId(clientId: String!): PublicApplicationRegistration
@@ -3351,6 +3441,7 @@ type Mutation {
   deleteEmailingDomain(id: String!): Boolean!
   verifyEmailingDomain(id: String!): EmailingDomain!
   deleteConnectedAccount(id: UUID!): ConnectedAccountPublicDTO!
+  updateConnectedAccountSequenceEmailSettings(id: UUID!, input: ConnectedAccountSequenceEmailSettingsInput!): ConnectedAccountPublicDTO!
   updateWorkspaceMemberRole(workspaceMemberId: UUID!, roleId: UUID!): WorkspaceMember!
   createOneRole(createRoleInput: CreateRoleInput!): Role!
   updateOneRole(updateRoleInput: UpdateRoleInput!): Role!
@@ -3374,6 +3465,13 @@ type Mutation {
   updateManyViewGroups(inputs: [UpdateViewGroupInput!]!): [ViewGroup!]!
   deleteViewGroup(input: DeleteViewGroupInput!): ViewGroup!
   destroyViewGroup(input: DestroyViewGroupInput!): ViewGroup!
+  claimSequenceLinkedinAction(actionId: UUID!, claimedBy: String!): SequenceLinkedinActionClaim
+  startSequenceLinkedinAction(actionId: UUID!, claimedBy: String!, claimedAt: DateTime!): SequenceLinkedinActionMutationResult
+  reportSequenceLinkedinAction(actionId: UUID!, claimedBy: String!, claimedAt: DateTime!, data: SequenceLinkedinActionReportInput!): SequenceLinkedinActionMutationResult
+  releaseSequenceLinkedinActionClaim(actionId: UUID!, claimedBy: String!, claimedAt: DateTime!): SequenceLinkedinActionMutationResult
+  enrichPeopleWithApollo(input: ApolloEnrichRecordsInput!): ApolloEnrichmentBatchResultDTO!
+  enrichPeoplePhonesWithApollo(input: ApolloEnrichRecordsInput!): ApolloEnrichmentBatchResultDTO!
+  enrichCompaniesWithApollo(input: ApolloEnrichRecordsInput!): ApolloEnrichmentBatchResultDTO!
   updateMessageFolder(input: UpdateMessageFolderInput!): MessageFolder!
   updateMessageFolders(input: UpdateMessageFoldersInput!): [MessageFolder!]!
   updateCalendarChannel(input: UpdateCalendarChannelInput!): CalendarChannel!
@@ -3704,6 +3802,7 @@ input UpdateViewFieldInputUpdates {
   size: Float
   position: Float
   aggregateOperation: AggregateOperations
+  subFieldName: String
   viewFieldGroupId: UUID
 }
 
@@ -3715,6 +3814,7 @@ input CreateViewFieldInput {
   size: Float = 0
   position: Float = 0
   aggregateOperation: AggregateOperations
+  subFieldName: String
   viewFieldGroupId: UUID
 }
 
@@ -4163,6 +4263,11 @@ input CreateEmailingDomainInput {
   domain: String!
 }
 
+input ConnectedAccountSequenceEmailSettingsInput {
+  sequenceDailyEmailLimitEnabled: Boolean!
+  sequenceDailyEmailLimit: Int!
+}
+
 input CreateRoleInput {
   id: String
   label: String!
@@ -4379,6 +4484,16 @@ input DestroyViewGroupInput {
   id: UUID!
 }
 
+input SequenceLinkedinActionReportInput {
+  status: String!
+  connectionState: String!
+  errorMessage: String
+}
+
+input ApolloEnrichRecordsInput {
+  recordIds: [UUID!]!
+}
+
 input UpdateMessageFolderInput {
   id: UUID!
   update: UpdateMessageFolderInputUpdates!
@@ -4514,6 +4629,7 @@ input UpdateWorkspaceInput {
   enabledAiModelIds: [String!]
   useRecommendedModels: Boolean
   isInternalMessagesImportEnabled: Boolean
+  isPlainTextEmailEnabled: Boolean
 }
 
 input WorkspaceMigrationInput {

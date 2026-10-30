@@ -247,6 +247,16 @@ export class ViewService {
         },
       );
 
+    const optimisticallyUpdatedFlatViewWithDeletedAt =
+      fromDeleteViewInputToFlatViewOrThrow({
+        deleteViewInput,
+        flatViewMaps: existingFlatViewMaps,
+        callerApplicationUniversalIdentifier:
+          workspaceCustomFlatApplication.universalIdentifier,
+        workspaceCustomApplicationUniversalIdentifier:
+          workspaceCustomFlatApplication.universalIdentifier,
+      });
+
     const existingFlatView = findFlatEntityByIdInFlatEntityMapsOrThrow({
       flatEntityId: deleteViewInput.id,
       flatEntityMaps: existingFlatViewMaps,
@@ -262,16 +272,6 @@ export class ViewService {
         { userFriendlyMessage: msg`Delete the list to remove this view.` },
       );
     }
-
-    const optimisticallyUpdatedFlatViewWithDeletedAt =
-      fromDeleteViewInputToFlatViewOrThrow({
-        deleteViewInput,
-        flatViewMaps: existingFlatViewMaps,
-        callerApplicationUniversalIdentifier:
-          workspaceCustomFlatApplication.universalIdentifier,
-        workspaceCustomApplicationUniversalIdentifier:
-          workspaceCustomFlatApplication.universalIdentifier,
-      });
 
     const validateAndBuildResult =
       await this.workspaceMigrationValidateBuildAndRunService.validateBuildAndRunWorkspaceMigration(

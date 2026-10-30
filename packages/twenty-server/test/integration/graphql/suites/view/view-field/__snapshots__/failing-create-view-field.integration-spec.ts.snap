@@ -10,7 +10,7 @@ exports[`View Field Resolver - Failing Create Operation Should fail to create a 
           "errors": [
             {
               "code": "INVALID_VIEW_DATA",
-              "message": "View field with same fieldMetadataUniversalIdentifier and viewUniversalIdentifier already exists",
+              "message": "View field with the same field, view, and subfield already exists",
               "userFriendlyMessage": "View field already exists",
             },
           ],

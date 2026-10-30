@@ -494,6 +494,7 @@ export interface ViewField {
     size: Scalars['Float']
     position: Scalars['Float']
     aggregateOperation?: AggregateOperations
+    subFieldName?: Scalars['String']
     viewId: Scalars['UUID']
     viewFieldGroupId?: Scalars['UUID']
     workspaceId: Scalars['UUID']
@@ -591,6 +592,7 @@ export interface View {
     id: Scalars['UUID']
     name: Scalars['String']
     objectMetadataId: Scalars['UUID']
+    recordListId?: Scalars['UUID']
     type: ViewType
     key?: ViewKey
     icon: Scalars['String']
@@ -666,6 +668,7 @@ export interface Workspace {
     isMicrosoftAuthBypassEnabled: Scalars['Boolean']
     isCustomDomainEnabled: Scalars['Boolean']
     isInternalMessagesImportEnabled: Scalars['Boolean']
+    isPlainTextEmailEnabled: Scalars['Boolean']
     editableProfileFields?: Scalars['String'][]
     defaultRole?: Role
     fastModel: Scalars['String']
@@ -1408,7 +1411,7 @@ export interface FeatureFlag {
     __typename: 'FeatureFlag'
 }
 
-export type FeatureFlagKey = 'IS_UNIQUE_INDEXES_ENABLED' | 'IS_JSON_FILTER_ENABLED' | 'IS_MARKETPLACE_SETTING_TAB_VISIBLE' | 'IS_PUBLIC_DOMAIN_ENABLED' | 'IS_EMAIL_GROUP_ENABLED' | 'IS_JUNCTION_RELATIONS_ENABLED' | 'IS_REST_METADATA_API_NEW_FORMAT_DIRECT' | 'IS_LOGIC_FUNCTION_PREBUILT_MODE_ENABLED' | 'IS_SETTINGS_DISCOVERY_HERO_ENABLED' | 'IS_CALL_RECORDING_ENABLED'
+export type FeatureFlagKey = 'IS_UNIQUE_INDEXES_ENABLED' | 'IS_JSON_FILTER_ENABLED' | 'IS_MARKETPLACE_SETTING_TAB_VISIBLE' | 'IS_PUBLIC_DOMAIN_ENABLED' | 'IS_EMAIL_GROUP_ENABLED' | 'IS_JUNCTION_RELATIONS_ENABLED' | 'IS_REST_METADATA_API_NEW_FORMAT_DIRECT' | 'IS_LOGIC_FUNCTION_PREBUILT_MODE_ENABLED' | 'IS_SETTINGS_DISCOVERY_HERO_ENABLED' | 'IS_CALL_RECORDING_ENABLED' | 'IS_RECORD_LISTS_ENABLED' | 'IS_OUTREACH_SEQUENCES_ENABLED' | 'IS_UNIBOX_ENABLED'
 
 export interface WorkspaceUrls {
     customUrl?: Scalars['String']
@@ -1918,6 +1921,8 @@ export interface ConnectedAccountPublicDTO {
     applicationId?: Scalars['UUID']
     name?: Scalars['String']
     visibility: Scalars['String']
+    sequenceDailyEmailLimitEnabled: Scalars['Boolean']
+    sequenceDailyEmailLimit: Scalars['Int']
     createdAt: Scalars['DateTime']
     updatedAt: Scalars['DateTime']
     connectionParameters?: PublicImapSmtpCaldavConnectionParameters
@@ -2349,6 +2354,18 @@ export interface RunAgentResult {
     __typename: 'RunAgentResult'
 }
 
+export interface ApolloEnrichmentBatchResultDTO {
+    requestedCount: Scalars['Int']
+    updatedCount: Scalars['Int']
+    pendingCount: Scalars['Int']
+    skippedCount: Scalars['Int']
+    notMatchedCount: Scalars['Int']
+    notFoundCount: Scalars['Int']
+    failedCount: Scalars['Int']
+    disabled: Scalars['Boolean']
+    __typename: 'ApolloEnrichmentBatchResultDTO'
+}
+
 export interface ChannelSyncSuccess {
     success: Scalars['Boolean']
     __typename: 'ChannelSyncSuccess'
@@ -2643,6 +2660,75 @@ export interface MinimalMetadata {
     __typename: 'MinimalMetadata'
 }
 
+export interface SequenceEmailVariantAnalyticsDTO {
+    stepId: Scalars['UUID']
+    stepName: Scalars['String']
+    variantId: Scalars['String']
+    variantName: Scalars['String']
+    sentCount: Scalars['Int']
+    repliedCount: Scalars['Int']
+    /** Reply rate as a percentage from 0 to 100. */
+    replyRate: Scalars['Float']
+    __typename: 'SequenceEmailVariantAnalyticsDTO'
+}
+
+export interface SequenceAnalyticsDTO {
+    enrolledCount: Scalars['Int']
+    contactedCount: Scalars['Int']
+    sentEmailCount: Scalars['Int']
+    repliedCount: Scalars['Int']
+    completedCount: Scalars['Int']
+    failedCount: Scalars['Int']
+    /** Percentage of enrolled contacts with an observed email or LinkedIn reply, from 0 to 100. */
+    replyRate: Scalars['Float']
+    emailVariants: SequenceEmailVariantAnalyticsDTO[]
+    __typename: 'SequenceAnalyticsDTO'
+}
+
+export interface SequenceLinkedinActionClaim {
+    id: Scalars['UUID']
+    type: Scalars['String']
+    status: Scalars['String']
+    scheduledAt: Scalars['DateTime']
+    claimedAt: Scalars['DateTime']
+    claimedBy: Scalars['String']
+    executedAt?: Scalars['DateTime']
+    linkedinUrl: Scalars['String']
+    noteText: Scalars['String']
+    __typename: 'SequenceLinkedinActionClaim'
+}
+
+export interface SequenceLinkedinActionMutationResult {
+    id: Scalars['UUID']
+    type: Scalars['String']
+    status: Scalars['String']
+    scheduledAt: Scalars['DateTime']
+    claimedAt?: Scalars['DateTime']
+    claimedBy?: Scalars['String']
+    executedAt?: Scalars['DateTime']
+    linkedinUrl: Scalars['String']
+    noteText: Scalars['String']
+    connectionState: Scalars['String']
+    errorMessage?: Scalars['String']
+    __typename: 'SequenceLinkedinActionMutationResult'
+}
+
+export interface SequenceMutationCapabilitiesDTO {
+    atomicSettingsPatch: Scalars['Boolean']
+    atomicSettingsPatchVersion: Scalars['Int']
+    atomicStepAppend: Scalars['Boolean']
+    atomicStepAppendVersion: Scalars['Int']
+    enrollmentStartStep: Scalars['Boolean']
+    enrollmentStartStepVersion: Scalars['Int']
+    __typename: 'SequenceMutationCapabilitiesDTO'
+}
+
+export interface SequenceReadinessDTO {
+    ready: Scalars['Boolean']
+    errors: Scalars['String'][]
+    __typename: 'SequenceReadinessDTO'
+}
+
 export interface Query {
     navigationMenuItems: NavigationMenuItem[]
     navigationMenuItem?: NavigationMenuItem
@@ -2655,6 +2741,7 @@ export interface Query {
     getViewFilter?: ViewFilter
     getViews: View[]
     getView?: View
+    resolveViewToQueryParams: Scalars['JSON']
     getViewSorts: ViewSort[]
     getViewSort?: ViewSort
     getViewFields: ViewField[]
@@ -2706,6 +2793,9 @@ export interface Query {
     fields: FieldConnection
     getViewGroups: ViewGroup[]
     getViewGroup?: ViewGroup
+    sequenceAnalytics: SequenceAnalyticsDTO
+    sequenceMutationCapabilities: SequenceMutationCapabilitiesDTO
+    sequenceReadiness: SequenceReadinessDTO
     myMessageFolders: MessageFolder[]
     myCalendarChannels: CalendarChannel[]
     findApplicationRegistrationByClientId?: PublicApplicationRegistration
@@ -2870,6 +2960,7 @@ export interface Mutation {
     deleteEmailingDomain: Scalars['Boolean']
     verifyEmailingDomain: EmailingDomain
     deleteConnectedAccount: ConnectedAccountPublicDTO
+    updateConnectedAccountSequenceEmailSettings: ConnectedAccountPublicDTO
     updateWorkspaceMemberRole: WorkspaceMember
     createOneRole: Role
     updateOneRole: Role
@@ -2893,6 +2984,13 @@ export interface Mutation {
     updateManyViewGroups: ViewGroup[]
     deleteViewGroup: ViewGroup
     destroyViewGroup: ViewGroup
+    claimSequenceLinkedinAction?: SequenceLinkedinActionClaim
+    startSequenceLinkedinAction?: SequenceLinkedinActionMutationResult
+    reportSequenceLinkedinAction?: SequenceLinkedinActionMutationResult
+    releaseSequenceLinkedinActionClaim?: SequenceLinkedinActionMutationResult
+    enrichPeopleWithApollo: ApolloEnrichmentBatchResultDTO
+    enrichPeoplePhonesWithApollo: ApolloEnrichmentBatchResultDTO
+    enrichCompaniesWithApollo: ApolloEnrichmentBatchResultDTO
     updateMessageFolder: MessageFolder
     updateMessageFolders: MessageFolder[]
     updateCalendarChannel: CalendarChannel
@@ -3526,6 +3624,7 @@ export interface ViewFieldGenqlSelection{
     size?: boolean | number
     position?: boolean | number
     aggregateOperation?: boolean | number
+    subFieldName?: boolean | number
     viewId?: boolean | number
     viewFieldGroupId?: boolean | number
     workspaceId?: boolean | number
@@ -3621,6 +3720,7 @@ export interface ViewGenqlSelection{
     id?: boolean | number
     name?: boolean | number
     objectMetadataId?: boolean | number
+    recordListId?: boolean | number
     type?: boolean | number
     key?: boolean | number
     icon?: boolean | number
@@ -3687,6 +3787,7 @@ export interface WorkspaceGenqlSelection{
     isMicrosoftAuthBypassEnabled?: boolean | number
     isCustomDomainEnabled?: boolean | number
     isInternalMessagesImportEnabled?: boolean | number
+    isPlainTextEmailEnabled?: boolean | number
     editableProfileFields?: boolean | number
     defaultRole?: RoleGenqlSelection
     fastModel?: boolean | number
@@ -5006,6 +5107,8 @@ export interface ConnectedAccountPublicDTOGenqlSelection{
     applicationId?: boolean | number
     name?: boolean | number
     visibility?: boolean | number
+    sequenceDailyEmailLimitEnabled?: boolean | number
+    sequenceDailyEmailLimit?: boolean | number
     createdAt?: boolean | number
     updatedAt?: boolean | number
     connectionParameters?: PublicImapSmtpCaldavConnectionParametersGenqlSelection
@@ -5471,6 +5574,19 @@ export interface RunAgentResultGenqlSelection{
     __scalar?: boolean | number
 }
 
+export interface ApolloEnrichmentBatchResultDTOGenqlSelection{
+    requestedCount?: boolean | number
+    updatedCount?: boolean | number
+    pendingCount?: boolean | number
+    skippedCount?: boolean | number
+    notMatchedCount?: boolean | number
+    notFoundCount?: boolean | number
+    failedCount?: boolean | number
+    disabled?: boolean | number
+    __typename?: boolean | number
+    __scalar?: boolean | number
+}
+
 export interface ChannelSyncSuccessGenqlSelection{
     success?: boolean | number
     __typename?: boolean | number
@@ -5784,6 +5900,81 @@ export interface MinimalMetadataGenqlSelection{
     __scalar?: boolean | number
 }
 
+export interface SequenceEmailVariantAnalyticsDTOGenqlSelection{
+    stepId?: boolean | number
+    stepName?: boolean | number
+    variantId?: boolean | number
+    variantName?: boolean | number
+    sentCount?: boolean | number
+    repliedCount?: boolean | number
+    /** Reply rate as a percentage from 0 to 100. */
+    replyRate?: boolean | number
+    __typename?: boolean | number
+    __scalar?: boolean | number
+}
+
+export interface SequenceAnalyticsDTOGenqlSelection{
+    enrolledCount?: boolean | number
+    contactedCount?: boolean | number
+    sentEmailCount?: boolean | number
+    repliedCount?: boolean | number
+    completedCount?: boolean | number
+    failedCount?: boolean | number
+    /** Percentage of enrolled contacts with an observed email or LinkedIn reply, from 0 to 100. */
+    replyRate?: boolean | number
+    emailVariants?: SequenceEmailVariantAnalyticsDTOGenqlSelection
+    __typename?: boolean | number
+    __scalar?: boolean | number
+}
+
+export interface SequenceLinkedinActionClaimGenqlSelection{
+    id?: boolean | number
+    type?: boolean | number
+    status?: boolean | number
+    scheduledAt?: boolean | number
+    claimedAt?: boolean | number
+    claimedBy?: boolean | number
+    executedAt?: boolean | number
+    linkedinUrl?: boolean | number
+    noteText?: boolean | number
+    __typename?: boolean | number
+    __scalar?: boolean | number
+}
+
+export interface SequenceLinkedinActionMutationResultGenqlSelection{
+    id?: boolean | number
+    type?: boolean | number
+    status?: boolean | number
+    scheduledAt?: boolean | number
+    claimedAt?: boolean | number
+    claimedBy?: boolean | number
+    executedAt?: boolean | number
+    linkedinUrl?: boolean | number
+    noteText?: boolean | number
+    connectionState?: boolean | number
+    errorMessage?: boolean | number
+    __typename?: boolean | number
+    __scalar?: boolean | number
+}
+
+export interface SequenceMutationCapabilitiesDTOGenqlSelection{
+    atomicSettingsPatch?: boolean | number
+    atomicSettingsPatchVersion?: boolean | number
+    atomicStepAppend?: boolean | number
+    atomicStepAppendVersion?: boolean | number
+    enrollmentStartStep?: boolean | number
+    enrollmentStartStepVersion?: boolean | number
+    __typename?: boolean | number
+    __scalar?: boolean | number
+}
+
+export interface SequenceReadinessDTOGenqlSelection{
+    ready?: boolean | number
+    errors?: boolean | number
+    __typename?: boolean | number
+    __scalar?: boolean | number
+}
+
 export interface QueryGenqlSelection{
     navigationMenuItems?: NavigationMenuItemGenqlSelection
     navigationMenuItem?: (NavigationMenuItemGenqlSelection & { __args: {id: Scalars['UUID']} })
@@ -5796,6 +5987,7 @@ export interface QueryGenqlSelection{
     getViewFilter?: (ViewFilterGenqlSelection & { __args: {id: Scalars['String']} })
     getViews?: (ViewGenqlSelection & { __args?: {objectMetadataId?: (Scalars['String'] | null), viewTypes?: (ViewType[] | null)} })
     getView?: (ViewGenqlSelection & { __args: {id: Scalars['String']} })
+    resolveViewToQueryParams?: { __args: {id: Scalars['String']} }
     getViewSorts?: (ViewSortGenqlSelection & { __args?: {viewId?: (Scalars['String'] | null)} })
     getViewSort?: (ViewSortGenqlSelection & { __args: {id: Scalars['String']} })
     getViewFields?: (ViewFieldGenqlSelection & { __args: {viewId: Scalars['String']} })
@@ -5865,6 +6057,9 @@ export interface QueryGenqlSelection{
     filter: FieldFilter} })
     getViewGroups?: (ViewGroupGenqlSelection & { __args?: {viewId?: (Scalars['String'] | null)} })
     getViewGroup?: (ViewGroupGenqlSelection & { __args: {id: Scalars['String']} })
+    sequenceAnalytics?: (SequenceAnalyticsDTOGenqlSelection & { __args: {sequenceId: Scalars['UUID']} })
+    sequenceMutationCapabilities?: SequenceMutationCapabilitiesDTOGenqlSelection
+    sequenceReadiness?: (SequenceReadinessDTOGenqlSelection & { __args: {sequenceId: Scalars['UUID']} })
     myMessageFolders?: (MessageFolderGenqlSelection & { __args?: {messageChannelId?: (Scalars['UUID'] | null)} })
     myCalendarChannels?: (CalendarChannelGenqlSelection & { __args?: {connectedAccountId?: (Scalars['UUID'] | null)} })
     findApplicationRegistrationByClientId?: (PublicApplicationRegistrationGenqlSelection & { __args: {clientId: Scalars['String']} })
@@ -6054,6 +6249,7 @@ export interface MutationGenqlSelection{
     deleteEmailingDomain?: { __args: {id: Scalars['String']} }
     verifyEmailingDomain?: (EmailingDomainGenqlSelection & { __args: {id: Scalars['String']} })
     deleteConnectedAccount?: (ConnectedAccountPublicDTOGenqlSelection & { __args: {id: Scalars['UUID']} })
+    updateConnectedAccountSequenceEmailSettings?: (ConnectedAccountPublicDTOGenqlSelection & { __args: {id: Scalars['UUID'], input: ConnectedAccountSequenceEmailSettingsInput} })
     updateWorkspaceMemberRole?: (WorkspaceMemberGenqlSelection & { __args: {workspaceMemberId: Scalars['UUID'], roleId: Scalars['UUID']} })
     createOneRole?: (RoleGenqlSelection & { __args: {createRoleInput: CreateRoleInput} })
     updateOneRole?: (RoleGenqlSelection & { __args: {updateRoleInput: UpdateRoleInput} })
@@ -6077,6 +6273,13 @@ export interface MutationGenqlSelection{
     updateManyViewGroups?: (ViewGroupGenqlSelection & { __args: {inputs: UpdateViewGroupInput[]} })
     deleteViewGroup?: (ViewGroupGenqlSelection & { __args: {input: DeleteViewGroupInput} })
     destroyViewGroup?: (ViewGroupGenqlSelection & { __args: {input: DestroyViewGroupInput} })
+    claimSequenceLinkedinAction?: (SequenceLinkedinActionClaimGenqlSelection & { __args: {actionId: Scalars['UUID'], claimedBy: Scalars['String']} })
+    startSequenceLinkedinAction?: (SequenceLinkedinActionMutationResultGenqlSelection & { __args: {actionId: Scalars['UUID'], claimedBy: Scalars['String'], claimedAt: Scalars['DateTime']} })
+    reportSequenceLinkedinAction?: (SequenceLinkedinActionMutationResultGenqlSelection & { __args: {actionId: Scalars['UUID'], claimedBy: Scalars['String'], claimedAt: Scalars['DateTime'], data: SequenceLinkedinActionReportInput} })
+    releaseSequenceLinkedinActionClaim?: (SequenceLinkedinActionMutationResultGenqlSelection & { __args: {actionId: Scalars['UUID'], claimedBy: Scalars['String'], claimedAt: Scalars['DateTime']} })
+    enrichPeopleWithApollo?: (ApolloEnrichmentBatchResultDTOGenqlSelection & { __args: {input: ApolloEnrichRecordsInput} })
+    enrichPeoplePhonesWithApollo?: (ApolloEnrichmentBatchResultDTOGenqlSelection & { __args: {input: ApolloEnrichRecordsInput} })
+    enrichCompaniesWithApollo?: (ApolloEnrichmentBatchResultDTOGenqlSelection & { __args: {input: ApolloEnrichRecordsInput} })
     updateMessageFolder?: (MessageFolderGenqlSelection & { __args: {input: UpdateMessageFolderInput} })
     updateMessageFolders?: (MessageFolderGenqlSelection & { __args: {input: UpdateMessageFoldersInput} })
     updateCalendarChannel?: (CalendarChannelGenqlSelection & { __args: {input: UpdateCalendarChannelInput} })
@@ -6256,9 +6459,9 @@ id: Scalars['UUID'],
 /** The view field to update */
 update: UpdateViewFieldInputUpdates}
 
-export interface UpdateViewFieldInputUpdates {isVisible?: (Scalars['Boolean'] | null),size?: (Scalars['Float'] | null),position?: (Scalars['Float'] | null),aggregateOperation?: (AggregateOperations | null),viewFieldGroupId?: (Scalars['UUID'] | null)}
+export interface UpdateViewFieldInputUpdates {isVisible?: (Scalars['Boolean'] | null),size?: (Scalars['Float'] | null),position?: (Scalars['Float'] | null),aggregateOperation?: (AggregateOperations | null),subFieldName?: (Scalars['String'] | null),viewFieldGroupId?: (Scalars['UUID'] | null)}
 
-export interface CreateViewFieldInput {id?: (Scalars['UUID'] | null),fieldMetadataId: Scalars['UUID'],viewId: Scalars['UUID'],isVisible?: (Scalars['Boolean'] | null),size?: (Scalars['Float'] | null),position?: (Scalars['Float'] | null),aggregateOperation?: (AggregateOperations | null),viewFieldGroupId?: (Scalars['UUID'] | null)}
+export interface CreateViewFieldInput {id?: (Scalars['UUID'] | null),fieldMetadataId: Scalars['UUID'],viewId: Scalars['UUID'],isVisible?: (Scalars['Boolean'] | null),size?: (Scalars['Float'] | null),position?: (Scalars['Float'] | null),aggregateOperation?: (AggregateOperations | null),subFieldName?: (Scalars['String'] | null),viewFieldGroupId?: (Scalars['UUID'] | null)}
 
 export interface DeleteViewFieldInput {
 /** The id of the view field to delete. */
@@ -6412,6 +6615,8 @@ export interface CreateEmailGroupChannelInput {handle: Scalars['String']}
 
 export interface CreateEmailingDomainInput {domain: Scalars['String']}
 
+export interface ConnectedAccountSequenceEmailSettingsInput {sequenceDailyEmailLimitEnabled: Scalars['Boolean'],sequenceDailyEmailLimit: Scalars['Int']}
+
 export interface CreateRoleInput {id?: (Scalars['String'] | null),label: Scalars['String'],description?: (Scalars['String'] | null),icon?: (Scalars['String'] | null),canUpdateAllSettings?: (Scalars['Boolean'] | null),canAccessAllTools?: (Scalars['Boolean'] | null),canReadAllObjectRecords?: (Scalars['Boolean'] | null),canUpdateAllObjectRecords?: (Scalars['Boolean'] | null),canSoftDeleteAllObjectRecords?: (Scalars['Boolean'] | null),canDestroyAllObjectRecords?: (Scalars['Boolean'] | null),canBeAssignedToUsers?: (Scalars['Boolean'] | null),canBeAssignedToAgents?: (Scalars['Boolean'] | null),canBeAssignedToApiKeys?: (Scalars['Boolean'] | null)}
 
 export interface UpdateRoleInput {update: UpdateRolePayload,
@@ -6484,6 +6689,10 @@ export interface DestroyViewGroupInput {
 /** The id of the view group to destroy. */
 id: Scalars['UUID']}
 
+export interface SequenceLinkedinActionReportInput {status: Scalars['String'],connectionState: Scalars['String'],errorMessage?: (Scalars['String'] | null)}
+
+export interface ApolloEnrichRecordsInput {recordIds: Scalars['UUID'][]}
+
 export interface UpdateMessageFolderInput {id: Scalars['UUID'],update: UpdateMessageFolderInputUpdates}
 
 export interface UpdateMessageFolderInputUpdates {isSynced: Scalars['Boolean']}
@@ -6522,7 +6731,7 @@ export interface ActivateWorkspaceInput {
 /** Deprecated: the workspace name is set at creation (signUpInNewWorkspace) and this field is ignored during activation. Kept for backward compatibility. */
 displayName?: (Scalars['String'] | null)}
 
-export interface UpdateWorkspaceInput {subdomain?: (Scalars['String'] | null),customDomain?: (Scalars['String'] | null),displayName?: (Scalars['String'] | null),logo?: (Scalars['String'] | null),inviteHash?: (Scalars['String'] | null),isPublicInviteLinkEnabled?: (Scalars['Boolean'] | null),allowImpersonation?: (Scalars['Boolean'] | null),isGoogleAuthEnabled?: (Scalars['Boolean'] | null),isMicrosoftAuthEnabled?: (Scalars['Boolean'] | null),isPasswordAuthEnabled?: (Scalars['Boolean'] | null),isGoogleAuthBypassEnabled?: (Scalars['Boolean'] | null),isMicrosoftAuthBypassEnabled?: (Scalars['Boolean'] | null),isPasswordAuthBypassEnabled?: (Scalars['Boolean'] | null),defaultRoleId?: (Scalars['UUID'] | null),isTwoFactorAuthenticationEnforced?: (Scalars['Boolean'] | null),trashRetentionDays?: (Scalars['Float'] | null),eventLogRetentionDays?: (Scalars['Float'] | null),fastModel?: (Scalars['String'] | null),smartModel?: (Scalars['String'] | null),aiAdditionalInstructions?: (Scalars['String'] | null),editableProfileFields?: (Scalars['String'][] | null),enabledAiModelIds?: (Scalars['String'][] | null),useRecommendedModels?: (Scalars['Boolean'] | null),isInternalMessagesImportEnabled?: (Scalars['Boolean'] | null)}
+export interface UpdateWorkspaceInput {subdomain?: (Scalars['String'] | null),customDomain?: (Scalars['String'] | null),displayName?: (Scalars['String'] | null),logo?: (Scalars['String'] | null),inviteHash?: (Scalars['String'] | null),isPublicInviteLinkEnabled?: (Scalars['Boolean'] | null),allowImpersonation?: (Scalars['Boolean'] | null),isGoogleAuthEnabled?: (Scalars['Boolean'] | null),isMicrosoftAuthEnabled?: (Scalars['Boolean'] | null),isPasswordAuthEnabled?: (Scalars['Boolean'] | null),isGoogleAuthBypassEnabled?: (Scalars['Boolean'] | null),isMicrosoftAuthBypassEnabled?: (Scalars['Boolean'] | null),isPasswordAuthBypassEnabled?: (Scalars['Boolean'] | null),defaultRoleId?: (Scalars['UUID'] | null),isTwoFactorAuthenticationEnforced?: (Scalars['Boolean'] | null),trashRetentionDays?: (Scalars['Float'] | null),eventLogRetentionDays?: (Scalars['Float'] | null),fastModel?: (Scalars['String'] | null),smartModel?: (Scalars['String'] | null),aiAdditionalInstructions?: (Scalars['String'] | null),editableProfileFields?: (Scalars['String'][] | null),enabledAiModelIds?: (Scalars['String'][] | null),useRecommendedModels?: (Scalars['Boolean'] | null),isInternalMessagesImportEnabled?: (Scalars['Boolean'] | null),isPlainTextEmailEnabled?: (Scalars['Boolean'] | null)}
 
 export interface WorkspaceMigrationInput {actions: WorkspaceMigrationDeleteActionInput[]}
 
@@ -8340,6 +8549,14 @@ export interface LogicFunctionLogsInput {applicationId?: (Scalars['UUID'] | null
     
 
 
+    const ApolloEnrichmentBatchResultDTO_possibleTypes: string[] = ['ApolloEnrichmentBatchResultDTO']
+    export const isApolloEnrichmentBatchResultDTO = (obj?: { __typename?: any } | null): obj is ApolloEnrichmentBatchResultDTO => {
+      if (!obj?.__typename) throw new Error('__typename is missing in "isApolloEnrichmentBatchResultDTO"')
+      return ApolloEnrichmentBatchResultDTO_possibleTypes.includes(obj.__typename)
+    }
+    
+
+
     const ChannelSyncSuccess_possibleTypes: string[] = ['ChannelSyncSuccess']
     export const isChannelSyncSuccess = (obj?: { __typename?: any } | null): obj is ChannelSyncSuccess => {
       if (!obj?.__typename) throw new Error('__typename is missing in "isChannelSyncSuccess"')
@@ -8584,6 +8801,54 @@ export interface LogicFunctionLogsInput {applicationId?: (Scalars['UUID'] | null
     export const isMinimalMetadata = (obj?: { __typename?: any } | null): obj is MinimalMetadata => {
       if (!obj?.__typename) throw new Error('__typename is missing in "isMinimalMetadata"')
       return MinimalMetadata_possibleTypes.includes(obj.__typename)
+    }
+    
+
+
+    const SequenceEmailVariantAnalyticsDTO_possibleTypes: string[] = ['SequenceEmailVariantAnalyticsDTO']
+    export const isSequenceEmailVariantAnalyticsDTO = (obj?: { __typename?: any } | null): obj is SequenceEmailVariantAnalyticsDTO => {
+      if (!obj?.__typename) throw new Error('__typename is missing in "isSequenceEmailVariantAnalyticsDTO"')
+      return SequenceEmailVariantAnalyticsDTO_possibleTypes.includes(obj.__typename)
+    }
+    
+
+
+    const SequenceAnalyticsDTO_possibleTypes: string[] = ['SequenceAnalyticsDTO']
+    export const isSequenceAnalyticsDTO = (obj?: { __typename?: any } | null): obj is SequenceAnalyticsDTO => {
+      if (!obj?.__typename) throw new Error('__typename is missing in "isSequenceAnalyticsDTO"')
+      return SequenceAnalyticsDTO_possibleTypes.includes(obj.__typename)
+    }
+    
+
+
+    const SequenceLinkedinActionClaim_possibleTypes: string[] = ['SequenceLinkedinActionClaim']
+    export const isSequenceLinkedinActionClaim = (obj?: { __typename?: any } | null): obj is SequenceLinkedinActionClaim => {
+      if (!obj?.__typename) throw new Error('__typename is missing in "isSequenceLinkedinActionClaim"')
+      return SequenceLinkedinActionClaim_possibleTypes.includes(obj.__typename)
+    }
+    
+
+
+    const SequenceLinkedinActionMutationResult_possibleTypes: string[] = ['SequenceLinkedinActionMutationResult']
+    export const isSequenceLinkedinActionMutationResult = (obj?: { __typename?: any } | null): obj is SequenceLinkedinActionMutationResult => {
+      if (!obj?.__typename) throw new Error('__typename is missing in "isSequenceLinkedinActionMutationResult"')
+      return SequenceLinkedinActionMutationResult_possibleTypes.includes(obj.__typename)
+    }
+    
+
+
+    const SequenceMutationCapabilitiesDTO_possibleTypes: string[] = ['SequenceMutationCapabilitiesDTO']
+    export const isSequenceMutationCapabilitiesDTO = (obj?: { __typename?: any } | null): obj is SequenceMutationCapabilitiesDTO => {
+      if (!obj?.__typename) throw new Error('__typename is missing in "isSequenceMutationCapabilitiesDTO"')
+      return SequenceMutationCapabilitiesDTO_possibleTypes.includes(obj.__typename)
+    }
+    
+
+
+    const SequenceReadinessDTO_possibleTypes: string[] = ['SequenceReadinessDTO']
+    export const isSequenceReadinessDTO = (obj?: { __typename?: any } | null): obj is SequenceReadinessDTO => {
+      if (!obj?.__typename) throw new Error('__typename is missing in "isSequenceReadinessDTO"')
+      return SequenceReadinessDTO_possibleTypes.includes(obj.__typename)
     }
     
 
@@ -9081,7 +9346,10 @@ export const enumFeatureFlagKey = {
    IS_REST_METADATA_API_NEW_FORMAT_DIRECT: 'IS_REST_METADATA_API_NEW_FORMAT_DIRECT' as const,
    IS_LOGIC_FUNCTION_PREBUILT_MODE_ENABLED: 'IS_LOGIC_FUNCTION_PREBUILT_MODE_ENABLED' as const,
    IS_SETTINGS_DISCOVERY_HERO_ENABLED: 'IS_SETTINGS_DISCOVERY_HERO_ENABLED' as const,
-   IS_CALL_RECORDING_ENABLED: 'IS_CALL_RECORDING_ENABLED' as const
+   IS_CALL_RECORDING_ENABLED: 'IS_CALL_RECORDING_ENABLED' as const,
+   IS_RECORD_LISTS_ENABLED: 'IS_RECORD_LISTS_ENABLED' as const,
+   IS_OUTREACH_SEQUENCES_ENABLED: 'IS_OUTREACH_SEQUENCES_ENABLED' as const,
+   IS_UNIBOX_ENABLED: 'IS_UNIBOX_ENABLED' as const
 }
 
 export const enumIdentityProviderType = {
