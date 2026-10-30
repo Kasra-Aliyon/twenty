@@ -11,7 +11,10 @@ import { from, switchMap, throwError } from 'rxjs';
 import { RestLink } from 'apollo-link-rest';
 import UploadHttpLink from 'apollo-upload-client/UploadHttpLink.mjs';
 
-import { renewToken } from '@/auth/services/AuthService';
+import {
+  isRefreshTokenRejected,
+  renewToken,
+} from '@/auth/services/AuthService';
 import { type CurrentWorkspaceMember } from '@/auth/states/currentWorkspaceMemberState';
 import { type CurrentWorkspace } from '@/auth/states/currentWorkspaceState';
 import { type AuthTokenPair } from '~/generated-metadata/graphql';
@@ -161,18 +164,26 @@ export class ApolloFactory implements ApolloManager {
 
       const attemptTokenRenewal = async (): Promise<void> => {
         const graphqlUri = `${REACT_APP_SERVER_BASE_URL}/metadata`;
+        const tokenPair = getTokenPair();
 
         const tokens = await retryWithBackoff(
-          () => renewToken(graphqlUri, getTokenPair()),
+          () => renewToken(graphqlUri, tokenPair),
           {
             maxRetries: TOKEN_RENEWAL_MAX_RETRIES,
             baseDelayMs: TOKEN_RENEWAL_RETRY_DELAY_MS,
             shouldRetry: (error) =>
-              !CombinedGraphQLErrors.is(error) && isDefined(getTokenPair()),
+              !isRefreshTokenRejected(error) &&
+              isDefined(tokenPair) &&
+              getTokenPair()?.refreshToken.token ===
+                tokenPair.refreshToken.token,
           },
         );
 
-        if (isDefined(tokens)) {
+        // A late response must not overwrite a newer login or undo sign-out.
+        if (
+          isDefined(tokens) &&
+          getTokenPair()?.refreshToken.token === tokenPair?.refreshToken.token
+        ) {
           onTokenPairChange?.(tokens);
         }
       };
@@ -189,14 +200,18 @@ export class ApolloFactory implements ApolloManager {
         }
 
         if (!renewalPromise) {
+          const refreshToken = getTokenPair()?.refreshToken.token;
+
           renewalPromise = attemptTokenRenewal()
             .then(() => true)
-            .catch(() => {
-              // oxlint-disable-next-line no-console
-              console.log(
-                'Failed to renew token after retries, triggering unauthenticated error',
-              );
-              onUnauthenticatedError?.();
+            .catch((renewalError: unknown) => {
+              // Temporary failures must leave the saved session available for retry.
+              if (
+                isRefreshTokenRejected(renewalError) &&
+                getTokenPair()?.refreshToken.token === refreshToken
+              ) {
+                onUnauthenticatedError?.();
+              }
 
               return false;
             })

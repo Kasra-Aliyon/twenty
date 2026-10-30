@@ -76,13 +76,13 @@ export default defineContentScript({
         return;
       }
 
-      lastSyncedRawTokenPair = rawTokenPair;
-
       try {
-        (await browser.runtime.sendMessage({
+        const response = (await browser.runtime.sendMessage({
           type: 'SYNC_TWENTY_TOKEN_PAIR',
           payload: parseTokenPair(rawTokenPair),
         })) as ExtensionResponse;
+
+        if (response.success) lastSyncedRawTokenPair = rawTokenPair;
       } catch (error) {
         console.error(
           '[Twenty Extension] Failed to sync local token pair:',

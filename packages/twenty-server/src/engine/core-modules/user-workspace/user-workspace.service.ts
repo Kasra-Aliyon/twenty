@@ -621,7 +621,7 @@ export class UserWorkspaceService extends TypeOrmQueryService<UserWorkspaceEntit
                       await this.loginTokenService.generateLoginToken(
                         user.email,
                         workspace.id,
-                        AuthProviderEnum.Password,
+                        authProvider,
                       )
                     ).token
                   : undefined,

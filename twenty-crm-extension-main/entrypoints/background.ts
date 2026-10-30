@@ -1,5 +1,9 @@
 import { TwentyApiClient, extractTokenFromCookie } from '../utils/twenty-api';
 import {
+  syncTwentyBrowserSession,
+  withTwentySessionOperation,
+} from '../utils/twenty-session';
+import {
   claimAction,
   fetchDueActions,
   fetchLinkedinActionById,
@@ -513,69 +517,96 @@ function isTokenExpired(expiresAt: string | undefined): boolean {
 async function renewTokenPair(
   settings: ExtensionSettings,
 ): Promise<string | null> {
-  const tokenPair = await getTwentyTokenPair();
+  return withTwentySessionOperation(async () => {
+    const currentSettings = await getSettings();
+    if (
+      settings.twentyApiUrl !== currentSettings.twentyApiUrl ||
+      settings.twentyAppUrl !== currentSettings.twentyAppUrl
+    )
+      return null;
 
-  if (!isValidTwentyTokenPair(tokenPair)) {
-    return null;
-  }
+    let tokenPair = await getTwentyTokenPair();
 
-  if (!isTokenExpired(tokenPair.accessOrWorkspaceAgnosticToken.expiresAt)) {
-    return tokenPair.accessOrWorkspaceAgnosticToken.token;
-  }
+    if (!isValidTwentyTokenPair(tokenPair)) {
+      return null;
+    }
 
-  try {
-    const response = await fetch(`${settings.twentyApiUrl}/metadata`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        query: RENEW_TOKEN_MUTATION,
-        variables: {
-          appToken: tokenPair.refreshToken.token,
+    if (tokenPair.sessionSource !== 'extension') {
+      try {
+        await syncTwentyBrowserSession(settings, tokenPair);
+        tokenPair = await getTwentyTokenPair();
+      } catch {
+        // Never rotate a legacy copy of the browser's refresh token.
+        return tokenPair?.accessOrWorkspaceAgnosticToken.token ?? null;
+      }
+    }
+
+    if (!tokenPair || tokenPair.sessionSource !== 'extension') return null;
+
+    if (!isTokenExpired(tokenPair.accessOrWorkspaceAgnosticToken.expiresAt)) {
+      return tokenPair.accessOrWorkspaceAgnosticToken.token;
+    }
+
+    try {
+      const response = await fetch(`${settings.twentyApiUrl}/metadata`, {
+        method: 'POST',
+        signal: AbortSignal.timeout(15_000),
+        headers: {
+          'Content-Type': 'application/json',
         },
-      }),
-    });
+        body: JSON.stringify({
+          query: RENEW_TOKEN_MUTATION,
+          variables: {
+            appToken: tokenPair.refreshToken.token,
+          },
+        }),
+      });
 
-    if (!response.ok) {
-      const responseText = await response.text();
+      if (!response.ok) {
+        const responseText = await response.text();
 
-      console.error(
-        '[Twenty] Token renewal HTTP error:',
-        response.status,
-        responseText,
-      );
+        console.error(
+          '[Twenty] Token renewal HTTP error:',
+          response.status,
+          responseText,
+        );
+        return tokenPair.accessOrWorkspaceAgnosticToken.token;
+      }
+
+      const result = (await response.json()) as {
+        data?: RenewTokenResult;
+        errors?: Array<{ message: string }>;
+      };
+
+      if (result.errors?.length) {
+        console.error(
+          '[Twenty] Token renewal GraphQL error:',
+          result.errors.map((error) => error.message).join('; '),
+        );
+        return tokenPair.accessOrWorkspaceAgnosticToken.token;
+      }
+
+      const renewedTokenPair = result.data?.renewToken?.tokens;
+
+      if (!isValidTwentyTokenPair(renewedTokenPair)) {
+        console.error(
+          '[Twenty] Token renewal did not return a valid token pair',
+        );
+        return tokenPair.accessOrWorkspaceAgnosticToken.token;
+      }
+
+      await saveTwentyTokenPair({
+        ...renewedTokenPair,
+        sessionSource: 'extension',
+      });
+      console.log('[Twenty] Local token renewed');
+
+      return renewedTokenPair.accessOrWorkspaceAgnosticToken.token;
+    } catch (error) {
+      console.error('[Twenty] Token renewal failed:', error);
       return tokenPair.accessOrWorkspaceAgnosticToken.token;
     }
-
-    const result = (await response.json()) as {
-      data?: RenewTokenResult;
-      errors?: Array<{ message: string }>;
-    };
-
-    if (result.errors?.length) {
-      console.error(
-        '[Twenty] Token renewal GraphQL error:',
-        result.errors.map((error) => error.message).join('; '),
-      );
-      return tokenPair.accessOrWorkspaceAgnosticToken.token;
-    }
-
-    const renewedTokenPair = result.data?.renewToken?.tokens;
-
-    if (!isValidTwentyTokenPair(renewedTokenPair)) {
-      console.error('[Twenty] Token renewal did not return a valid token pair');
-      return tokenPair.accessOrWorkspaceAgnosticToken.token;
-    }
-
-    await saveTwentyTokenPair(renewedTokenPair);
-    console.log('[Twenty] Local token renewed');
-
-    return renewedTokenPair.accessOrWorkspaceAgnosticToken.token;
-  } catch (error) {
-    console.error('[Twenty] Token renewal failed:', error);
-    return tokenPair.accessOrWorkspaceAgnosticToken.token;
-  }
+  });
 }
 
 async function syncTokenPairFromActiveTab(): Promise<boolean> {
@@ -608,14 +639,20 @@ async function syncTokenPairFromActiveTab(): Promise<boolean> {
     const rawTokenPair = injectionResults[0]?.result ?? null;
     const tokenPair = parseTokenPair(rawTokenPair);
 
-    await saveTwentyTokenPair(tokenPair);
+    await withTwentySessionOperation(async () => {
+      const currentSettings = await getSettings();
+      if (!haveSameOrigin(activeTab.url!, currentSettings.twentyAppUrl)) {
+        throw new Error('The selected CRM changed during token sync');
+      }
+      await syncTwentyBrowserSession(currentSettings, tokenPair);
+    });
 
     console.log(
       'Active tab Twenty token sync:',
       tokenPair ? 'synced' : 'no token found',
     );
 
-    return isValidTwentyTokenPair(tokenPair);
+    return isValidTwentyTokenPair(await getTwentyTokenPair());
   } catch (error) {
     console.error('Failed to sync token from active Twenty tab:', error);
     return false;
@@ -886,7 +923,21 @@ async function handleMessage(
           hasValidTokenPair ? 'valid token pair' : 'no valid token pair',
         );
 
-        await saveTwentyTokenPair(hasValidTokenPair ? tokenPair : null);
+        await withTwentySessionOperation(async () => {
+          const settings = await getSettings();
+          if (
+            !sender?.url ||
+            !haveSameOrigin(sender.url, settings.twentyAppUrl)
+          ) {
+            throw new Error(
+              'Token bridge origin is not the configured Twenty app',
+            );
+          }
+          await syncTwentyBrowserSession(
+            settings,
+            hasValidTokenPair ? tokenPair : null,
+          );
+        });
 
         return { success: true };
       }
@@ -946,7 +997,7 @@ async function handleMessage(
       case 'SAVE_SETTINGS': {
         const newSettings = message.payload as Partial<ExtensionSettings>;
         console.log('Saving settings:', newSettings);
-        await saveSettings(newSettings);
+        await withTwentySessionOperation(() => saveSettings(newSettings));
         // Clear cached client when URL changes
         if (newSettings.twentyApiUrl) {
           apiClient = null;

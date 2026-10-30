@@ -4,6 +4,7 @@ import {
   HttpLink,
   InMemoryCache,
 } from '@apollo/client';
+import { CombinedGraphQLErrors, ServerError } from '@apollo/client/errors';
 
 import { loggerLink } from '@/apollo/utils/loggerLink';
 import {
@@ -17,6 +18,23 @@ import { isUndefinedOrNull } from '~/utils/isUndefinedOrNull';
 const isDebugMode = process.env.IS_DEBUG_MODE === 'true';
 
 const logger = loggerLink(() => 'Twenty-Refresh');
+
+export const isRefreshTokenRejected = (error: unknown): boolean => {
+  if (ServerError.is(error)) {
+    return error.statusCode === 401 || error.statusCode === 403;
+  }
+
+  return (
+    CombinedGraphQLErrors.is(error) &&
+    error.errors.some(
+      ({ extensions }) =>
+        extensions?.code === 'UNAUTHENTICATED' ||
+        extensions?.code === 'FORBIDDEN' ||
+        (extensions?.code === 'BAD_USER_INPUT' &&
+          extensions?.subCode === 'INVALID_INPUT'),
+    )
+  );
+};
 
 const renewTokenMutation = async (
   uri: string | undefined,
