@@ -5,16 +5,22 @@ import { getLabelIdentifierFieldMetadataItem } from '@/object-metadata/utils/get
 import { useBuildRecordInputFromRLSPredicates } from '@/object-record/hooks/useBuildRecordInputFromRLSPredicates';
 import { useCreateOneRecord } from '@/object-record/hooks/useCreateOneRecord';
 import { recordGroupDefinitionsComponentSelector } from '@/object-record/record-group/states/selectors/recordGroupDefinitionsComponentSelector';
-import { useRecordIndexContextOrThrow } from '@/object-record/record-index/contexts/RecordIndexContext';
+import {
+  recordIndexCreationOptionsFamilyState,
+  useRecordIndexContext,
+} from '@/object-record/record-index/contexts/RecordIndexContext';
 import { recordIndexGroupFieldMetadataItemComponentState } from '@/object-record/record-index/states/recordIndexGroupFieldMetadataComponentState';
 import { recordIndexOpenRecordInState } from '@/object-record/record-index/states/recordIndexOpenRecordInState';
 import { recordIndexRecordIdsByGroupComponentFamilyState } from '@/object-record/record-index/states/recordIndexRecordIdsByGroupComponentFamilyState';
 import { recordTableReloadRequestIdComponentState } from '@/object-record/record-table/states/recordTableReloadRequestIdComponentState';
+import { RecordTableComponentInstanceContext } from '@/object-record/record-table/states/context/RecordTableComponentInstanceContext';
 import { useUpsertRecordsInStore } from '@/object-record/record-store/hooks/useUpsertRecordsInStore';
 import { useBuildRecordInputFromFilters } from '@/object-record/record-table/hooks/useBuildRecordInputFromFilters';
 import { type ObjectRecord } from '@/object-record/types/ObjectRecord';
 import { canOpenObjectInSidePanel } from '@/object-record/utils/canOpenObjectInSidePanel';
 import { useAtomComponentFamilyStateCallbackState } from '@/ui/utilities/state/jotai/hooks/useAtomComponentFamilyStateCallbackState';
+import { useAvailableComponentInstanceIdOrThrow } from '@/ui/utilities/state/component-state/hooks/useAvailableComponentInstanceIdOrThrow';
+import { useAtomFamilyStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomFamilyStateValue';
 import { useAtomComponentSelectorValue } from '@/ui/utilities/state/jotai/hooks/useAtomComponentSelectorValue';
 import { useSetAtomComponentState } from '@/ui/utilities/state/jotai/hooks/useSetAtomComponentState';
 import { useAtomComponentStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomComponentStateValue';
@@ -35,27 +41,40 @@ export const useCreateNewIndexRecord = ({
   objectMetadataItem,
   instanceId,
 }: UseCreateNewIndexRecordProps) => {
+  const recordIndexContext = useRecordIndexContext();
+  const recordIndexInstanceId = useAvailableComponentInstanceIdOrThrow(
+    RecordTableComponentInstanceContext,
+    instanceId ?? recordIndexContext?.recordIndexId,
+  );
+  const recordIndexCreationOptions = useAtomFamilyStateValue(
+    recordIndexCreationOptionsFamilyState,
+    recordIndexInstanceId,
+  );
+  const contextCreationOptions =
+    recordIndexContext?.recordIndexId === recordIndexInstanceId
+      ? recordIndexContext
+      : undefined;
   const { onRecordCreated, skipPostOptimisticEffectOnRecordCreate = false } =
-    useRecordIndexContextOrThrow();
+    contextCreationOptions ?? recordIndexCreationOptions ?? {};
   const setRecordTableReloadRequestId = useSetAtomComponentState(
     recordTableReloadRequestIdComponentState,
-    instanceId,
+    recordIndexInstanceId,
   );
   const recordGroupDefinitions = useAtomComponentSelectorValue(
     recordGroupDefinitionsComponentSelector,
-    instanceId,
+    recordIndexInstanceId,
   );
 
   const store = useStore();
   const recordIndexRecordIdsByGroupCallbackState =
     useAtomComponentFamilyStateCallbackState(
       recordIndexRecordIdsByGroupComponentFamilyState,
-      instanceId,
+      recordIndexInstanceId,
     );
 
   const recordIndexGroupFieldMetadataItem = useAtomComponentStateValue(
     recordIndexGroupFieldMetadataItemComponentState,
-    instanceId,
+    recordIndexInstanceId,
   );
 
   const { openRecordInSidePanel } = useOpenRecordInSidePanel();
@@ -74,7 +93,7 @@ export const useCreateNewIndexRecord = ({
 
   const { buildRecordInputFromFilters } = useBuildRecordInputFromFilters({
     objectMetadataItem,
-    instanceId,
+    instanceId: recordIndexInstanceId,
   });
 
   const { buildRecordInputFromRLSPredicates } =

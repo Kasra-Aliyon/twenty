@@ -1,5 +1,6 @@
 import {
   RecordIndexContextProvider,
+  recordIndexCreationOptionsFamilyState,
   recordIndexRequiredFilterFamilyState,
 } from '@/object-record/record-index/contexts/RecordIndexContext';
 
@@ -63,6 +64,25 @@ export const RecordIndexContainerGater = ({
     recordIndexRequiredFilterFamilyState,
     recordIndexId,
   );
+
+  const setRecordIndexCreationOptions = useSetAtomFamilyState(
+    recordIndexCreationOptionsFamilyState,
+    recordIndexId,
+  );
+
+  // Headless header commands mount outside the index's React providers.
+  useEffect(() => {
+    setRecordIndexCreationOptions({
+      onRecordCreated,
+      skipPostOptimisticEffectOnRecordCreate,
+    });
+
+    return () => setRecordIndexCreationOptions(undefined);
+  }, [
+    onRecordCreated,
+    setRecordIndexCreationOptions,
+    skipPostOptimisticEffectOnRecordCreate,
+  ]);
 
   useEffect(() => {
     setRecordIndexRequiredFilter(requiredFilter);
