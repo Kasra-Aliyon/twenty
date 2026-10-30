@@ -1,4 +1,5 @@
 import { type Meta, type StoryObj } from '@storybook/react-vite';
+import { expect, fn, userEvent, within } from 'storybook/test';
 
 import { IconBell } from '@ui/icon';
 import {
@@ -14,6 +15,13 @@ import { MenuItemMultiSelect } from '@ui/navigation/MenuItemMultiSelect/MenuItem
 const meta: Meta<typeof MenuItemMultiSelect> = {
   title: 'UI/Navigation/Menu/MenuItem/MenuItemMultiSelect',
   component: MenuItemMultiSelect,
+  decorators: [
+    (Story) => (
+      <div role="listbox" aria-label="Options" aria-multiselectable>
+        <Story />
+      </div>
+    ),
+  ],
 };
 
 export default meta;
@@ -24,8 +32,35 @@ export const Default: Story = {
   parameters: { a11y: A11Y_DEFER_COLOR_CONTRAST },
   args: {
     text: 'First option',
+    selected: false,
+    onSelectChange: fn(),
   },
   decorators: [ComponentDecorator],
+  play: async ({ args, canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await expect(canvas.queryByRole('checkbox')).not.toBeInTheDocument();
+    await userEvent.click(canvas.getByRole('option', { name: args.text }));
+    await expect(args.onSelectChange).toHaveBeenCalledTimes(1);
+    await expect(args.onSelectChange).toHaveBeenCalledWith(true);
+  },
+};
+
+export const Disabled: Story = {
+  ...Default,
+  args: {
+    ...Default.args,
+    disabled: true,
+    onSelectChange: fn(),
+  },
+  play: async ({ args, canvasElement }) => {
+    const canvas = within(canvasElement);
+    const option = canvas.getByRole('option', { name: args.text });
+
+    await expect(option).toHaveAttribute('aria-disabled', 'true');
+    await userEvent.click(option);
+    await expect(args.onSelectChange).not.toHaveBeenCalled();
+  },
 };
 
 export const Catalog: CatalogStory<Story, typeof MenuItemMultiSelect> = {
