@@ -122,7 +122,9 @@ export const NavigationDrawerItemForObjectMetadataItem = ({
           setCurrentNavigationMenuItemFolderId(null);
           setOpenNavigationMenuItemFolderIds([]);
           setLastClickedNavigationMenuItemId(
-            hasNavigationMenuItem ? navigationMenuItem!.id : objectMetadataItem.id,
+            hasNavigationMenuItem
+              ? navigationMenuItem!.id
+              : objectMetadataItem.id,
           );
           if (shouldNavigate) {
             navigate(navigationPath);

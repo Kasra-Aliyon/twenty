@@ -82,9 +82,7 @@ export const useNavigationMenuItemFolderOpenState = ({
       );
     } else {
       setOpenNavigationMenuItemFolderIds((current) =>
-        isOpen
-          ? current.filter((id) => id !== folderId)
-          : [folderId],
+        isOpen ? current.filter((id) => id !== folderId) : [folderId],
       );
       setIsManuallyClosed(isOpen);
     }
