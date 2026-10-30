@@ -21,6 +21,7 @@ describe('getConflictingFields', () => {
       workspaceId,
       objectMetadataId,
       isNullable: false,
+      isActive: true,
       isLabelSyncedWithName: true,
       createdAt: new Date(),
       updatedAt: new Date(),

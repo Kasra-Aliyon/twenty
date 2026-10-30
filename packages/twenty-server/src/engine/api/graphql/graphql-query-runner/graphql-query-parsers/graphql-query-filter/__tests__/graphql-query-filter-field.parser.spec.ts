@@ -31,6 +31,7 @@ describe('GraphqlQueryFilterFieldParser one-to-many filters', () => {
       id: '11111111-1111-4111-8111-111111111111',
       name: 'recordListMemberships',
       type: FieldMetadataType.RELATION,
+      isActive: true,
       objectMetadataId: companyObject.id,
       universalIdentifier: 'memberships-field-universal-id',
       relationTargetObjectMetadataId: memberObject.id,
@@ -40,6 +41,7 @@ describe('GraphqlQueryFilterFieldParser one-to-many filters', () => {
       id: '22222222-2222-4222-8222-222222222222',
       name: 'recordListId',
       type: FieldMetadataType.UUID,
+      isActive: true,
       objectMetadataId: memberObject.id,
       universalIdentifier: 'record-list-id-field-universal-id',
     } as unknown as FlatFieldMetadata;

@@ -65,6 +65,7 @@ describe('isRecordMatchingRLSRowLevelPermissionPredicate', () => {
       objectMetadataId: 'test-object-id',
       isLabelSyncedWithName: true,
       isNullable: true,
+      isActive: true,
       createdAt: new Date(),
       updatedAt: new Date(),
       universalIdentifier: id,

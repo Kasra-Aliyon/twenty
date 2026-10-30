@@ -170,6 +170,7 @@ describe('objectRecordChangedValues', () => {
             id: positionFieldId,
             name: 'position',
             type: FieldMetadataType.POSITION,
+            isActive: true,
             universalIdentifier: positionUniversalId,
           } as FlatFieldMetadata,
         },
@@ -219,6 +220,7 @@ describe('objectRecordChangedValues', () => {
             id: positionFieldId,
             name: 'position',
             type: FieldMetadataType.POSITION,
+            isActive: true,
             universalIdentifier: positionUniversalId,
           } as FlatFieldMetadata,
         },
@@ -267,6 +269,7 @@ describe('objectRecordChangedValues', () => {
             id: relationFieldId,
             name: 'company',
             type: FieldMetadataType.RELATION,
+            isActive: true,
             universalIdentifier: relationUniversalId,
             settings: {
               relationType: RelationType.MANY_TO_ONE,

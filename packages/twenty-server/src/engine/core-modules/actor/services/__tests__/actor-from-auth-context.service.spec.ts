@@ -47,6 +47,7 @@ describe('ActorFromAuthContextService', () => {
                   'createdBy-universal-id': {
                     id: 'createdBy-id',
                     name: 'createdBy',
+                    isActive: true,
                     objectMetadataId: 'person-id',
                     universalIdentifier: 'createdBy-universal-id',
                   },
