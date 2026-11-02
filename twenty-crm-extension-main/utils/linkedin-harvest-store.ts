@@ -444,7 +444,11 @@ const updateThreadSummaryWithClient = async (
     `,
     {
       id: threadId,
-      data: { lastMessagePreview, messageCount },
+      data: {
+        // Preserve saved text when the latest message has no text preview.
+        ...(lastMessagePreview ? { lastMessagePreview } : {}),
+        messageCount,
+      },
     },
   );
 

@@ -364,6 +364,35 @@ describe('LinkedIn harvest standard object writes', () => {
     });
   });
 
+  it.each(['', '   '])(
+    'should preserve the saved preview and update the count when the latest message text is %j',
+    async (body) => {
+      const { client, graphqlRequest } = createClient([
+        {
+          data: {
+            linkedinMessages: {
+              edges: [{ node: { body } }],
+              totalCount: 12,
+            },
+          },
+        },
+        {
+          data: { updateLinkedinMessageThread: { id: 'twenty-thread-id' } },
+        },
+      ]);
+
+      await handleLinkedInHarvestStoreRequest(client, {
+        action: 'UPDATE_THREAD_SUMMARY',
+        threadId: 'twenty-thread-id',
+      });
+
+      expect(graphqlRequest.mock.calls[1]?.[1]).toEqual({
+        id: 'twenty-thread-id',
+        data: { messageCount: 12 },
+      });
+    },
+  );
+
   it('ignores LinkedIn activity timestamp drift below the tolerance', async () => {
     const { client } = createClient([
       {
