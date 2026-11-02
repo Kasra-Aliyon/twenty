@@ -209,11 +209,40 @@ describe('LinkedIn harvest standard object writes', () => {
 
     expect(writtenData).toMatchObject({
       externalId: 'owner-id:linkedin-message-id',
+      body: 'Hello from LinkedIn',
       senderLinkedinUrn: 'profile-urn',
       threadId: 'twenty-thread-id',
     });
     expect(writtenData).not.toHaveProperty('threadExternalId');
     expect(writtenData).not.toHaveProperty('senderHandle');
+  });
+
+  it('should omit empty message text so resyncs preserve saved text and new messages use the default', async () => {
+    const { client, graphqlRequest } = createClient([]);
+
+    await handleLinkedInHarvestStoreRequest(client, {
+      action: 'WRITE_MESSAGES',
+      ownerLinkedinId: 'owner-id',
+      records: [
+        {
+          messageId: 'linkedin-message-id',
+          threadId: 'twenty-thread-id',
+          body: '',
+          deliveredAt: '2026-07-22T10:00:00.000Z',
+          direction: 'INBOUND',
+          senderName: 'Ada Lovelace',
+          senderLinkedinUrn: 'profile-urn',
+        },
+      ],
+    });
+
+    const writtenData = getWrittenData(graphqlRequest);
+
+    expect(writtenData).toMatchObject({
+      externalId: 'owner-id:linkedin-message-id',
+      threadId: 'twenty-thread-id',
+    });
+    expect(writtenData).not.toHaveProperty('body');
   });
 
   it('marks every earlier outbound message read through the receipt boundary', async () => {

@@ -309,7 +309,9 @@ const writeMessagesWithClient = (
     records.map((record) => ({
       externalId: `${ownerLinkedinId}:${record.messageId}`,
       messageId: record.messageId,
-      body: record.body,
+      // Empty text is normalized to null by the CRM. Omit it so inserts use
+      // the empty default and partial LinkedIn responses preserve saved text.
+      ...(record.body ? { body: record.body } : {}),
       deliveredAt: record.deliveredAt,
       direction: record.direction,
       senderName: record.senderName,
