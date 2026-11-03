@@ -11,6 +11,7 @@ const environment = {
   TWENTY_PUBLIC_URL: 'https://crm.example.com',
   TWENTY_MCP_PUBLIC_URL: 'https://mcp.example.com',
   TWENTY_MCP_HTTP_BEARER_TOKEN: 'private-mcp-token',
+  TWENTY_JORIS_MCP_HTTP_BEARER_TOKEN: 'private-joris-token',
   GITHUB_SHA: 'c'.repeat(40),
 };
 
@@ -63,18 +64,29 @@ test('accepted deployment alone is insufficient; requires public health and auth
         });
       if (url.endsWith('/deployments/release'))
         return Response.json({ status: 'finished' });
-      if (url.endsWith('/mcp'))
+      if (url.endsWith('/mcp')) {
+        const expectedToken = url.includes('/mcp-joris/')
+          ? 'private-joris-token'
+          : 'private-mcp-token';
+        if (options.headers.Authorization !== `Bearer ${expectedToken}`)
+          return Response.json({}, { status: 401 });
         return Response.json({
           result: { tools: [{ name: 'twenty_list_objects' }] },
         });
+      }
       return Response.json({});
     },
     async () => {},
   );
-  assert.equal(calls.length, 7);
+  assert.equal(calls.length, 11);
   assert.equal(
-    calls.at(-1).options.headers.Authorization,
+    calls.at(-2).options.headers.Authorization,
+    'Bearer private-joris-token',
+  );
+  assert.equal(
+    calls.at(-4).options.headers.Authorization,
     'Bearer private-mcp-token',
   );
+  assert.equal(calls.at(-1).url, 'https://crm.example.com/mcp-joris/mcp');
   assert.ok(calls.every(({ options }) => options.redirect === 'error'));
 });

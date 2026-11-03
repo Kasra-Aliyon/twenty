@@ -40,6 +40,7 @@ export async function deploy(
     'TWENTY_PUBLIC_URL',
     'TWENTY_MCP_PUBLIC_URL',
     'TWENTY_MCP_HTTP_BEARER_TOKEN',
+    'TWENTY_JORIS_MCP_HTTP_BEARER_TOKEN',
     'GITHUB_SHA',
   ]) {
     if (!env[key]) throw new Error(`Missing ${key}`);
@@ -47,6 +48,12 @@ export async function deploy(
   const base = httpsOrigin(env.COOLIFY_URL);
   const crm = httpsOrigin(env.TWENTY_PUBLIC_URL);
   const mcp = httpsOrigin(env.TWENTY_MCP_PUBLIC_URL);
+  const jorisMcp = `${crm}/mcp-joris`;
+  if (
+    env.TWENTY_MCP_HTTP_BEARER_TOKEN === env.TWENTY_JORIS_MCP_HTTP_BEARER_TOKEN
+  ) {
+    throw new Error('Personal MCP services must use different access tokens');
+  }
   const app = encodeURIComponent(env.COOLIFY_APP_UUID);
   const images = ['TWENTY_IMAGE', 'TWENTY_MCP_IMAGE'].map((key) => ({
     key,
@@ -113,7 +120,7 @@ export async function deploy(
       'Timed out waiting for Coolify; inspect it before retrying',
     );
 
-  for (const url of [`${crm}/healthz`, `${mcp}/health`]) {
+  for (const url of [`${crm}/healthz`, `${mcp}/health`, `${jorisMcp}/health`]) {
     const response = await fetcher(url, {
       redirect: 'error',
       signal: AbortSignal.timeout(30_000),
@@ -123,26 +130,68 @@ export async function deploy(
         `Public health check failed: ${url} (${response.status})`,
       );
   }
-  const response = await fetcher(`${mcp}/mcp`, {
-    method: 'POST',
-    redirect: 'error',
-    signal: AbortSignal.timeout(30_000),
-    headers: {
-      Authorization: `Bearer ${env.TWENTY_MCP_HTTP_BEARER_TOKEN}`,
-      'Content-Type': 'application/json',
-      Accept: 'application/json, text/event-stream',
-    },
-    body: JSON.stringify({
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'tools/list',
-      params: {},
-    }),
-  });
-  if (!response.ok)
-    throw new Error(`Authenticated MCP check failed: HTTP ${response.status}`);
-  const result = await response.json();
-  if (!result.result?.tools?.length) throw new Error('MCP returned no tools');
+  const catalogs = [];
+  for (const [endpoint, token, otherToken] of [
+    [
+      mcp,
+      env.TWENTY_MCP_HTTP_BEARER_TOKEN,
+      env.TWENTY_JORIS_MCP_HTTP_BEARER_TOKEN,
+    ],
+    [
+      jorisMcp,
+      env.TWENTY_JORIS_MCP_HTTP_BEARER_TOKEN,
+      env.TWENTY_MCP_HTTP_BEARER_TOKEN,
+    ],
+  ]) {
+    const response = await fetcher(`${endpoint}/mcp`, {
+      method: 'POST',
+      redirect: 'error',
+      signal: AbortSignal.timeout(30_000),
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/event-stream',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/list',
+        params: {},
+      }),
+    });
+    if (!response.ok)
+      throw new Error(
+        `Authenticated MCP check failed: HTTP ${response.status}`,
+      );
+    const result = await response.json();
+    if (!result.result?.tools?.length) throw new Error('MCP returned no tools');
+    catalogs.push(
+      result.result.tools
+        .map((tool) => tool.name)
+        .sort()
+        .join(','),
+    );
+    const crossAccount = await fetcher(`${endpoint}/mcp`, {
+      method: 'POST',
+      redirect: 'error',
+      signal: AbortSignal.timeout(30_000),
+      headers: {
+        Authorization: `Bearer ${otherToken}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/event-stream',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/list',
+        params: {},
+      }),
+    });
+    if (crossAccount.status !== 401)
+      throw new Error('MCP accepted another account access token');
+  }
+  if (catalogs[0] !== catalogs[1])
+    throw new Error('Personal MCP tool catalogs differ');
   console.log(`Production deployment verified: ${env.GITHUB_SHA}`);
 }
 

@@ -8,6 +8,32 @@ import {
 } from '../constants.js';
 
 describe('readConfig', () => {
+  it('pins personal onboarding to a user and workspace with independent session storage', () => {
+    const environment = {
+      TWENTY_BASE_URL: 'http://server:3000',
+      TWENTY_API_KEY: 'key',
+      TWENTY_USER_SESSION_FILE: '/state/user-session.json',
+      TWENTY_MCP_USER_ID: '20202020-1111-4111-8111-111111111111',
+      TWENTY_MCP_WORKSPACE_ID: '20202020-2222-4222-8222-222222222222',
+      TWENTY_MCP_PUBLIC_CRM_ORIGIN: 'https://crm.example.com',
+      TWENTY_MCP_HTTP_BEARER_TOKEN: 'personal-token',
+    };
+    expect(readConfig(environment).userSessionIdentity?.userId).toBe(
+      environment.TWENTY_MCP_USER_ID,
+    );
+    expect(() =>
+      readConfig({ ...environment, TWENTY_USER_TOKEN: 'shared-user-token' }),
+    ).toThrow('Personal MCP requires');
+    expect(() =>
+      readConfig({ ...environment, TWENTY_MCP_WORKSPACE_ID: '' }),
+    ).toThrow('Personal MCP requires');
+    expect(() =>
+      readConfig({
+        ...environment,
+        TWENTY_MCP_PUBLIC_CRM_ORIGIN: 'https://crm.example.com/other',
+      }),
+    ).toThrow('HTTPS origin');
+  });
   it('reads required values and applies safe defaults', () => {
     const config = readConfig({
       TWENTY_BASE_URL: 'https://crm.example.com',

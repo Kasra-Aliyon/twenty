@@ -3,6 +3,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 
 import { createMcpServer } from '../server.js';
 import type { ToolDependencies, TwentyMcpConfig } from '../types.js';
+import { registerSessionOnboarding } from './session-onboarding.js';
 
 const isAllowedOrigin = (
   origin: string | undefined,
@@ -31,18 +32,24 @@ const isAllowedOrigin = (
   }
 };
 
-export const startHttpTransport = async (
+export const createHttpApp = (
   dependencies: ToolDependencies,
   config: Pick<
     TwentyMcpConfig,
-    'host' | 'httpBearerToken' | 'port' | 'allowedOrigins'
+    | 'host'
+    | 'httpBearerToken'
+    | 'port'
+    | 'allowedOrigins'
+    | 'publicCrmOrigin'
+    | 'userSessionIdentity'
   >,
-): Promise<void> => {
+) => {
   const app = createMcpExpressApp({ host: config.host });
 
   app.get('/health', (_request, response) => {
     response.status(200).json({ status: 'ok' });
   });
+  registerSessionOnboarding(app, dependencies, config);
 
   app.post('/mcp', (request, response) => {
     void (async () => {
@@ -117,6 +124,14 @@ export const startHttpTransport = async (
     });
   });
 
+  return app;
+};
+
+export const startHttpTransport = async (
+  dependencies: ToolDependencies,
+  config: TwentyMcpConfig,
+): Promise<void> => {
+  const app = createHttpApp(dependencies, config);
   const httpServer = app.listen(config.port, config.host, () => {
     process.stderr.write(
       `Twenty MCP HTTP server listening at http://${config.host}:${config.port}/mcp\n`,

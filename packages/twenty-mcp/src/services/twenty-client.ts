@@ -74,6 +74,7 @@ export class TwentyClient {
       | 'requestTimeoutMs'
       | 'userToken'
       | 'userSessionFile'
+      | 'userSessionIdentity'
     >,
     fetchImplementation: FetchImplementation = fetch,
   ) {
@@ -86,6 +87,7 @@ export class TwentyClient {
           config.baseUrl,
           config.requestTimeoutMs,
           fetchImplementation,
+          config.userSessionIdentity,
         )
       : undefined;
     this.requestTimeoutMs = config.requestTimeoutMs;
@@ -95,6 +97,26 @@ export class TwentyClient {
 
   hasUserToken(): boolean {
     return this.userToken !== undefined || this.userSession !== undefined;
+  }
+
+  async connectUserSession(loginToken: string, origin: string) {
+    if (!this.userSession)
+      throw new Error('User session storage is not configured');
+    return this.userSession.connect(loginToken, origin);
+  }
+
+  async getCurrentUser() {
+    return this.graphql<{
+      currentUser: {
+        id: string;
+        email: string;
+        currentWorkspace: { id: string };
+      };
+    }>(
+      'query McpCurrentUser { currentUser { id email currentWorkspace { id } } }',
+      {},
+      { endpoint: 'metadata', token: 'user' },
+    );
   }
 
   async rest(

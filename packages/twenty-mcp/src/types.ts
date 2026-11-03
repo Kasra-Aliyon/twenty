@@ -5,11 +5,18 @@ export type JsonObject = { [key: string]: JsonValue };
 export type ResponseFormat = 'json' | 'markdown';
 export type TransportMode = 'http' | 'stdio';
 
+export type UserSessionIdentity = {
+  userId: string;
+  workspaceId: string;
+};
+
 export type TwentyMcpConfig = {
   baseUrl: URL;
   apiKey: string;
   userToken?: string;
   userSessionFile?: string;
+  userSessionIdentity?: UserSessionIdentity;
+  publicCrmOrigin?: string;
   metadataCacheTtlMs: number;
   requestTimeoutMs: number;
   maxRetries: number;
