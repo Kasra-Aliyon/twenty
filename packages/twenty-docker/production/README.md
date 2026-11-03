@@ -44,6 +44,40 @@ The GitHub `production` environment is created and restricted to the `main` bran
 
 ## MCP sessions
 
+### Personal MCP for Joris
+
+The `mcp-joris` service reuses the MCP image and shared CRM API but has its own
+bearer token and `mcp-joris-state` volume. Set `TWENTY_JORIS_USER_ID`,
+`TWENTY_JORIS_WORKSPACE_ID`, and `TWENTY_JORIS_MCP_HTTP_BEARER_TOKEN` in the
+runtime environment. Add the latter as a GitHub `production` environment secret
+for release verification. Keep its flags equal to the primary MCP to expose the
+same tool catalog.
+
+Set `TWENTY_PUBLIC_HOST=crm.sevenscholar.com`. The Compose definition declares
+the dedicated Traefik HTTPS path and prefix-stripping middleware; no second
+Coolify domain mapping or DNS record is needed. The existing CRM root route
+and primary MCP hostname stay in place. Reusing
+the CRM origin lets `/mcp-joris/connect` read the user's existing browser login
+without cross-origin token transfer or new DNS. The proxy strips the prefix;
+internal health stays `/health`, while the public endpoint is
+`https://crm.sevenscholar.com/mcp-joris/mcp`.
+
+The service starts without a personal session: shared records/tool discovery
+work; user-scoped operations fail closed. Joris authorizes it using the
+connection page and his own token. The server verifies the freshly issued
+session against the assigned user/workspace and stores it atomically with
+mode 0600. It rejects impersonation, another user's session, and identity
+changes during renewal. Never install the primary MCP's session into this
+volume. See [Joris's setup guide](./JORIS_SETUP.md).
+
+Backups discover every production MCP container, pause all writers, and save
+each `/state` directory separately (`mcp-state` for the primary and
+`mcp-state-joris` for Joris). Install the updated host backup script **before**
+deploying the second service; the older script expects exactly one MCP.
+Restore each session snapshot to its matching volume. Release checks verify
+both authenticated tool catalogs; personal authorization remains a distinct
+onboarding check rather than a deployment prerequisite.
+
 The API key handles ordinary CRM tools. User-scoped LinkedIn/email tools additionally need a dedicated user session. Store its token-pair JSON (the `tokens` object returned by Twenty sign-in) at `/state/user-session.json` in the MCP volume, owned by UID 1000 with mode 0600. Set `TWENTY_USER_SESSION_FILE=/state/user-session.json`. The server renews expiring access tokens and atomically persists rotated refresh tokens. Reauthentication is still required after session revocation or refresh-token expiry. Run a single MCP replica with this session file.
 
 Use a dedicated session rather than sharing the browser extension's rotating refresh token. The old `TWENTY_USER_TOKEN` mode remains available for local development but is not durable. MCP access grants the CRM permissions of its configured keys/session; give the endpoint only to authorized clients.

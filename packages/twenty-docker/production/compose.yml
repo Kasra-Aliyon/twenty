@@ -135,6 +135,7 @@ services:
     labels:
       com.twenty.deployment: production
       com.twenty.role: mcp
+      com.twenty.mcp-account: kasra
     environment:
       TWENTY_BASE_URL: http://server:3000
       TWENTY_API_KEY: ${TWENTY_API_KEY:?Set a role-scoped CRM API key}
@@ -152,8 +153,47 @@ services:
       server:
         condition: service_healthy
 
+  mcp-joris:
+    image: ${TWENTY_MCP_IMAGE:?Set the tested MCP image digest}
+    restart: unless-stopped
+    logging: *logging
+    mem_limit: 768m
+    labels:
+      com.twenty.deployment: production
+      com.twenty.role: mcp
+      com.twenty.mcp-account: joris
+      traefik.enable: 'true'
+      traefik.http.routers.twenty-mcp-joris.entrypoints: https
+      traefik.http.routers.twenty-mcp-joris.rule: Host(`${TWENTY_PUBLIC_HOST:?Set the CRM hostname without scheme}`) && PathPrefix(`/mcp-joris/`)
+      traefik.http.routers.twenty-mcp-joris.priority: '100'
+      traefik.http.routers.twenty-mcp-joris.tls: 'true'
+      traefik.http.routers.twenty-mcp-joris.tls.certresolver: letsencrypt
+      traefik.http.routers.twenty-mcp-joris.service: twenty-mcp-joris
+      traefik.http.routers.twenty-mcp-joris.middlewares: twenty-mcp-joris-strip
+      traefik.http.middlewares.twenty-mcp-joris-strip.stripprefix.prefixes: /mcp-joris
+      traefik.http.services.twenty-mcp-joris.loadbalancer.server.port: '3333'
+    environment:
+      TWENTY_BASE_URL: http://server:3000
+      TWENTY_API_KEY: ${TWENTY_API_KEY:?Set a role-scoped CRM API key}
+      TWENTY_USER_SESSION_FILE: /state/user-session.json
+      TWENTY_MCP_USER_ID: ${TWENTY_JORIS_USER_ID:?Set Joris's CRM user UUID}
+      TWENTY_MCP_WORKSPACE_ID: ${TWENTY_JORIS_WORKSPACE_ID:?Set the shared workspace UUID}
+      TWENTY_MCP_PUBLIC_CRM_ORIGIN: ${TWENTY_PUBLIC_URL:?}
+      TWENTY_ENABLE_ADVANCED: ${TWENTY_ENABLE_ADVANCED:-false}
+      TWENTY_ENABLE_SCHEMA_TOOLS: ${TWENTY_ENABLE_SCHEMA_TOOLS:-false}
+      TWENTY_MCP_HTTP_BEARER_TOKEN: ${TWENTY_JORIS_MCP_HTTP_BEARER_TOKEN:?Set Joris's separate private MCP access token}
+      TWENTY_MCP_ALLOWED_ORIGINS: ${TWENTY_PUBLIC_URL:?}
+    expose:
+      - '3333'
+    volumes:
+      - mcp-joris-state:/state
+    depends_on:
+      server:
+        condition: service_healthy
+
 volumes:
   database:
   redis:
   uploads:
   mcp-state:
+  mcp-joris-state:

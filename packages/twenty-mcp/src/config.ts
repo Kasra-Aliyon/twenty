@@ -6,6 +6,7 @@ import {
   DEFAULT_REQUEST_TIMEOUT_MS,
 } from './constants.js';
 import type { TransportMode, TwentyMcpConfig } from './types.js';
+import { z } from 'zod';
 
 const readPositiveInteger = (
   value: string | undefined,
@@ -63,6 +64,32 @@ export const readConfig = (
   const transport = readTransport(environment.TRANSPORT);
   const host = environment.HOST ?? DEFAULT_HTTP_HOST;
   const httpBearerToken = environment.TWENTY_MCP_HTTP_BEARER_TOKEN;
+  const userId = environment.TWENTY_MCP_USER_ID;
+  const workspaceId = environment.TWENTY_MCP_WORKSPACE_ID;
+  const publicCrmOrigin = environment.TWENTY_MCP_PUBLIC_CRM_ORIGIN;
+  if (userId || workspaceId || publicCrmOrigin) {
+    if (
+      !z.uuid().safeParse(userId).success ||
+      !z.uuid().safeParse(workspaceId).success ||
+      !environment.TWENTY_USER_SESSION_FILE ||
+      environment.TWENTY_USER_TOKEN
+    ) {
+      throw new Error(
+        'Personal MCP requires valid TWENTY_MCP_USER_ID, TWENTY_MCP_WORKSPACE_ID and TWENTY_USER_SESSION_FILE, without TWENTY_USER_TOKEN',
+      );
+    }
+    if (publicCrmOrigin) {
+      const origin = new URL(publicCrmOrigin);
+      if (origin.protocol !== 'https:' || origin.origin !== publicCrmOrigin) {
+        throw new Error('TWENTY_MCP_PUBLIC_CRM_ORIGIN must be an HTTPS origin');
+      }
+      if (!httpBearerToken) {
+        throw new Error(
+          'Personal MCP onboarding requires an HTTP bearer token',
+        );
+      }
+    }
+  }
   const allowedOrigins = (environment.TWENTY_MCP_ALLOWED_ORIGINS ?? '')
     .split(',')
     .map((origin) => origin.trim())
@@ -99,6 +126,10 @@ export const readConfig = (
   return {
     baseUrl,
     apiKey,
+    ...(userId && workspaceId
+      ? { userSessionIdentity: { userId, workspaceId } }
+      : {}),
+    ...(publicCrmOrigin ? { publicCrmOrigin } : {}),
     ...(environment.TWENTY_USER_TOKEN
       ? { userToken: environment.TWENTY_USER_TOKEN }
       : {}),
