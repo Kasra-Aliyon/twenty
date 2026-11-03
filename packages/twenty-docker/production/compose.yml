@@ -162,6 +162,16 @@ services:
       com.twenty.deployment: production
       com.twenty.role: mcp
       com.twenty.mcp-account: joris
+      traefik.enable: 'true'
+      traefik.http.routers.twenty-mcp-joris.entrypoints: https
+      traefik.http.routers.twenty-mcp-joris.rule: Host(`${TWENTY_PUBLIC_HOST:?Set the CRM hostname without scheme}`) && PathPrefix(`/mcp-joris/`)
+      traefik.http.routers.twenty-mcp-joris.priority: '100'
+      traefik.http.routers.twenty-mcp-joris.tls: 'true'
+      traefik.http.routers.twenty-mcp-joris.tls.certresolver: letsencrypt
+      traefik.http.routers.twenty-mcp-joris.service: twenty-mcp-joris
+      traefik.http.routers.twenty-mcp-joris.middlewares: twenty-mcp-joris-strip
+      traefik.http.middlewares.twenty-mcp-joris-strip.stripprefix.prefixes: /mcp-joris
+      traefik.http.services.twenty-mcp-joris.loadbalancer.server.port: '3333'
     environment:
       TWENTY_BASE_URL: http://server:3000
       TWENTY_API_KEY: ${TWENTY_API_KEY:?Set a role-scoped CRM API key}

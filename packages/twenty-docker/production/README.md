@@ -53,9 +53,10 @@ runtime environment. Add the latter as a GitHub `production` environment secret
 for release verification. Keep its flags equal to the primary MCP to expose the
 same tool catalog.
 
-Configure the Coolify Compose service domain for `mcp-joris` to
-`https://crm.sevenscholar.com:3333/mcp-joris`, with prefix stripping enabled.
-The existing CRM root route and primary MCP hostname stay in place. Reusing
+Set `TWENTY_PUBLIC_HOST=crm.sevenscholar.com`. The Compose definition declares
+the dedicated Traefik HTTPS path and prefix-stripping middleware; no second
+Coolify domain mapping or DNS record is needed. The existing CRM root route
+and primary MCP hostname stay in place. Reusing
 the CRM origin lets `/mcp-joris/connect` read the user's existing browser login
 without cross-origin token transfer or new DNS. The proxy strips the prefix;
 internal health stays `/health`, while the public endpoint is

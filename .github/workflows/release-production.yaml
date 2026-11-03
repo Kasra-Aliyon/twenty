@@ -32,6 +32,7 @@ jobs:
       - name: Validate Compose without printing secrets
         env:
           TWENTY_PUBLIC_URL: https://crm.example.com
+          TWENTY_PUBLIC_HOST: crm.example.com
           POSTGRES_PASSWORD: validation-only
           APP_SECRET: validation-only
           ENCRYPTION_KEY: validation-only
@@ -173,6 +174,7 @@ jobs:
       TWENTY_IMAGE: ${{ needs.app-image.outputs.image }}
       TWENTY_MCP_IMAGE: ${{ needs.mcp-image.outputs.image }}
       TWENTY_PUBLIC_URL: https://crm.example.com
+      TWENTY_PUBLIC_HOST: crm.example.com
       POSTGRES_PASSWORD: disposable-ci-database-password
       APP_SECRET: disposable-ci-app-secret-01234567890123456789
       ENCRYPTION_KEY: disposable-ci-encryption-key-01234567890123456789
