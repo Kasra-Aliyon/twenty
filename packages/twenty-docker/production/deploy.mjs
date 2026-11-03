@@ -129,6 +129,10 @@ export async function deploy(
       throw new Error(
         `Public health check failed: ${url} (${response.status})`,
       );
+    const health = await response.json().catch(() => null);
+    if (health?.status !== 'ok') {
+      throw new Error(`Public health check did not return status ok: ${url}`);
+    }
   }
   const catalogs = [];
   for (const [endpoint, token, otherToken] of [
