@@ -164,7 +164,8 @@ services:
       com.twenty.mcp-account: joris
       traefik.enable: 'true'
       traefik.http.routers.twenty-mcp-joris.entrypoints: https
-      traefik.http.routers.twenty-mcp-joris.rule: Host(`${TWENTY_PUBLIC_HOST:?Set the CRM hostname without scheme}`) && PathPrefix(`/mcp-joris/`)
+      # Coolify escapes variables in custom labels; keep this deployment's host explicit.
+      traefik.http.routers.twenty-mcp-joris.rule: Host(`crm.sevenscholar.com`) && PathPrefix(`/mcp-joris/`)
       traefik.http.routers.twenty-mcp-joris.priority: '100'
       traefik.http.routers.twenty-mcp-joris.tls: 'true'
       traefik.http.routers.twenty-mcp-joris.tls.certresolver: letsencrypt

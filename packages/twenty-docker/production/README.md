@@ -53,8 +53,9 @@ runtime environment. Add the latter as a GitHub `production` environment secret
 for release verification. Keep its flags equal to the primary MCP to expose the
 same tool catalog.
 
-Set `TWENTY_PUBLIC_HOST=crm.sevenscholar.com`. The Compose definition declares
-the dedicated Traefik HTTPS path and prefix-stripping middleware; no second
+The Compose definition declares the deployed CRM hostname explicitly because
+Coolify escapes variables in custom proxy labels. It declares the dedicated
+Traefik HTTPS path and prefix-stripping middleware; no second
 Coolify domain mapping or DNS record is needed. The existing CRM root route
 and primary MCP hostname stay in place. Reusing
 the CRM origin lets `/mcp-joris/connect` read the user's existing browser login

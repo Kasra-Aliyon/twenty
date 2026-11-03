@@ -74,7 +74,7 @@ test('accepted deployment alone is insufficient; requires public health and auth
           result: { tools: [{ name: 'twenty_list_objects' }] },
         });
       }
-      return Response.json({});
+      return Response.json({ status: 'ok' });
     },
     async () => {},
   );
@@ -89,4 +89,27 @@ test('accepted deployment alone is insufficient; requires public health and auth
   );
   assert.equal(calls.at(-1).url, 'https://crm.example.com/mcp-joris/mcp');
   assert.ok(calls.every(({ options }) => options.redirect === 'error'));
+});
+
+test('rejects a CRM fallback page masquerading as a healthy personal MCP', async () => {
+  await assert.rejects(
+    deploy(
+      environment,
+      async (url) => {
+        if (url.endsWith('/deploy'))
+          return Response.json({
+            deployments: [{ resource_uuid: 'app', deployment_uuid: 'release' }],
+          });
+        if (url.endsWith('/deployments/release'))
+          return Response.json({ status: 'finished' });
+        if (url.endsWith('/mcp-joris/health'))
+          return new Response('<html>CRM fallback</html>', {
+            headers: { 'Content-Type': 'text/html' },
+          });
+        return Response.json({ status: 'ok' });
+      },
+      async () => {},
+    ),
+    /Public health check did not return status ok/,
+  );
 });
