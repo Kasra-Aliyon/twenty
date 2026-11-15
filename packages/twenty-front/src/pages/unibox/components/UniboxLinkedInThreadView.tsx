@@ -21,6 +21,7 @@ import {
 import { type UniboxThread } from '@/unibox/types/UniboxThread';
 import { getLinkedinProfileUrl } from '@/unibox/utils/getLinkedinProfileUrl';
 import { t } from '@lingui/core/macro';
+import { UniboxLinkedInReadStatus } from '~/pages/unibox/components/UniboxLinkedInReadStatus';
 import { splitFullName } from '~/utils/format/spiltFullName';
 
 const StyledRoot = styled.div`
@@ -160,6 +161,7 @@ const LINKEDIN_MESSAGE_FIELDS = {
   id: true,
   body: true,
   deliveredAt: true,
+  recipientReadAt: true,
   direction: true,
   senderName: true,
   senderLinkedinUrn: true,
@@ -365,6 +367,10 @@ export const UniboxLinkedInThreadView = ({
               </span>
             </StyledMessageMeta>
             <StyledMessageBody>{message.body}</StyledMessageBody>
+            <UniboxLinkedInReadStatus
+              direction={message.direction}
+              recipientReadAt={message.recipientReadAt}
+            />
           </StyledMessage>
         ))}
         <CustomResolverFetchMoreLoader
