@@ -36,7 +36,11 @@ const LINKEDIN_SIGNATURE_DISCOVERY_PATHS = [
   '/mynetwork/invitation-manager/sent/',
 ];
 
-performance.setResourceTimingBufferSize(5_000);
+if (typeof window !== 'undefined') {
+  performance.setResourceTimingBufferSize(5_000);
+}
+
+const LINKEDIN_ORIGIN = 'https://www.linkedin.com';
 
 const SIGNATURE_MATCHERS: LinkedInSignatureMatcher[] = [
   {
@@ -260,10 +264,9 @@ const fetchScriptSources = async (initialUrls: string[]): Promise<string[]> => {
       batch.map(async (url) => {
         try {
           const response = await fetch(url, {
+            signal: AbortSignal.timeout(12_000),
             credentials:
-              new URL(url).origin === window.location.origin
-                ? 'include'
-                : 'omit',
+              new URL(url).origin === LINKEDIN_ORIGIN ? 'include' : 'omit',
           });
 
           if (!response.ok) {
@@ -302,10 +305,13 @@ const scrapeSignatures = async (): Promise<LinkedInSignatures> => {
   const discoveryPages = (
     await Promise.all(
       LINKEDIN_SIGNATURE_DISCOVERY_PATHS.map(async (path) => {
-        const url = new URL(path, window.location.origin).toString();
+        const url = new URL(path, LINKEDIN_ORIGIN).toString();
 
         try {
-          const response = await fetch(url, { credentials: 'include' });
+          const response = await fetch(url, {
+            credentials: 'include',
+            signal: AbortSignal.timeout(12_000),
+          });
 
           return response.ok ? { html: await response.text(), url } : null;
         } catch {
@@ -392,6 +398,16 @@ export const getLinkedInSignatures = (): Promise<LinkedInSignatures> => {
 export const getLinkedInSignature = async (
   name: LinkedInSignatureName,
 ): Promise<string | null> => {
+  if (typeof window === 'undefined') {
+    const cached = await readCachedSignatures();
+    return (
+      cached[name] ??
+      LINKEDIN_BUILT_IN_SIGNATURES[name] ??
+      (await getLinkedInSignatures())[name] ??
+      null
+    );
+  }
+
   const signatures = await getLinkedInSignatures();
   const observedSignatures = getObservedSignatures();
   const observedSignature = observedSignatures[name];

@@ -1,5 +1,4 @@
 import type {
-  ExtensionResponse,
   GraphQLResponse,
   LinkedInHarvestConnection,
   LinkedInHarvestInvitation,
@@ -12,6 +11,7 @@ import type {
 import type { TwentyApiClient } from './twenty-api';
 
 const TWENTY_BATCH_SIZE = 200;
+const MESSAGE_REPAIR_PAGE_SIZE = 8;
 const LINKEDIN_MESSAGE_PREVIEW_MAX_LENGTH = 200;
 // LinkedIn thread activity can trail message delivery by a few milliseconds.
 const LINKEDIN_MESSAGE_ACTIVITY_TIMESTAMP_TOLERANCE_MILLISECONDS = 100;
@@ -36,44 +36,6 @@ export type LinkedInMessageSyncCandidate = {
   lastMessageTime: string;
   maxMessageTime: string | null;
 };
-
-export type LinkedInHarvestStoreRequest =
-  | {
-      action: 'WRITE_CONNECTIONS';
-      ownerLinkedinId: string;
-      records: LinkedInHarvestConnection[];
-      runStartedAt: number;
-    }
-  | {
-      action: 'WRITE_INVITATIONS';
-      ownerLinkedinId: string;
-      records: LinkedInHarvestInvitation[];
-      runStartedAt: number;
-    }
-  | {
-      action: 'WRITE_THREADS';
-      ownerLinkedinId: string;
-      records: LinkedInHarvestThread[];
-    }
-  | {
-      action: 'WRITE_THREAD_PARTICIPANTS';
-      ownerLinkedinId: string;
-      records: LinkedInHarvestThreadParticipant[];
-    }
-  | {
-      action: 'WRITE_MESSAGES';
-      ownerLinkedinId: string;
-      records: LinkedInHarvestMessage[];
-    }
-  | {
-      action: 'CONFIRM_MESSAGE_READS';
-      ownerLinkedinId: string;
-      records: LinkedInMessageReadConfirmation[];
-    }
-  | { action: 'UPDATE_THREAD_SUMMARY'; threadId: string }
-  | { action: 'GET_OLDEST_THREAD'; ownerLinkedinId: string }
-  | { action: 'GET_MESSAGE_SYNC_CANDIDATES'; ownerLinkedinId: string }
-  | { action: 'GET_TOTALS'; ownerLinkedinId: string };
 
 type MessageThreadsResult = {
   linkedinMessageThreads: {
@@ -534,14 +496,21 @@ const getMessageCheckpoint = async (
 const getMessageSyncCandidatesWithClient = async (
   client: TwentyApiClient,
   ownerLinkedinId: string,
-): Promise<LinkedInMessageSyncCandidate[]> => {
+  selection: { threadIds?: string[]; repairAfter?: string | null },
+): Promise<{
+  candidates: LinkedInMessageSyncCandidate[];
+  nextCursor: string | null;
+}> => {
+  const { threadIds, repairAfter } = selection;
+  if (threadIds?.length === 0) return { candidates: [], nextCursor: null };
+
   const threads: Array<{
     id: string;
     threadId: string;
     lastMessageTime: string;
     messageCount: number;
   }> = [];
-  let after: string | null = null;
+  let after = repairAfter ?? null;
 
   do {
     const result: GraphQLResponse<MessageThreadsResult> =
@@ -550,11 +519,15 @@ const getMessageSyncCandidatesWithClient = async (
         query LinkedinMessageSyncCandidates(
           $ownerLinkedinId: String!
           $after: String
+          ${threadIds ? '$threadIds: [String!]' : ''}
         ) {
           linkedinMessageThreads(
-            filter: { ownerLinkedinId: { eq: $ownerLinkedinId } }
+            filter: {
+              ownerLinkedinId: { eq: $ownerLinkedinId }
+              ${threadIds ? 'threadId: { in: $threadIds }' : ''}
+            }
             orderBy: [{ lastMessageTime: DescNullsLast }]
-            first: 200
+            first: ${repairAfter === undefined ? TWENTY_BATCH_SIZE : MESSAGE_REPAIR_PAGE_SIZE}
             after: $after
           ) {
             edges {
@@ -572,7 +545,7 @@ const getMessageSyncCandidatesWithClient = async (
           }
         }
       `,
-        { ownerLinkedinId, after },
+        { ownerLinkedinId, after, ...(threadIds ? { threadIds } : {}) },
       );
     const connection:
       | MessageThreadsResult['linkedinMessageThreads']
@@ -586,7 +559,7 @@ const getMessageSyncCandidatesWithClient = async (
     after = connection.pageInfo.hasNextPage
       ? connection.pageInfo.endCursor
       : null;
-  } while (after);
+  } while (after && repairAfter === undefined);
 
   const candidates: LinkedInMessageSyncCandidate[] = [];
 
@@ -621,11 +594,14 @@ const getMessageSyncCandidatesWithClient = async (
     );
   }
 
-  return candidates.sort(
-    (firstCandidate, secondCandidate) =>
-      getTimestamp(secondCandidate.lastMessageTime) -
-      getTimestamp(firstCandidate.lastMessageTime),
-  );
+  return {
+    nextCursor: after,
+    candidates: candidates.sort(
+      (firstCandidate, secondCandidate) =>
+        getTimestamp(secondCandidate.lastMessageTime) -
+        getTimestamp(firstCandidate.lastMessageTime),
+    ),
+  };
 };
 
 export const getLinkedInSyncTotalsWithClient = async (
@@ -674,158 +650,36 @@ export const getLinkedInSyncTotalsWithClient = async (
   return totals;
 };
 
-export const handleLinkedInHarvestStoreRequest = async (
-  client: TwentyApiClient,
-  request: LinkedInHarvestStoreRequest,
-): Promise<unknown> => {
-  switch (request.action) {
-    case 'WRITE_CONNECTIONS':
-      return writeConnectionsWithClient(
-        client,
-        request.ownerLinkedinId,
-        request.records,
-        request.runStartedAt,
-      );
-    case 'WRITE_INVITATIONS':
-      return writeInvitationsWithClient(
-        client,
-        request.ownerLinkedinId,
-        request.records,
-        request.runStartedAt,
-      );
-    case 'WRITE_THREADS':
-      return writeThreadsWithClient(
-        client,
-        request.ownerLinkedinId,
-        request.records,
-      );
-    case 'WRITE_THREAD_PARTICIPANTS':
-      return writeThreadParticipantsWithClient(
-        client,
-        request.ownerLinkedinId,
-        request.records,
-      );
-    case 'WRITE_MESSAGES':
-      return writeMessagesWithClient(
-        client,
-        request.ownerLinkedinId,
-        request.records,
-      );
-    case 'CONFIRM_MESSAGE_READS':
-      return confirmMessageReadsWithClient(
-        client,
-        request.ownerLinkedinId,
-        request.records,
-      );
-    case 'UPDATE_THREAD_SUMMARY':
-      return updateThreadSummaryWithClient(client, request.threadId);
-    case 'GET_OLDEST_THREAD':
-      return getOldestThreadWithClient(client, request.ownerLinkedinId);
-    case 'GET_MESSAGE_SYNC_CANDIDATES':
-      return getMessageSyncCandidatesWithClient(
-        client,
-        request.ownerLinkedinId,
-      );
-    case 'GET_TOTALS':
-      return getLinkedInSyncTotalsWithClient(client, request.ownerLinkedinId);
-  }
-};
+export const createLinkedInHarvestStore = (client: TwentyApiClient) => ({
+  writeLinkedInConnections: writeConnectionsWithClient.bind(null, client),
+  writeLinkedInInvitations: writeInvitationsWithClient.bind(null, client),
+  writeLinkedInThreads: writeThreadsWithClient.bind(null, client),
+  writeLinkedInThreadParticipants: writeThreadParticipantsWithClient.bind(
+    null,
+    client,
+  ),
+  writeLinkedInMessages: writeMessagesWithClient.bind(null, client),
+  confirmLinkedInMessageReads: confirmMessageReadsWithClient.bind(null, client),
+  updateLinkedInThreadSummary: updateThreadSummaryWithClient.bind(null, client),
+  getOldestLinkedInThread: getOldestThreadWithClient.bind(null, client),
+  getLinkedInMessageSyncCandidates: async (
+    ownerLinkedinId: string,
+    threadIds?: string[],
+  ) =>
+    (
+      await getMessageSyncCandidatesWithClient(client, ownerLinkedinId, {
+        threadIds,
+      })
+    ).candidates,
+  getLinkedInMessageRepairPage: (
+    ownerLinkedinId: string,
+    after: string | null,
+  ) =>
+    getMessageSyncCandidatesWithClient(client, ownerLinkedinId, {
+      repairAfter: after,
+    }),
+});
 
-const sendStoreRequest = async <TData>(
-  request: LinkedInHarvestStoreRequest,
-): Promise<TData> => {
-  const response = (await browser.runtime.sendMessage({
-    type: 'LINKEDIN_HARVEST_STORE',
-    payload: request,
-  })) as ExtensionResponse<TData>;
-
-  if (!response.success || response.data === undefined) {
-    throw new Error(
-      response.error || 'Twenty rejected the LinkedIn sync write',
-    );
-  }
-
-  return response.data;
-};
-
-export const writeLinkedInConnections = (
-  ownerLinkedinId: string,
-  records: LinkedInHarvestConnection[],
-  runStartedAt: number,
-): Promise<WriteResult> =>
-  sendStoreRequest({
-    action: 'WRITE_CONNECTIONS',
-    ownerLinkedinId,
-    records,
-    runStartedAt,
-  });
-
-export const writeLinkedInInvitations = (
-  ownerLinkedinId: string,
-  records: LinkedInHarvestInvitation[],
-  runStartedAt: number,
-): Promise<WriteResult> =>
-  sendStoreRequest({
-    action: 'WRITE_INVITATIONS',
-    ownerLinkedinId,
-    records,
-    runStartedAt,
-  });
-
-export const writeLinkedInThreads = (
-  ownerLinkedinId: string,
-  records: LinkedInHarvestThread[],
-): Promise<LinkedInThreadWriteResult> =>
-  sendStoreRequest({
-    action: 'WRITE_THREADS',
-    ownerLinkedinId,
-    records,
-  });
-
-export const writeLinkedInThreadParticipants = (
-  ownerLinkedinId: string,
-  records: LinkedInHarvestThreadParticipant[],
-): Promise<WriteResult> =>
-  sendStoreRequest({
-    action: 'WRITE_THREAD_PARTICIPANTS',
-    ownerLinkedinId,
-    records,
-  });
-
-export const writeLinkedInMessages = (
-  ownerLinkedinId: string,
-  records: LinkedInHarvestMessage[],
-): Promise<WriteResult> =>
-  sendStoreRequest({
-    action: 'WRITE_MESSAGES',
-    ownerLinkedinId,
-    records,
-  });
-
-export const confirmLinkedInMessageReads = (
-  ownerLinkedinId: string,
-  records: LinkedInMessageReadConfirmation[],
-): Promise<{ received: number; confirmedMessages: number }> =>
-  sendStoreRequest({
-    action: 'CONFIRM_MESSAGE_READS',
-    ownerLinkedinId,
-    records,
-  });
-
-export const updateLinkedInThreadSummary = (
-  threadId: string,
-): Promise<{ messageCount: number; lastMessagePreview: string }> =>
-  sendStoreRequest({ action: 'UPDATE_THREAD_SUMMARY', threadId });
-
-export const getOldestLinkedInThread = (
-  ownerLinkedinId: string,
-): Promise<{ threadId: string; lastMessageTime: string } | null> =>
-  sendStoreRequest({ action: 'GET_OLDEST_THREAD', ownerLinkedinId });
-
-export const getLinkedInMessageSyncCandidates = (
-  ownerLinkedinId: string,
-): Promise<LinkedInMessageSyncCandidate[]> =>
-  sendStoreRequest({
-    action: 'GET_MESSAGE_SYNC_CANDIDATES',
-    ownerLinkedinId,
-  });
+export type LinkedInHarvestStore = ReturnType<
+  typeof createLinkedInHarvestStore
+>;

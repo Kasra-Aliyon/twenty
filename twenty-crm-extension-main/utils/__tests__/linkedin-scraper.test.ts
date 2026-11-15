@@ -112,6 +112,38 @@ describe('LinkedIn company page scraping', () => {
     });
   });
 
+  it('reads the signed-in company header on a People subpage without a main heading', () => {
+    setLinkedInLocation(
+      'https://www.linkedin.com/company/rster/people/?viewAsMember=true',
+    );
+    document.body.innerHTML = `
+      <h2>0 notifications</h2>
+      <div componentkey="pages.topCard.76642835">
+        <img src="https://media.licdn.com/company-background_10000/cover.jpg" alt="Cover photo" />
+        <img src="https://media.licdn.com/company-logo_400_400/rster.jpg" alt="" />
+        <div>
+          <h2>Reliability and Safety Technical Center (RSTER)</h2>
+          <div>
+            <p>Renewable Energy Semiconductor Manufacturing</p><p>·</p>
+            <p>Zaventem</p><p>·</p>
+            <p>834 followers</p><p>·</p>
+            <p><a href="/search/results/people/" aria-label="Search more employees">2-10 employees</a></p>
+          </div>
+        </div>
+      </div>
+      <h2>People highlights</h2>
+    `;
+
+    expect(scrapeCompanyPage()).toEqual({
+      type: 'company',
+      linkedinUrl: 'https://www.linkedin.com/company/rster',
+      name: 'Reliability and Safety Technical Center (RSTER)',
+      industry: 'Renewable Energy Semiconductor Manufacturing',
+      employeeCount: '2-10 employees',
+      logoUrl: 'https://media.licdn.com/company-logo_400_400/rster.jpg',
+    });
+  });
+
   it('canonicalizes company subpages for duplicate checks and CRM links', () => {
     const url =
       'https://fr.linkedin.com/company/twenty/posts/?feedView=all#updates';

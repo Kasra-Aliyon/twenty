@@ -1,16 +1,21 @@
 <script lang="ts" setup>
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, onUnmounted, computed } from 'vue';
 import type {
   ExtensionResponse,
   LinkedInSafetySettings,
   LinkedInSafetySnapshot,
   LinkedInSyncTotals,
+  LinkedInSyncStatus,
 } from '../../types';
 import {
   LINKEDIN_READ_REQUESTS_PER_DAY,
   LINKEDIN_READ_REQUESTS_PER_DAY_MAXIMUM,
   LINKEDIN_READ_REQUESTS_PER_DAY_MINIMUM,
 } from '../../utils/linkedin-safety-policy';
+import {
+  emptyLinkedInSyncStatus,
+  LINKEDIN_SYNC_INTERVAL_MINUTES,
+} from '../../utils/linkedin-sync-state';
 import {
   DEFAULT_TWENTY_API_URL,
   DEFAULT_TWENTY_APP_URL,
@@ -25,6 +30,8 @@ const isLoading = ref(true);
 const isSaving = ref(false);
 const isTesting = ref(false);
 const isLinkedInSyncing = ref(false);
+const linkedInSyncStatus = ref(emptyLinkedInSyncStatus());
+let linkedInStatusTimer: ReturnType<typeof setInterval> | undefined;
 const isSavingLinkedInSafetySetting = ref(false);
 const error = ref<string | null>(null);
 const success = ref<string | null>(null);
@@ -89,8 +96,10 @@ onMounted(async () => {
   await loadSettings();
   await loadRecentCaptures();
   await loadLinkedInSyncTotals();
-  await loadLinkedInSafetySnapshot();
+  await Promise.all([loadLinkedInSafetySnapshot(), loadLinkedInSyncStatus()]);
 });
+
+onUnmounted(() => clearInterval(linkedInStatusTimer));
 
 async function loadSettings() {
   isLoading.value = true;
@@ -197,6 +206,36 @@ async function saveLinkedInDailyReadLimitEnabled() {
   }
 }
 
+async function loadLinkedInSyncStatus() {
+  try {
+    const response = (await browser.runtime.sendMessage({
+      type: 'GET_LINKEDIN_SYNC_STATUS',
+    })) as ExtensionResponse<LinkedInSyncStatus>;
+
+    if (!response.success || !response.data) return;
+    const previous = linkedInSyncStatus.value;
+    linkedInSyncStatus.value = response.data;
+    if (previous.running && !response.data.running) {
+      void Promise.all([
+        loadLinkedInSyncTotals(),
+        loadLinkedInSafetySnapshot(),
+      ]);
+    }
+
+    if (response.data.running && linkedInStatusTimer === undefined) {
+      linkedInStatusTimer = setInterval(
+        () => void loadLinkedInSyncStatus(),
+        2_000,
+      );
+    } else if (!response.data.running) {
+      clearInterval(linkedInStatusTimer);
+      linkedInStatusTimer = undefined;
+    }
+  } catch (err) {
+    console.error('Error loading LinkedIn sync status:', err);
+  }
+}
+
 async function syncLinkedInNow() {
   isLinkedInSyncing.value = true;
   error.value = null;
@@ -205,21 +244,14 @@ async function syncLinkedInNow() {
   try {
     const response = (await browser.runtime.sendMessage({
       type: 'REQUEST_LINKEDIN_SYNC',
-    })) as ExtensionResponse<{ dispatched: boolean }>;
+    })) as ExtensionResponse;
 
     if (!response.success) {
       error.value = response.error || 'Could not start LinkedIn sync';
       return;
     }
 
-    success.value =
-      'Sync started. Stored totals will update as incremental writes finish.';
-    window.setTimeout(() => {
-      void Promise.all([
-        loadLinkedInSyncTotals(),
-        loadLinkedInSafetySnapshot(),
-      ]);
-    }, 5_000);
+    await loadLinkedInSyncStatus();
   } catch (err) {
     console.error('Error starting LinkedIn sync:', err);
     error.value = 'Could not start LinkedIn sync';
@@ -443,7 +475,7 @@ function formatDate(timestamp: number): string {
         class="section section--warning"
       >
         <p class="warning-text">
-          Please log in to local Twenty to sync your browser session.
+          Sign in to Twenty CRM to reconnect LinkedIn sync.
         </p>
         <button class="btn btn--primary" @click="openTwenty">
           Open Twenty →
@@ -470,7 +502,21 @@ function formatDate(timestamp: number): string {
             <span>Messages</span>
           </div>
         </div>
-        <p class="hint">Sync every 30 mins</p>
+        <p class="hint">
+          Checks every {{ LINKEDIN_SYNC_INTERVAL_MINUTES }} minutes while Chrome
+          runs.
+        </p>
+        <p v-if="linkedInSyncStatus.lastRunAt" class="hint">
+          Recent sync:
+          {{ new Date(linkedInSyncStatus.lastRunAt).toLocaleString() }}
+        </p>
+        <p
+          :class="
+            linkedInSyncStatus.isError ? 'message message--error' : 'hint'
+          "
+        >
+          {{ linkedInSyncStatus.message }}
+        </p>
         <p v-if="linkedInSafetySnapshot" class="hint">
           Safety: {{ linkedInSafetySnapshot.readRequestsLastHour }}/60 reads
           this hour · {{ linkedInSafetySnapshot.readRequestsToday }}/{{
@@ -522,10 +568,14 @@ function formatDate(timestamp: number): string {
         </p>
         <button
           class="btn btn--primary sync-button"
-          :disabled="isLinkedInSyncing"
+          :disabled="isLinkedInSyncing || linkedInSyncStatus.running"
           @click="syncLinkedInNow"
         >
-          {{ isLinkedInSyncing ? 'Starting sync…' : 'Sync now' }}
+          {{
+            isLinkedInSyncing || linkedInSyncStatus.running
+              ? 'Syncing…'
+              : 'Sync now'
+          }}
         </button>
       </section>
 

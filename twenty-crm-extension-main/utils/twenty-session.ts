@@ -1,5 +1,13 @@
-import type { ExtensionSettings, TwentyTokenPair } from '../types';
-import { getTwentyTokenPair, saveTwentyTokenPair } from './storage';
+import type {
+  ExtensionSettings,
+  GraphQLResponse,
+  TwentyTokenPair,
+} from '../types';
+import {
+  getSettings,
+  getTwentyTokenPair,
+  saveTwentyTokenPair,
+} from './storage';
 
 type SessionIdentity = {
   sub: string;
@@ -9,6 +17,30 @@ type SessionIdentity = {
 
 let sessionOperation: Promise<unknown> = Promise.resolve();
 
+const RENEW_TOKEN_MUTATION = `
+  mutation RenewToken($appToken: String!) {
+    renewToken(appToken: $appToken) {
+      tokens {
+        accessOrWorkspaceAgnosticToken { token expiresAt }
+        refreshToken { token expiresAt }
+      }
+    }
+  }
+`;
+
+type RenewTokenResult = { renewToken?: { tokens?: TwentyTokenPair } };
+
+export const TWENTY_SIGN_IN_REQUIRED =
+  'Open Twenty CRM and sign in, then click Sync now again.';
+const TWENTY_SESSION_UNAVAILABLE =
+  'Could not reach Twenty CRM to renew the session. Try again shortly.';
+
+class SessionRequestError extends Error {
+  constructor(readonly retryable: boolean) {
+    super(retryable ? TWENTY_SESSION_UNAVAILABLE : TWENTY_SIGN_IN_REQUIRED);
+  }
+}
+
 export const withTwentySessionOperation = <TResult>(
   operation: () => Promise<TResult>,
 ): Promise<TResult> => {
@@ -17,34 +49,55 @@ export const withTwentySessionOperation = <TResult>(
   return result;
 };
 
-const getSessionIdentity = (
-  tokenPair: TwentyTokenPair | null,
-): SessionIdentity | null => {
+const decodeToken = (token: string): Record<string, unknown> => {
   try {
-    const encodedPayload =
-      tokenPair?.accessOrWorkspaceAgnosticToken.token.split('.')[1];
-    if (!encodedPayload) return null;
-
-    const payload = JSON.parse(
-      atob(encodedPayload.replace(/-/g, '+').replace(/_/g, '/')),
-    ) as Record<string, unknown>;
-    if (
-      payload.type !== 'ACCESS' ||
-      payload.isImpersonating === true ||
-      typeof payload.sub !== 'string' ||
-      typeof payload.workspaceId !== 'string' ||
-      typeof payload.authProvider !== 'string'
-    )
-      return null;
-
-    return {
-      sub: payload.sub,
-      workspaceId: payload.workspaceId,
-      authProvider: payload.authProvider,
-    };
+    const encoded = token.split('.')[1];
+    const payload: unknown = JSON.parse(
+      atob(encoded.replace(/-/g, '+').replace(/_/g, '/')),
+    );
+    return payload && typeof payload === 'object'
+      ? (payload as Record<string, unknown>)
+      : {};
   } catch {
-    return null;
+    return {};
   }
+};
+
+const getUsableToken = (
+  credential: TwentyTokenPair['refreshToken'] | undefined,
+  minimumLifetime = 0,
+): string | null => {
+  if (!credential?.token) return null;
+
+  const payload = decodeToken(credential.token);
+  const expiresAt = Math.min(
+    Date.parse(credential.expiresAt) || Infinity,
+    typeof payload.exp === 'number' ? payload.exp * 1_000 : Infinity,
+  );
+
+  return expiresAt <= Date.now() + minimumLifetime ? null : credential.token;
+};
+
+const getSessionIdentity = (
+  tokenPair: Pick<TwentyTokenPair, 'accessOrWorkspaceAgnosticToken'> | null,
+): SessionIdentity | null => {
+  const payload = decodeToken(
+    tokenPair?.accessOrWorkspaceAgnosticToken?.token ?? '',
+  );
+  if (
+    payload.type !== 'ACCESS' ||
+    payload.isImpersonating === true ||
+    typeof payload.sub !== 'string' ||
+    typeof payload.workspaceId !== 'string' ||
+    typeof payload.authProvider !== 'string'
+  )
+    return null;
+
+  return {
+    sub: payload.sub,
+    workspaceId: payload.workspaceId,
+    authProvider: payload.authProvider,
+  };
 };
 
 const haveSameIdentity = (
@@ -59,29 +112,44 @@ const haveSameIdentity = (
 
 const requestMetadata = async <TData>(
   settings: ExtensionSettings,
-  accessToken: string,
+  accessToken: string | null,
   query: string,
   variables?: Record<string, string>,
 ): Promise<TData> => {
-  const response = await fetch(`${settings.twentyApiUrl}/metadata`, {
-    method: 'POST',
-    signal: AbortSignal.timeout(15_000),
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${accessToken}`,
-    },
-    body: JSON.stringify({ query, variables }),
-  });
-  if (!response.ok)
-    throw new Error(`CRM session request failed (${response.status})`);
+  try {
+    const response = await fetch(`${settings.twentyApiUrl}/metadata`, {
+      method: 'POST',
+      signal: AbortSignal.timeout(15_000),
+      headers: {
+        'Content-Type': 'application/json',
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      },
+      body: JSON.stringify({ query, variables }),
+    });
+    if (!response.ok) {
+      throw new SessionRequestError(![400, 401, 403].includes(response.status));
+    }
 
-  const result = (await response.json()) as {
-    data?: TData;
-    errors?: unknown[];
-  };
-  if (!result.data || result.errors?.length)
-    throw new Error('CRM session request was rejected');
-  return result.data;
+    const result = (await response.json()) as GraphQLResponse<TData>;
+    if (result.errors?.length) {
+      throw new SessionRequestError(
+        !result.errors.some(
+          (error) =>
+            ['UNAUTHENTICATED', 'FORBIDDEN', 'BAD_USER_INPUT'].includes(
+              error.extensions?.code ?? '',
+            ) ||
+            /^Token has expired\.|^This refresh token (has been revoked|doesn't exist)/.test(
+              error.message,
+            ),
+        ),
+      );
+    }
+    if (!result.data) throw new SessionRequestError(true);
+    return result.data;
+  } catch (error) {
+    if (error instanceof SessionRequestError) throw error;
+    throw new SessionRequestError(true);
+  }
 };
 
 // The extension needs its own refresh token. Rotating a copied browser token
@@ -101,11 +169,23 @@ export const syncTwentyBrowserSession = async (
   if (
     isSameIdentity &&
     currentTokens?.sessionSource === 'extension' &&
-    new Date(currentTokens.refreshToken.expiresAt).getTime() > Date.now()
+    getUsableToken(currentTokens.refreshToken)
   )
     return;
 
-  const accessToken = browserTokens.accessOrWorkspaceAgnosticToken.token;
+  await createTwentyExtensionSession(settings, browserTokens, browserIdentity);
+};
+
+const createTwentyExtensionSession = async (
+  settings: ExtensionSettings,
+  browserTokens: TwentyTokenPair,
+  browserIdentity: SessionIdentity,
+): Promise<string> => {
+  const accessToken = getUsableToken(
+    browserTokens.accessOrWorkspaceAgnosticToken,
+  );
+  if (!accessToken) throw new SessionRequestError(false);
+
   const workspaces = await requestMetadata<{
     currentUser: {
       availableWorkspaces: {
@@ -133,8 +213,7 @@ export const syncTwentyBrowserSession = async (
     workspaces.currentUser.availableWorkspaces.availableWorkspacesForSignIn.find(
       ({ id }) => id === browserIdentity.workspaceId,
     );
-  if (!workspace?.loginToken)
-    throw new Error('Sign in to the CRM to connect the extension');
+  if (!workspace?.loginToken) throw new SessionRequestError(false);
 
   const result = await requestMetadata<{
     getAuthTokensFromLoginToken: { tokens: TwentyTokenPair };
@@ -157,13 +236,134 @@ export const syncTwentyBrowserSession = async (
     },
   );
 
-  const tokens = result.getAuthTokensFromLoginToken.tokens;
+  const tokens = result.getAuthTokensFromLoginToken?.tokens;
+  const extensionAccessToken = getUsableToken(
+    tokens?.accessOrWorkspaceAgnosticToken,
+  );
   if (
+    !tokens ||
+    !extensionAccessToken ||
     !haveSameIdentity(browserIdentity, getSessionIdentity(tokens)) ||
-    typeof tokens.refreshToken?.token !== 'string' ||
+    !getUsableToken(tokens.refreshToken) ||
     tokens.refreshToken.token === browserTokens.refreshToken?.token
   )
     throw new Error('CRM did not return an independent extension session');
 
   await saveTwentyTokenPair({ ...tokens, sessionSource: 'extension' });
+  return extensionAccessToken;
 };
+
+const renewExtensionSession = async (
+  settings: ExtensionSettings,
+  refreshToken: string,
+): Promise<TwentyTokenPair | undefined> => {
+  const renew = () =>
+    requestMetadata<RenewTokenResult>(settings, null, RENEW_TOKEN_MUTATION, {
+      appToken: refreshToken,
+    });
+  const result = await renew().catch((error: unknown) => {
+    if (!(error instanceof SessionRequestError) || !error.retryable)
+      throw error;
+
+    // Twenty accepts a recently rotated token during the reuse grace period.
+    return renew();
+  });
+
+  return result.renewToken?.tokens;
+};
+
+export const getTwentyAccessToken = (
+  settings: ExtensionSettings,
+  readBrowserSession: () => Promise<TwentyTokenPair | null>,
+  rejectedAccessToken?: string,
+): Promise<string | null> =>
+  withTwentySessionOperation(async () => {
+    const currentSettings = await getSettings();
+    if (
+      settings.twentyApiUrl !== currentSettings.twentyApiUrl ||
+      settings.twentyAppUrl !== currentSettings.twentyAppUrl
+    ) {
+      throw new Error('The selected Twenty CRM changed. Try again.');
+    }
+
+    const stored = await getTwentyTokenPair();
+    const storedIdentity = getSessionIdentity(stored);
+    if (
+      rejectedAccessToken &&
+      !haveSameIdentity(
+        storedIdentity,
+        getSessionIdentity({
+          accessOrWorkspaceAgnosticToken: {
+            token: rejectedAccessToken,
+            expiresAt: '',
+          },
+        }),
+      )
+    )
+      return null;
+
+    const accessToken = getUsableToken(
+      stored?.accessOrWorkspaceAgnosticToken,
+      30_000,
+    );
+    const refreshToken = getUsableToken(stored?.refreshToken);
+    if (
+      accessToken &&
+      accessToken !== rejectedAccessToken &&
+      stored?.sessionSource === 'extension'
+    ) {
+      return accessToken;
+    }
+
+    if (stored?.sessionSource === 'extension' && refreshToken) {
+      try {
+        const renewed = await renewExtensionSession(settings, refreshToken);
+        const renewedAccessToken = getUsableToken(
+          renewed?.accessOrWorkspaceAgnosticToken,
+        );
+
+        if (
+          !renewed ||
+          !renewedAccessToken ||
+          renewedAccessToken === rejectedAccessToken ||
+          !getUsableToken(renewed.refreshToken) ||
+          !haveSameIdentity(storedIdentity, getSessionIdentity(renewed))
+        ) {
+          throw new SessionRequestError(true);
+        }
+
+        await saveTwentyTokenPair({ ...renewed, sessionSource: 'extension' });
+        return renewedAccessToken;
+      } catch (error) {
+        if (!(error instanceof SessionRequestError) || error.retryable)
+          throw error;
+      }
+    }
+
+    const browserTokens =
+      accessToken &&
+      stored?.sessionSource !== 'extension' &&
+      accessToken !== rejectedAccessToken
+        ? stored
+        : await readBrowserSession();
+    const browserIdentity = getSessionIdentity(browserTokens);
+
+    if (
+      !browserTokens ||
+      !browserIdentity ||
+      (storedIdentity && !haveSameIdentity(storedIdentity, browserIdentity))
+    ) {
+      return null;
+    }
+
+    try {
+      return await createTwentyExtensionSession(
+        settings,
+        browserTokens,
+        browserIdentity,
+      );
+    } catch (error) {
+      if (error instanceof SessionRequestError && !error.retryable) return null;
+      throw error;
+    }
+  });

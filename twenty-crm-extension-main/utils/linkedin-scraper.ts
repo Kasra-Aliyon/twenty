@@ -1139,8 +1139,9 @@ function getCompanyDefinitionValue(label: string): string {
   return getElementCleanText(termElement?.nextElementSibling);
 }
 
-function getCompanyName(): string {
+function getCompanyName(heading: Element | null): string {
   const nameElement =
+    heading ||
     document.querySelector('h1.org-top-card-summary__title') ||
     document.querySelector('main h1.top-card-layout__title') ||
     document.querySelector('main h1');
@@ -1156,10 +1157,14 @@ function getCompanyName(): string {
   );
 }
 
-function getCompanyWebsite(): string {
+function getCompanyWebsite(companyCard: Element | null): string {
   const websiteElement =
     document.querySelector('a[data-control-name="top_card_link_website"]') ||
     document.querySelector('a[href*="trk=about_website"]') ||
+    companyCard?.querySelector('a[aria-label^="Visit website" i]') ||
+    Array.from(companyCard?.querySelectorAll('a[href]') ?? []).find((link) =>
+      /^visit website$/i.test(getElementCleanText(link)),
+    ) ||
     document.querySelector(
       '.link-without-visited-state.org-top-card-primary-actions__action',
     );
@@ -1199,13 +1204,13 @@ function getCompanyWebsite(): string {
   }
 }
 
-function getCompanyEmployeeCount(): string {
+function getCompanyEmployeeCount(summary: string[]): string {
   const exactEmployeeCountElement = document.querySelector(
     'main a[href*="facetCurrentCompany"]',
   );
   const exactEmployeeCount = getElementCleanText(
     exactEmployeeCountElement,
-  ).match(/[\d,.]+\s+employees?/i)?.[0];
+  ).match(/[\d,.]+(?:\s*[-–]\s*[\d,.]+)?\s+employees?/i)?.[0];
 
   if (exactEmployeeCount) {
     return exactEmployeeCount;
@@ -1219,6 +1224,7 @@ function getCompanyEmployeeCount(): string {
 
   return (
     summaryEmployeeCount ||
+    summary.find((value) => /\b[\d,.]+\+?\s+employees?\b/i.test(value)) ||
     getCompanyDefinitionValue('Company size').match(
       /[\d,.]+\s*[-–]\s*[\d,.]+\s+employees?/i,
     )?.[0] ||
@@ -1230,13 +1236,23 @@ function getCompanyEmployeeCount(): string {
 export function scrapeCompanyPage(): LinkedInCompanyData | null {
   try {
     const linkedinUrl = getCanonicalLinkedInPageUrl(window.location.href);
-    const name = getCompanyName();
+    const companyCard = document.querySelector(
+      '[componentkey^="pages.topCard."], [id^="pages.topCard."]',
+    );
+    const companyHeading =
+      companyCard?.querySelector('h1, h2, [role="heading"]') ?? null;
+    const name = getCompanyName(companyHeading);
 
     if (!linkedinUrl || !name) {
       console.warn('Could not find company name or LinkedIn URL');
       return null;
     }
 
+    const summary = Array.from(
+      companyHeading?.nextElementSibling?.children ?? [],
+    )
+      .map(getElementCleanText)
+      .filter((value) => value && value !== '·');
     const industry =
       getElementCleanText(
         document.querySelector('.org-top-card-summary-info-list__info-item'),
@@ -1244,11 +1260,15 @@ export function scrapeCompanyPage(): LinkedInCompanyData | null {
       getElementCleanText(
         document.querySelector('main h2.top-card-layout__headline'),
       ) ||
-      getCompanyDefinitionValue('Industry');
-    const employeeCount = getCompanyEmployeeCount();
-    const website = getCompanyWebsite();
+      getCompanyDefinitionValue('Industry') ||
+      (summary.length > 1 && !/\b(followers?|employees?)\b/i.test(summary[0])
+        ? summary[0]
+        : '');
+    const employeeCount = getCompanyEmployeeCount(summary);
+    const website = getCompanyWebsite(companyCard);
     const logoElement =
       document.querySelector('.org-top-card-primary-content__logo') ||
+      companyCard?.querySelector('img[src*="/company-logo"]') ||
       document.querySelector('main img.top-card-layout__entity-image');
     const logoUrl =
       logoElement?.getAttribute('src') ||

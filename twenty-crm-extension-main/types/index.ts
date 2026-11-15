@@ -210,6 +210,9 @@ export type LinkedInSyncState = {
   lastConnectionSyncAt: number | null;
   lastMessageSyncAt: number | null;
   lastAttemptAt: number | null;
+  lastInvitationAttemptAt: number | null;
+  lastMessageBackfillAttemptAt: number | null;
+  messageRepairCursor: string | null;
   lastRunAt: number | null;
   syncStartedAt: number | null;
   lastError: string | null;
@@ -238,10 +241,11 @@ export type LinkedInSafetySettings = {
   dailyReadLimit: number;
 };
 
-export type LinkedInSyncLock = {
-  key: string;
-  ownerTabId: number;
-  expiresAt: number;
+export type LinkedInSyncStatus = {
+  running: boolean;
+  isError: boolean;
+  message: string;
+  lastRunAt: number | null;
   progress: LinkedInSyncProgress;
 };
 
@@ -301,16 +305,13 @@ export type MessageType =
   | 'SET_LINKEDIN_RUNNER_STATE'
   | 'RUN_LINKEDIN_POLL'
   | 'REQUEST_LINKEDIN_SYNC'
-  | 'GET_LINKEDIN_CSRF_TOKEN'
+  | 'GET_LINKEDIN_SYNC_STATUS'
   | 'GET_LINKEDIN_SYNC_TOTALS'
   | 'GET_LINKEDIN_SAFETY_SNAPSHOT'
+  | 'RECORD_LINKEDIN_OUTBOUND_ATTEMPT'
+  | 'TRIP_LINKEDIN_SAFETY_CIRCUIT'
   | 'GET_LINKEDIN_SAFETY_SETTINGS'
   | 'SET_LINKEDIN_SAFETY_SETTINGS'
-  | 'LINKEDIN_HARVEST_STORE'
-  | 'SYNC_LOCK_ACQUIRE'
-  | 'SYNC_LOCK_HEARTBEAT'
-  | 'SYNC_LOCK_RELEASE'
-  | 'SYNC_LOCK_STATUS'
   | 'GET_SETTINGS'
   | 'SAVE_SETTINGS'
   | 'TEST_CONNECTION'
@@ -340,6 +341,7 @@ export type GraphQLResponse<T> = {
   errors?: Array<{
     message: string;
     path?: string[];
+    extensions?: { code?: string };
   }>;
 };
 

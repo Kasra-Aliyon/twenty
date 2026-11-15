@@ -1,13 +1,17 @@
-import type { ExtensionResponse, LinkedInIdentity } from '../types';
+import type { LinkedInIdentity } from '../types';
 import {
   getLinkedInSignature,
   usesLinkedInTimestampThreadPagination,
 } from './linkedin-signatures';
 import {
+  LinkedInSafetyLimitError,
   reserveLinkedInReadRequest,
   tripLinkedInSafetyCircuit,
 } from './linkedin-safety';
-import { isLinkedInRestrictionUrl } from './linkedin-safety-policy';
+import {
+  isLinkedInRestrictionUrl,
+  LINKEDIN_RESTRICTION_COOLDOWN_MILLISECONDS,
+} from './linkedin-safety-policy';
 
 const MAX_REQUESTS_PER_MINUTE = 8;
 const REQUEST_WINDOW_MILLISECONDS = 60_000;
@@ -85,27 +89,37 @@ export const randomDelay = (
   return new Promise((resolve) => setTimeout(resolve, duration));
 };
 
+export class LinkedInSyncTimeLimitError extends Error {
+  constructor() {
+    super('Sync will resume at the next check.');
+  }
+}
+
 class LinkedInVoyagerClient {
   private csrfToken: string | null = null;
+  private deadline = 0;
   private readonly requestQueue: QueueEntry[] = [];
   private readonly cursorUnsupportedThreadSignatures = new Set<string>();
   private requestTimestamps: number[] = [];
   private processingPromise: Promise<void> | null = null;
   private isFirstRequest = true;
 
-  async initialize(): Promise<void> {
-    const response = (await browser.runtime.sendMessage({
-      type: 'GET_LINKEDIN_CSRF_TOKEN',
-    })) as ExtensionResponse<{ csrfToken: string }>;
+  async initialize(deadline: number): Promise<void> {
+    const [session, csrf] = await Promise.all([
+      browser.cookies.get({
+        url: 'https://www.linkedin.com/voyager/api/me',
+        name: 'li_at',
+      }),
+      browser.cookies.get({
+        url: 'https://www.linkedin.com/voyager/api/me',
+        name: 'JSESSIONID',
+      }),
+    ]);
 
-    if (!response.success || !response.data?.csrfToken) {
-      throw new Error(
-        response.error ||
-          'LinkedIn session cookie was not found. Sign in to LinkedIn first.',
-      );
-    }
-
-    this.csrfToken = response.data.csrfToken;
+    if (!session || !csrf?.value)
+      throw new Error('Sign in to LinkedIn to resume sync.');
+    this.csrfToken = csrf.value.replace(/^"|"$/g, '');
+    this.deadline = deadline;
   }
 
   private async processQueue(): Promise<void> {
@@ -190,9 +204,6 @@ class LinkedInVoyagerClient {
       timezone,
       deviceFormFactor: 'DESKTOP',
       mpName: 'voyager-web',
-      displayDensity: window.devicePixelRatio || 1,
-      displayWidth: window.screen.width,
-      displayHeight: window.screen.height,
     };
 
     return {
@@ -217,9 +228,12 @@ class LinkedInVoyagerClient {
     options: { pageToken?: string; graphql?: boolean } = {},
   ): Promise<VoyagerResponse> {
     return this.queueRequest(async () => {
+      if (Date.now() >= this.deadline) throw new LinkedInSyncTimeLimitError();
+
       await reserveLinkedInReadRequest();
       const response = await fetch(`https://www.linkedin.com${path}`, {
         method: 'GET',
+        signal: AbortSignal.timeout(20_000),
         headers: this.buildRequestHeaders(
           options.pageToken,
           options.graphql ?? false,
@@ -228,6 +242,14 @@ class LinkedInVoyagerClient {
         mode: 'cors',
         referrerPolicy: 'no-referrer-when-downgrade',
       });
+
+      if (
+        response.status === 401 ||
+        (/\/login(?:[/?]|$)/.test(response.url) &&
+          !isLinkedInRestrictionUrl(response.url))
+      ) {
+        throw new Error('Sign in to LinkedIn to resume sync.');
+      }
 
       if (
         isLinkedInRestrictionUrl(response.url) ||
@@ -239,7 +261,10 @@ class LinkedInVoyagerClient {
             : 'LinkedIn returned a restriction or verification response. Automatic LinkedIn activity is paused for safety.';
 
         await tripLinkedInSafetyCircuit(reason);
-        throw new Error(reason);
+        throw new LinkedInSafetyLimitError(
+          reason,
+          Date.now() + LINKEDIN_RESTRICTION_COOLDOWN_MILLISECONDS,
+        );
       }
 
       if (!response.ok) {
@@ -260,7 +285,10 @@ class LinkedInVoyagerClient {
           'LinkedIn returned a limit or verification signal. Automatic LinkedIn activity is paused for safety.';
 
         await tripLinkedInSafetyCircuit(reason);
-        throw new Error(reason);
+        throw new LinkedInSafetyLimitError(
+          reason,
+          Date.now() + LINKEDIN_RESTRICTION_COOLDOWN_MILLISECONDS,
+        );
       }
 
       return responseData;
@@ -369,6 +397,11 @@ class LinkedInVoyagerClient {
     try {
       return await this.fetchInvitationRestPage('SENT', start, count);
     } catch (error) {
+      if (
+        error instanceof LinkedInSafetyLimitError ||
+        error instanceof LinkedInSyncTimeLimitError
+      )
+        throw error;
       console.warn(
         '[Twenty] LinkedIn sent-invitation REST request failed; trying GraphQL:',
         error,
@@ -412,6 +445,11 @@ class LinkedInVoyagerClient {
     try {
       return await this.fetchInvitationRestPage('RECEIVED', start, count);
     } catch (error) {
+      if (
+        error instanceof LinkedInSafetyLimitError ||
+        error instanceof LinkedInSyncTimeLimitError
+      )
+        throw error;
       console.warn(
         '[Twenty] LinkedIn received-invitation REST request failed; trying GraphQL:',
         error,
@@ -499,6 +537,8 @@ class LinkedInVoyagerClient {
       pageResult = await loadPage(threadPaginationMode);
     } catch (error) {
       if (
+        error instanceof LinkedInSafetyLimitError ||
+        error instanceof LinkedInSyncTimeLimitError ||
         threadPaginationMode !== 'cursor' ||
         !signatureUsesTimestampPagination
       ) {
