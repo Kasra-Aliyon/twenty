@@ -3,6 +3,7 @@ import { t } from '@lingui/core/macro';
 import { useFindManyRecords } from '@/object-record/hooks/useFindManyRecords';
 import { type LinkedinUniboxMessage } from '@/unibox/types/LinkedinUniboxRecords';
 import { type UniboxDateRange } from '@/unibox/types/UniboxThread';
+import { UniboxLinkedInReadStatus } from '~/pages/unibox/components/UniboxLinkedInReadStatus';
 import {
   buildLinkedinDataFilter,
   formatLinkedinDataDate,
@@ -34,6 +35,7 @@ export const UniboxLinkedInMessagesTable = ({
       id: true,
       body: true,
       deliveredAt: true,
+      recipientReadAt: true,
       direction: true,
       senderName: true,
       senderLinkedinUrn: true,
@@ -78,6 +80,19 @@ export const UniboxLinkedInMessagesTable = ({
           key: 'body',
           label: t`Message`,
           render: (record) => record.body || '—',
+        },
+        {
+          key: 'recipientReadAt',
+          label: t`Read status`,
+          render: (record) =>
+            record.direction === 'OUTBOUND' ? (
+              <UniboxLinkedInReadStatus
+                direction={record.direction}
+                recipientReadAt={record.recipientReadAt}
+              />
+            ) : (
+              '—'
+            ),
         },
         {
           key: 'deliveredAt',

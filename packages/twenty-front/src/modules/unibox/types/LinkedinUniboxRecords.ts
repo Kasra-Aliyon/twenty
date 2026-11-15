@@ -5,6 +5,7 @@ export type LinkedinUniboxMessage = {
   id: string;
   body: string;
   deliveredAt: string;
+  recipientReadAt: string | null;
   direction: 'INBOUND' | 'OUTBOUND';
   senderName: string;
   senderLinkedinUrn: string | null;
