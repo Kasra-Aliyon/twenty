@@ -1,7 +1,9 @@
 import type { LinkedInIdentity } from '../types';
 import {
   getLinkedInSignature,
-  usesLinkedInTimestampThreadPagination,
+  getLinkedInThreadQueryCandidates,
+  type LinkedInThreadQuery,
+  rememberLinkedInThreadQuery,
 } from './linkedin-signatures';
 import {
   LinkedInSafetyLimitError,
@@ -89,6 +91,28 @@ export const randomDelay = (
   return new Promise((resolve) => setTimeout(resolve, duration));
 };
 
+const fingerprintLinkedInSession = async (
+  sessionCookie: string,
+): Promise<string> => {
+  const digest = await crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(sessionCookie),
+  );
+
+  return [...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+};
+
+const describeGraphqlFailure = (response: VoyagerResponse): string => {
+  const firstError = asRecord(getArray(response, 'errors')[0]);
+  const detail = getString(firstError, 'message');
+
+  return detail
+    ? `LinkedIn rejected the message-thread query: ${detail}`
+    : 'LinkedIn returned no message-thread data.';
+};
+
 export class LinkedInSyncTimeLimitError extends Error {
   constructor() {
     super('Sync will resume at the next check.');
@@ -97,9 +121,11 @@ export class LinkedInSyncTimeLimitError extends Error {
 
 class LinkedInVoyagerClient {
   private csrfToken: string | null = null;
+  private sessionFingerprint: string | null = null;
   private deadline = 0;
   private readonly requestQueue: QueueEntry[] = [];
-  private readonly cursorUnsupportedThreadSignatures = new Set<string>();
+  // Reset per run so a LinkedIn deploy that changes the inbox query is detected.
+  private verifiedThreadQuery: LinkedInThreadQuery | null = null;
   private requestTimestamps: number[] = [];
   private processingPromise: Promise<void> | null = null;
   private isFirstRequest = true;
@@ -120,6 +146,13 @@ class LinkedInVoyagerClient {
       throw new Error('Sign in to LinkedIn to resume sync.');
     this.csrfToken = csrf.value.replace(/^"|"$/g, '');
     this.deadline = deadline;
+    this.verifiedThreadQuery = null;
+    this.sessionFingerprint = await fingerprintLinkedInSession(session.value);
+  }
+
+  // Lets callers reuse a cached identity only while the same LinkedIn session is signed in.
+  getSessionFingerprint(): string | null {
+    return this.sessionFingerprint;
   }
 
   private async processQueue(): Promise<void> {
@@ -494,18 +527,8 @@ class LinkedInVoyagerClient {
     },
     count = 25,
   ): Promise<VoyagerPage> {
-    const signature = await getLinkedInSignature('threads');
-
-    if (!signature) {
-      throw new Error(
-        'LinkedIn message-thread signature is unavailable. Reload LinkedIn after it finishes loading and try again.',
-      );
-    }
-
     const mailboxUrn = `urn:li:fsd_profile:${linkedinUrn}`;
-    const signatureUsesTimestampPagination =
-      usesLinkedInTimestampThreadPagination(signature);
-    const loadPage = async (mode: 'cursor' | 'timestamp') => {
+    const loadPage = async ({ signature, mode }: LinkedInThreadQuery) => {
       const category = mode === 'timestamp' ? 'PRIMARY_INBOX' : 'INBOX';
       const predicate = `List((conversationCategoryPredicate:(category:${category})))`;
       const paginationVariable =
@@ -523,45 +546,73 @@ class LinkedInVoyagerClient {
         'messengerConversationsByCategoryQuery',
       );
 
-      return { container, response };
-    };
-    let threadPaginationMode: 'cursor' | 'timestamp' =
-      signatureUsesTimestampPagination &&
-      (!pagination.cursor ||
-        this.cursorUnsupportedThreadSignatures.has(signature))
-        ? 'timestamp'
-        : 'cursor';
-    let pageResult: Awaited<ReturnType<typeof loadPage>>;
-
-    try {
-      pageResult = await loadPage(threadPaginationMode);
-    } catch (error) {
-      if (
-        error instanceof LinkedInSafetyLimitError ||
-        error instanceof LinkedInSyncTimeLimitError ||
-        threadPaginationMode !== 'cursor' ||
-        !signatureUsesTimestampPagination
-      ) {
-        throw error;
+      // A rejected GraphQL query still answers 200; reading it as an empty
+      // inbox would silently mark the sync as caught up.
+      if (!container) {
+        throw new Error(describeGraphqlFailure(response));
       }
 
-      this.cursorUnsupportedThreadSignatures.add(signature);
-      threadPaginationMode = 'timestamp';
-      pageResult = await loadPage(threadPaginationMode);
+      return { container, response };
+    };
+    const candidates = this.verifiedThreadQuery
+      ? [this.verifiedThreadQuery]
+      : await getLinkedInThreadQueryCandidates();
+
+    if (candidates.length === 0) {
+      throw new Error(
+        'LinkedIn message-thread signature is unavailable. Reload LinkedIn after it finishes loading and try again.',
+      );
     }
 
-    if (
-      threadPaginationMode === 'cursor' &&
-      signatureUsesTimestampPagination &&
-      (getArray(pageResult.container, 'elements').length === 0 ||
-        !getString(getRecord(pageResult.container, 'metadata'), 'nextCursor'))
-    ) {
-      this.cursorUnsupportedThreadSignatures.add(signature);
-      threadPaginationMode = 'timestamp';
-      pageResult = await loadPage(threadPaginationMode);
+    type ThreadPageAttempt = {
+      query: LinkedInThreadQuery;
+      pageResult: Awaited<ReturnType<typeof loadPage>>;
+    };
+    let selected: ThreadPageAttempt | null = null;
+    let emptyResult: ThreadPageAttempt | null = null;
+    let lastError: unknown = null;
+
+    for (const query of candidates) {
+      try {
+        const pageResult = await loadPage(query);
+
+        if (getArray(pageResult.container, 'elements').length > 0) {
+          selected = { query, pageResult };
+          break;
+        }
+
+        emptyResult ??= { query, pageResult };
+      } catch (error) {
+        if (
+          error instanceof LinkedInSafetyLimitError ||
+          error instanceof LinkedInSyncTimeLimitError ||
+          (error instanceof Error &&
+            error.message === 'Sign in to LinkedIn to resume sync.')
+        ) {
+          throw error;
+        }
+
+        lastError = error;
+      }
     }
 
-    const { container, response } = pageResult;
+    if (selected && !this.verifiedThreadQuery) {
+      this.verifiedThreadQuery = selected.query;
+      await rememberLinkedInThreadQuery(selected.query);
+    }
+
+    selected ??= emptyResult;
+
+    if (!selected) {
+      throw lastError instanceof Error
+        ? lastError
+        : new Error('LinkedIn message threads could not be loaded.');
+    }
+
+    const {
+      query: { mode: threadPaginationMode },
+      pageResult: { container, response },
+    } = selected;
     const elements = getArray(container, 'elements');
     const metadata = getRecord(container, 'metadata');
     const nextCursor = getString(metadata, 'nextCursor');

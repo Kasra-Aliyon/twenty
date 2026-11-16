@@ -10,8 +10,18 @@ export const LINKEDIN_IDENTITY_CACHE_KEY = 'twentyLinkedinIdentityCache';
 export const LINKEDIN_CONNECTION_SYNC_REVISION = 1;
 export const LINKEDIN_MESSAGE_SYNC_REVISION = 4;
 export const LINKEDIN_INVITATION_SYNC_REVISION = 2;
-export const LINKEDIN_SYNC_INTERVAL_MINUTES = 10;
-export const LINKEDIN_MAINTENANCE_INTERVAL_MINUTES = 30;
+// LinkedIn reads are capped at 200 per rolling day. Each message check costs one
+// read, so the cadences below leave roughly a quarter of that budget for
+// downloading the threads that actually changed.
+export const LINKEDIN_SYNC_INTERVAL_MINUTES = 15;
+export const LINKEDIN_CONNECTION_SYNC_INTERVAL_MINUTES = 60;
+export const LINKEDIN_MAINTENANCE_INTERVAL_MINUTES = 120;
+export const LINKEDIN_IDENTITY_REVALIDATION_MILLISECONDS = 24 * 60 * 60_000;
+
+export type CachedLinkedInIdentity = LinkedInIdentity & {
+  verifiedAt?: number;
+  sessionFingerprint?: string | null;
+};
 
 const defaultLinkedInSyncState = (): LinkedInSyncState => ({
   safeSyncedThroughLastActivityAt: null,
@@ -44,20 +54,20 @@ export const emptyLinkedInSyncStatus = (): LinkedInSyncStatus => ({
 });
 
 export const getStoredLinkedInIdentity =
-  async (): Promise<LinkedInIdentity | null> => {
+  async (): Promise<CachedLinkedInIdentity | null> => {
     const storedValue = await browser.storage.local.get(
       LINKEDIN_IDENTITY_CACHE_KEY,
     );
 
     return (
       (storedValue[LINKEDIN_IDENTITY_CACHE_KEY] as
-        | LinkedInIdentity
+        | CachedLinkedInIdentity
         | undefined) ?? null
     );
   };
 
 export const setCachedLinkedInIdentity = async (
-  identity: LinkedInIdentity,
+  identity: CachedLinkedInIdentity,
 ): Promise<void> => {
   await browser.storage.local.set({ [LINKEDIN_IDENTITY_CACHE_KEY]: identity });
 };

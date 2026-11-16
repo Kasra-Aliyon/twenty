@@ -4,6 +4,7 @@ import type { TwentyApiClient } from '../twenty-api';
 
 const mocks = vi.hoisted(() => ({
   getIdentity: vi.fn(),
+  getSessionFingerprint: vi.fn(),
   initialize: vi.fn(),
   syncConnections: vi.fn(),
   syncMessages: vi.fn(),
@@ -21,6 +22,7 @@ vi.mock('../linkedin-voyager-client', () => ({
   linkedInVoyagerClient: {
     initialize: mocks.initialize,
     getIdentity: mocks.getIdentity,
+    getSessionFingerprint: mocks.getSessionFingerprint,
   },
   LinkedInSyncTimeLimitError: class extends Error {},
 }));
@@ -64,6 +66,7 @@ describe('LinkedIn background sync', () => {
     });
     mocks.getStore.mockResolvedValue(createLinkedInHarvestStore(client));
     mocks.getIdentity.mockResolvedValue(owner);
+    mocks.getSessionFingerprint.mockReturnValue('session-a');
     mocks.syncInvitations.mockResolvedValue({ warnings: [] });
   });
 
@@ -116,5 +119,54 @@ describe('LinkedIn background sync', () => {
       isError: true,
       message: 'Sign in to Twenty.',
     });
+  });
+  it('reuses the verified identity for the same LinkedIn session and paces connection checks', async () => {
+    const sync = createLinkedInBackgroundSync(
+      mocks.getStore,
+      readInvitationPage,
+    );
+    const startedAt = Date.now();
+    const nowSpy = vi.spyOn(Date, 'now');
+
+    try {
+      nowSpy.mockReturnValue(startedAt);
+      await sync.run();
+      nowSpy.mockReturnValue(startedAt + 15 * 60_000);
+      await sync.run();
+
+      expect(mocks.getIdentity).toHaveBeenCalledTimes(1);
+      expect(mocks.syncMessages).toHaveBeenCalledTimes(2);
+      expect(mocks.syncConnections).toHaveBeenCalledTimes(1);
+
+      nowSpy.mockReturnValue(startedAt + 60 * 60_000);
+      mocks.getSessionFingerprint.mockReturnValue('session-b');
+      await sync.run();
+
+      expect(mocks.getIdentity).toHaveBeenCalledTimes(2);
+      expect(mocks.syncMessages).toHaveBeenCalledTimes(3);
+      expect(mocks.syncConnections).toHaveBeenCalledTimes(2);
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
+  it('reports a failed message check instead of claiming the sync completed', async () => {
+    mocks.syncMessages.mockRejectedValueOnce(
+      new Error('LinkedIn returned an empty inbox.'),
+    );
+    const sync = createLinkedInBackgroundSync(
+      mocks.getStore,
+      readInvitationPage,
+    );
+
+    await sync.run(true);
+
+    expect(await sync.getStatus()).toMatchObject({
+      isError: true,
+      message: 'LinkedIn returned an empty inbox.',
+    });
+    expect(
+      (await getLinkedInSyncState(owner.linkedinId)).lastMessageSyncAt,
+    ).toBeNull();
   });
 });

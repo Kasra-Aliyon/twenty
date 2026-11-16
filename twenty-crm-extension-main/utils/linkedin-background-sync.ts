@@ -18,6 +18,8 @@ import {
   emptyLinkedInSyncStatus,
   getLinkedInSyncState,
   getStoredLinkedInIdentity,
+  LINKEDIN_CONNECTION_SYNC_INTERVAL_MINUTES,
+  LINKEDIN_IDENTITY_REVALIDATION_MILLISECONDS,
   LINKEDIN_MAINTENANCE_INTERVAL_MINUTES,
   LINKEDIN_SYNC_INTERVAL_MINUTES,
   setCachedLinkedInIdentity,
@@ -31,6 +33,9 @@ import { TWENTY_SIGN_IN_REQUIRED } from './twenty-session';
 
 const HARVEST_MAINTENANCE_GAP_MILLISECONDS =
   LINKEDIN_MAINTENANCE_INTERVAL_MINUTES * 60_000;
+// Same alarm-jitter allowance as the run gap so hourly work does not slip to two hours.
+const CONNECTION_SYNC_GAP_MILLISECONDS =
+  (LINKEDIN_CONNECTION_SYNC_INTERVAL_MINUTES - 1) * 60_000;
 // Allow alarm jitter and session checks without skipping every other alarm.
 const MINIMUM_SYNC_GAP_MILLISECONDS =
   (LINKEDIN_SYNC_INTERVAL_MINUTES - 1) * 60_000;
@@ -96,10 +101,26 @@ export const createLinkedInBackgroundSync = (
       await linkedInVoyagerClient.initialize(
         Date.now() + SYNC_TIME_BUDGET_MILLISECONDS,
       );
-      const identity = await linkedInVoyagerClient.getIdentity();
+      const sessionFingerprint = linkedInVoyagerClient.getSessionFingerprint();
+      // Re-reading /me on every check spent a fifth of the daily read budget.
+      const identity =
+        !force &&
+        cachedIdentity &&
+        sessionFingerprint !== null &&
+        cachedIdentity.sessionFingerprint === sessionFingerprint &&
+        Date.now() - (cachedIdentity.verifiedAt ?? 0) <
+          LINKEDIN_IDENTITY_REVALIDATION_MILLISECONDS
+          ? cachedIdentity
+          : await linkedInVoyagerClient.getIdentity();
       const ownerLinkedinId = identity.linkedinId;
       activeOwnerLinkedinId = ownerLinkedinId;
-      await setCachedLinkedInIdentity(identity);
+      if (identity !== cachedIdentity) {
+        await setCachedLinkedInIdentity({
+          ...identity,
+          verifiedAt: Date.now(),
+          sessionFingerprint,
+        });
+      }
       const runStartedAt = Date.now();
       let syncState = await updateLinkedInSyncState(ownerLinkedinId, {
         syncStartedAt: runStartedAt,
@@ -127,23 +148,31 @@ export const createLinkedInBackgroundSync = (
         }
       };
 
-      await runPhase(async () => {
-        await syncRecentLinkedInConnections(
-          store,
-          ownerLinkedinId,
-          runStartedAt,
-          status.progress,
-        );
-        await updateLinkedInSyncState(ownerLinkedinId, {
-          lastConnectionSyncAt: Date.now(),
-        });
-      });
+      // Messages go first: they are the most time-sensitive and must not lose
+      // the remaining read budget to connection checks.
       await runPhase(async () => {
         await syncRecentLinkedInMessages(store, identity, status.progress);
         await updateLinkedInSyncState(ownerLinkedinId, {
           lastMessageSyncAt: Date.now(),
         });
       });
+      if (
+        force ||
+        runStartedAt - (syncState.lastConnectionSyncAt ?? 0) >=
+          CONNECTION_SYNC_GAP_MILLISECONDS
+      ) {
+        await runPhase(async () => {
+          await syncRecentLinkedInConnections(
+            store,
+            ownerLinkedinId,
+            runStartedAt,
+            status.progress,
+          );
+          await updateLinkedInSyncState(ownerLinkedinId, {
+            lastConnectionSyncAt: Date.now(),
+          });
+        });
+      }
 
       // Publish recent progress before lower-priority work takes the read budget.
       if (errors.length === 0) {

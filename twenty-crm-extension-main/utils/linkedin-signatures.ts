@@ -26,6 +26,15 @@ const LINKEDIN_BUILT_IN_SIGNATURES: LinkedInSignatures = {
     'messengerMessages.4088d03bc70c91c3fa68965cb42336de',
 };
 
+export type LinkedInThreadPaginationMode = 'cursor' | 'timestamp';
+
+export type LinkedInThreadQuery = {
+  signature: string;
+  mode: LinkedInThreadPaginationMode;
+};
+
+const LINKEDIN_THREAD_QUERY_KEY = 'twentyLinkedinThreadQuery';
+
 export const usesLinkedInTimestampThreadPagination = (
   signature: string,
 ): boolean => timestampThreadSignatures.has(signature);
@@ -420,4 +429,68 @@ export const getLinkedInSignature = async (
   }
 
   return signatures[name] ?? null;
+};
+
+const isLinkedInThreadQuery = (value: unknown): value is LinkedInThreadQuery =>
+  typeof value === 'object' &&
+  value !== null &&
+  typeof (value as LinkedInThreadQuery).signature === 'string' &&
+  ((value as LinkedInThreadQuery).mode === 'cursor' ||
+    (value as LinkedInThreadQuery).mode === 'timestamp');
+
+// The worker cannot observe LinkedIn's own requests, so it must remember which
+// query shape last returned threads instead of guessing from the ID alone.
+export const rememberLinkedInThreadQuery = async (
+  query: LinkedInThreadQuery,
+): Promise<void> => {
+  if (query.mode === 'timestamp')
+    timestampThreadSignatures.add(query.signature);
+  await browser.storage.local.set({ [LINKEDIN_THREAD_QUERY_KEY]: query });
+};
+
+// Ordered from most to least trusted. A scraped ID can match LinkedIn's bundle
+// yet expect different variables, so every ID is tried in both pagination shapes.
+export const getLinkedInThreadQueryCandidates = async (): Promise<
+  LinkedInThreadQuery[]
+> => {
+  const storedValue = await browser.storage.local.get(
+    LINKEDIN_THREAD_QUERY_KEY,
+  );
+  const storedQuery = storedValue[LINKEDIN_THREAD_QUERY_KEY];
+  const discoveredSignature = await getLinkedInSignature('threads');
+  const candidates: LinkedInThreadQuery[] = [];
+  const addCandidates = (
+    signature: string | null | undefined,
+    modes: LinkedInThreadPaginationMode[],
+  ) => {
+    if (!signature) return;
+
+    for (const mode of modes) {
+      if (
+        !candidates.some(
+          (candidate) =>
+            candidate.signature === signature && candidate.mode === mode,
+        )
+      ) {
+        candidates.push({ signature, mode });
+      }
+    }
+  };
+
+  if (isLinkedInThreadQuery(storedQuery)) {
+    addCandidates(storedQuery.signature, [storedQuery.mode]);
+  }
+
+  if (discoveredSignature) {
+    addCandidates(
+      discoveredSignature,
+      usesLinkedInTimestampThreadPagination(discoveredSignature)
+        ? ['timestamp', 'cursor']
+        : ['cursor', 'timestamp'],
+    );
+  }
+
+  addCandidates(LINKEDIN_BUILT_IN_SIGNATURES.threads, ['timestamp', 'cursor']);
+
+  return candidates;
 };

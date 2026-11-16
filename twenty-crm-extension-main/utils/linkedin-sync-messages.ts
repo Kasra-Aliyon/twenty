@@ -413,6 +413,14 @@ const syncIncrementalThreads = async (
     );
 
     if (elements.length === 0) {
+      // A mailbox that already has synced threads cannot have an empty first
+      // page; accepting it froze the checkpoint while reporting success.
+      if (since > 0 && runHighWater === null) {
+        throw new Error(
+          'LinkedIn returned an empty inbox, so new messages could not be checked. Sync will retry automatically.',
+        );
+      }
+
       exhausted = true;
       crossedBoundary = true;
       break;
