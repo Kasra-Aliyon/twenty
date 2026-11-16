@@ -36,10 +36,9 @@ const mocks = vi.hoisted(() => ({
   writeLinkedInInvitations: vi.fn(),
 }));
 
-vi.mock('../linkedin-harvest-store', () => ({
+const harvestStore = {
   writeLinkedInConnections: mocks.writeLinkedInConnections,
-  writeLinkedInInvitations: mocks.writeLinkedInInvitations,
-}));
+};
 
 vi.mock('../linkedin-voyager-client', () => ({
   linkedInVoyagerClient: {
@@ -50,7 +49,10 @@ vi.mock('../linkedin-voyager-client', () => ({
   randomDelay: mocks.randomDelay,
 }));
 
-import { syncLinkedInConnectionsAndInvitations } from '../linkedin-sync-connections';
+import {
+  backfillLinkedInConnections,
+  syncRecentLinkedInConnections,
+} from '../linkedin-sync-connections';
 import {
   getLinkedInSyncState,
   LINKEDIN_CONNECTION_SYNC_REVISION,
@@ -125,6 +127,25 @@ const getRequestedConnectionStarts = (fromCall = 0): number[] =>
     .slice(fromCall)
     .map(([start]) => start ?? 0);
 
+const syncConnections = async (
+  linkedinId: string,
+  runStartedAt: number,
+  progress: LinkedInSyncProgress,
+) => {
+  await syncRecentLinkedInConnections(
+    harvestStore,
+    linkedinId,
+    runStartedAt,
+    progress,
+  );
+  await backfillLinkedInConnections(
+    harvestStore,
+    linkedinId,
+    runStartedAt,
+    progress,
+  );
+};
+
 describe('LinkedIn connection revision backfill', () => {
   beforeEach(() => {
     storedValues.clear();
@@ -174,12 +195,22 @@ describe('LinkedIn connection revision backfill', () => {
       alreadyKnown: 50,
     });
 
-    await syncLinkedInConnectionsAndInvitations(
+    const progress = createProgress();
+    await syncRecentLinkedInConnections(
+      harvestStore,
       OWNER_LINKEDIN_ID,
       RUN_STARTED_AT,
-      createProgress(),
+      progress,
     );
+    expect(getRequestedConnectionStarts()).toEqual([0]);
+    expect(progress.connections).toBe(1);
 
+    await backfillLinkedInConnections(
+      harvestStore,
+      OWNER_LINKEDIN_ID,
+      RUN_STARTED_AT,
+      progress,
+    );
     expect(getRequestedConnectionStarts()).toEqual([0, 100]);
     expect(mocks.writeLinkedInConnections).toHaveBeenCalledTimes(2);
     await expect(
@@ -216,11 +247,7 @@ describe('LinkedIn connection revision backfill', () => {
     );
 
     await expect(
-      syncLinkedInConnectionsAndInvitations(
-        OWNER_LINKEDIN_ID,
-        RUN_STARTED_AT,
-        createProgress(),
-      ),
+      syncConnections(OWNER_LINKEDIN_ID, RUN_STARTED_AT, createProgress()),
     ).rejects.toThrow('CRM write failed');
 
     expect(getRequestedConnectionStarts()).toEqual([0, 100, 200, 300]);
@@ -234,7 +261,7 @@ describe('LinkedIn connection revision backfill', () => {
 
     const callsBeforeRetry = mocks.fetchConnectionsPage.mock.calls.length;
 
-    await syncLinkedInConnectionsAndInvitations(
+    await syncConnections(
       OWNER_LINKEDIN_ID,
       RUN_STARTED_AT + 1,
       createProgress(),
@@ -264,11 +291,7 @@ describe('LinkedIn connection revision backfill', () => {
       alreadyKnown: 50,
     });
 
-    await syncLinkedInConnectionsAndInvitations(
-      OWNER_LINKEDIN_ID,
-      RUN_STARTED_AT,
-      createProgress(),
-    );
+    await syncConnections(OWNER_LINKEDIN_ID, RUN_STARTED_AT, createProgress());
 
     expect(getRequestedConnectionStarts()).toEqual([0]);
   });

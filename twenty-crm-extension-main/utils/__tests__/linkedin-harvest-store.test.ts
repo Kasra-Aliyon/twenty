@@ -1,11 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { GraphQLResponse } from '../../types';
-import {
-  handleLinkedInHarvestStoreRequest,
-  type LinkedInMessageSyncCandidate,
-  type LinkedInThreadWriteResult,
-} from '../linkedin-harvest-store';
+import { createLinkedInHarvestStore } from '../linkedin-harvest-store';
 import type { TwentyApiClient } from '../twenty-api';
 
 const createClient = (responses: GraphQLResponse<unknown>[]) => {
@@ -51,11 +47,9 @@ describe('LinkedIn harvest standard object writes', () => {
       },
     ]);
 
-    await handleLinkedInHarvestStoreRequest(client, {
-      action: 'WRITE_CONNECTIONS',
-      ownerLinkedinId: 'owner-id',
-      runStartedAt: new Date('2026-07-22T09:00:00.000Z').getTime(),
-      records: [
+    await createLinkedInHarvestStore(client).writeLinkedInConnections(
+      'owner-id',
+      [
         {
           profileUrn: 'profile-urn',
           linkedinUrn: 'profile-urn',
@@ -67,7 +61,8 @@ describe('LinkedIn harvest standard object writes', () => {
           connectedAt: '2026-07-20T10:00:00.000Z',
         },
       ],
-    });
+      new Date('2026-07-22T09:00:00.000Z').getTime(),
+    );
 
     expect(getWrittenData(graphqlRequest)).toMatchObject({
       externalId: 'owner-id:profile-urn',
@@ -91,30 +86,28 @@ describe('LinkedIn harvest standard object writes', () => {
       },
     ]);
 
-    const result = (await handleLinkedInHarvestStoreRequest(client, {
-      action: 'WRITE_THREADS',
-      ownerLinkedinId: 'owner-id',
-      records: [
-        {
-          threadId: 'linkedin-thread-id',
-          name: 'Ada Lovelace',
-          firstMessageTime: '2026-07-21T10:00:00.000Z',
-          lastMessageTime: '2026-07-22T10:00:00.000Z',
-          labels: ['inbox'],
-          participants: [
-            {
-              linkedinId: 'member-id',
-              linkedinUrn: 'profile-urn',
-              name: 'Ada Lovelace',
-              headline: 'Mathematician',
-              handle: 'ada-lovelace',
-              profileUrl: 'https://www.linkedin.com/in/ada-lovelace/',
-              isSelf: false,
-            },
-          ],
-        },
-      ],
-    })) as LinkedInThreadWriteResult;
+    const result = await createLinkedInHarvestStore(
+      client,
+    ).writeLinkedInThreads('owner-id', [
+      {
+        threadId: 'linkedin-thread-id',
+        name: 'Ada Lovelace',
+        firstMessageTime: '2026-07-21T10:00:00.000Z',
+        lastMessageTime: '2026-07-22T10:00:00.000Z',
+        labels: ['inbox'],
+        participants: [
+          {
+            linkedinId: 'member-id',
+            linkedinUrn: 'profile-urn',
+            name: 'Ada Lovelace',
+            headline: 'Mathematician',
+            handle: 'ada-lovelace',
+            profileUrl: 'https://www.linkedin.com/in/ada-lovelace/',
+            isSelf: false,
+          },
+        ],
+      },
+    ]);
     const writtenData = getWrittenData(graphqlRequest);
 
     expect(result.writtenThreads).toEqual([
@@ -146,10 +139,9 @@ describe('LinkedIn harvest standard object writes', () => {
       },
     ]);
 
-    await handleLinkedInHarvestStoreRequest(client, {
-      action: 'WRITE_THREAD_PARTICIPANTS',
-      ownerLinkedinId: 'owner-id',
-      records: [
+    await createLinkedInHarvestStore(client).writeLinkedInThreadParticipants(
+      'owner-id',
+      [
         {
           sourceThreadId: 'linkedin-thread-id',
           threadId: 'twenty-thread-id',
@@ -162,7 +154,7 @@ describe('LinkedIn harvest standard object writes', () => {
           isSelf: false,
         },
       ],
-    });
+    );
 
     expect(getWrittenData(graphqlRequest)).toMatchObject({
       externalId: 'owner-id:linkedin-thread-id:profile-urn',
@@ -190,21 +182,17 @@ describe('LinkedIn harvest standard object writes', () => {
       },
     ]);
 
-    await handleLinkedInHarvestStoreRequest(client, {
-      action: 'WRITE_MESSAGES',
-      ownerLinkedinId: 'owner-id',
-      records: [
-        {
-          messageId: 'linkedin-message-id',
-          threadId: 'twenty-thread-id',
-          body: 'Hello from LinkedIn',
-          deliveredAt: '2026-07-22T10:00:00.000Z',
-          direction: 'INBOUND',
-          senderName: 'Ada Lovelace',
-          senderLinkedinUrn: 'profile-urn',
-        },
-      ],
-    });
+    await createLinkedInHarvestStore(client).writeLinkedInMessages('owner-id', [
+      {
+        messageId: 'linkedin-message-id',
+        threadId: 'twenty-thread-id',
+        body: 'Hello from LinkedIn',
+        deliveredAt: '2026-07-22T10:00:00.000Z',
+        direction: 'INBOUND',
+        senderName: 'Ada Lovelace',
+        senderLinkedinUrn: 'profile-urn',
+      },
+    ]);
     const writtenData = getWrittenData(graphqlRequest);
 
     expect(writtenData).toMatchObject({
@@ -220,21 +208,17 @@ describe('LinkedIn harvest standard object writes', () => {
   it('should omit empty message text so resyncs preserve saved text and new messages use the default', async () => {
     const { client, graphqlRequest } = createClient([]);
 
-    await handleLinkedInHarvestStoreRequest(client, {
-      action: 'WRITE_MESSAGES',
-      ownerLinkedinId: 'owner-id',
-      records: [
-        {
-          messageId: 'linkedin-message-id',
-          threadId: 'twenty-thread-id',
-          body: '',
-          deliveredAt: '2026-07-22T10:00:00.000Z',
-          direction: 'INBOUND',
-          senderName: 'Ada Lovelace',
-          senderLinkedinUrn: 'profile-urn',
-        },
-      ],
-    });
+    await createLinkedInHarvestStore(client).writeLinkedInMessages('owner-id', [
+      {
+        messageId: 'linkedin-message-id',
+        threadId: 'twenty-thread-id',
+        body: '',
+        deliveredAt: '2026-07-22T10:00:00.000Z',
+        direction: 'INBOUND',
+        senderName: 'Ada Lovelace',
+        senderLinkedinUrn: 'profile-urn',
+      },
+    ]);
 
     const writtenData = getWrittenData(graphqlRequest);
 
@@ -268,17 +252,15 @@ describe('LinkedIn harvest standard object writes', () => {
       },
     ]);
 
-    const result = await handleLinkedInHarvestStoreRequest(client, {
-      action: 'CONFIRM_MESSAGE_READS',
-      ownerLinkedinId: 'owner-id',
-      records: [
-        {
-          threadId: 'twenty-thread-id',
-          readThroughMessageId: 'linkedin-message-2',
-          recipientReadAt: '2026-07-22T10:03:00.000Z',
-        },
-      ],
-    });
+    const result = await createLinkedInHarvestStore(
+      client,
+    ).confirmLinkedInMessageReads('owner-id', [
+      {
+        threadId: 'twenty-thread-id',
+        readThroughMessageId: 'linkedin-message-2',
+        recipientReadAt: '2026-07-22T10:03:00.000Z',
+      },
+    ]);
 
     expect(result).toEqual({ received: 1, confirmedMessages: 2 });
     expect(graphqlRequest.mock.calls[0]?.[1]).toEqual({
@@ -315,17 +297,15 @@ describe('LinkedIn harvest standard object writes', () => {
       },
     ]);
 
-    const result = await handleLinkedInHarvestStoreRequest(client, {
-      action: 'CONFIRM_MESSAGE_READS',
-      ownerLinkedinId: 'owner-id',
-      records: [
-        {
-          threadId: 'twenty-thread-id',
-          readThroughMessageId: 'linkedin-message-2',
-          recipientReadAt: '2026-07-22T10:03:00.000Z',
-        },
-      ],
-    });
+    const result = await createLinkedInHarvestStore(
+      client,
+    ).confirmLinkedInMessageReads('owner-id', [
+      {
+        threadId: 'twenty-thread-id',
+        readThroughMessageId: 'linkedin-message-2',
+        recipientReadAt: '2026-07-22T10:03:00.000Z',
+      },
+    ]);
 
     expect(result).toEqual({ received: 1, confirmedMessages: 0 });
     expect(graphqlRequest).toHaveBeenCalledTimes(1);
@@ -346,10 +326,10 @@ describe('LinkedIn harvest standard object writes', () => {
       },
     ]);
 
-    const result = await handleLinkedInHarvestStoreRequest(client, {
-      action: 'UPDATE_THREAD_SUMMARY',
-      threadId: 'twenty-thread-id',
-    });
+    const result =
+      await createLinkedInHarvestStore(client).updateLinkedInThreadSummary(
+        'twenty-thread-id',
+      );
 
     expect(result).toEqual({
       lastMessagePreview: 'x'.repeat(200),
@@ -381,10 +361,9 @@ describe('LinkedIn harvest standard object writes', () => {
         },
       ]);
 
-      await handleLinkedInHarvestStoreRequest(client, {
-        action: 'UPDATE_THREAD_SUMMARY',
-        threadId: 'twenty-thread-id',
-      });
+      await createLinkedInHarvestStore(client).updateLinkedInThreadSummary(
+        'twenty-thread-id',
+      );
 
       expect(graphqlRequest.mock.calls[1]?.[1]).toEqual({
         id: 'twenty-thread-id',
@@ -438,10 +417,10 @@ describe('LinkedIn harvest standard object writes', () => {
       },
     ]);
 
-    const result = (await handleLinkedInHarvestStoreRequest(client, {
-      action: 'GET_MESSAGE_SYNC_CANDIDATES',
-      ownerLinkedinId: 'owner-id',
-    })) as LinkedInMessageSyncCandidate[];
+    const result =
+      await createLinkedInHarvestStore(client).getLinkedInMessageSyncCandidates(
+        'owner-id',
+      );
 
     expect(result).toEqual([
       {
@@ -514,19 +493,47 @@ describe('LinkedIn harvest standard object writes', () => {
       },
     ]);
 
-    const result = (await handleLinkedInHarvestStoreRequest(client, {
-      action: 'GET_MESSAGE_SYNC_CANDIDATES',
-      ownerLinkedinId: 'owner-id',
-    })) as LinkedInMessageSyncCandidate[];
+    const result = await createLinkedInHarvestStore(
+      client,
+    ).getLinkedInMessageSyncCandidates('owner-id', [
+      'linkedin-old-thread-id',
+      'linkedin-new-thread-id',
+      'linkedin-middle-thread-id',
+    ]);
     const candidateQuery = graphqlRequest.mock.calls[0]?.[0];
 
     expect(candidateQuery).toContain(
       'orderBy: [{ lastMessageTime: DescNullsLast }]',
     );
+    expect(candidateQuery).toContain('threadId: { in: $threadIds }');
+    expect(graphqlRequest.mock.calls[0]?.[1]?.threadIds).toHaveLength(3);
     expect(result.map(({ twentyThreadId }) => twentyThreadId)).toEqual([
       'new-thread-id',
       'middle-thread-id',
       'old-thread-id',
     ]);
+  });
+
+  it('loads one repair page and returns its cursor for the next run', async () => {
+    const { client, graphqlRequest } = createClient([
+      {
+        data: {
+          linkedinMessageThreads: {
+            edges: [],
+            pageInfo: { hasNextPage: true, endCursor: 'next-page' },
+          },
+        },
+      },
+    ]);
+
+    await expect(
+      createLinkedInHarvestStore(client).getLinkedInMessageRepairPage(
+        'owner-id',
+        'previous-page',
+      ),
+    ).resolves.toEqual({ candidates: [], nextCursor: 'next-page' });
+    expect(graphqlRequest).toHaveBeenCalledTimes(1);
+    expect(graphqlRequest.mock.calls[0]?.[0]).toContain('first: 8');
+    expect(graphqlRequest.mock.calls[0]?.[1]?.after).toBe('previous-page');
   });
 });

@@ -3,17 +3,19 @@ import type {
   LinkedInHarvestInvitation,
   LinkedInSyncProgress,
 } from '../types';
-import {
-  writeLinkedInConnections,
-  writeLinkedInInvitations,
-} from './linkedin-harvest-store';
+import type { LinkedInHarvestStore } from './linkedin-harvest-store';
+import { LinkedInSafetyLimitError } from './linkedin-safety';
 import {
   getLinkedInSyncState,
   LINKEDIN_CONNECTION_SYNC_REVISION,
   LINKEDIN_INVITATION_SYNC_REVISION,
   updateLinkedInSyncState,
 } from './linkedin-sync-state';
-import { linkedInVoyagerClient, randomDelay } from './linkedin-voyager-client';
+import {
+  linkedInVoyagerClient,
+  LinkedInSyncTimeLimitError,
+  randomDelay,
+} from './linkedin-voyager-client';
 
 const CONNECTION_PAGE_SIZE = 100;
 const CONNECTION_ALREADY_KNOWN_THRESHOLD = 50;
@@ -326,114 +328,120 @@ const parseInvitations = (
   );
 };
 
-const parseReceivedInvitationsFromDom = (): LinkedInHarvestInvitation[] => {
-  if (
-    !window.location.pathname.startsWith('/mynetwork/invitation-manager') ||
-    window.location.pathname.includes('/sent')
-  ) {
-    return [];
-  }
-
-  const invitations = new Map<string, LinkedInHarvestInvitation>();
-  const acceptButtons = document.querySelectorAll<HTMLButtonElement>(
-    'button[aria-label^="Accept "]',
-  );
-
-  for (const button of acceptButtons) {
-    const label = button.getAttribute('aria-label') ?? '';
-
-    if (!/[’']s invitation$/i.test(label)) {
-      continue;
-    }
-
-    let card: HTMLElement | null = button.parentElement;
-
-    while (
-      card &&
-      (!card.textContent?.includes('wants to connect') ||
-        !card.querySelector<HTMLAnchorElement>('a[href*="/in/"]'))
+export const parseReceivedInvitationsFromDom =
+  (): LinkedInHarvestInvitation[] => {
+    if (
+      !window.location.pathname.startsWith('/mynetwork/invitation-manager') ||
+      window.location.pathname.includes('/sent')
     ) {
-      card = card.parentElement;
+      return [];
     }
 
-    const profileLink =
-      card?.querySelector<HTMLAnchorElement>('a[href*="/in/"]');
-
-    if (!card || !profileLink) {
-      continue;
-    }
-
-    const handle = normalizeHandle(profileLink.href);
-    const name = label
-      .replace(/^Accept /i, '')
-      .replace(/[’']s invitation$/i, '')
-      .trim();
-    let detailsCard = card;
-    let messageLink = detailsCard.querySelector<HTMLAnchorElement>(
-      'a[href*="/messaging/compose/"]',
+    const invitations = new Map<string, LinkedInHarvestInvitation>();
+    const acceptButtons = document.querySelectorAll<HTMLButtonElement>(
+      'button[aria-label^="Accept "]',
     );
 
-    for (
-      let depth = 0;
-      !messageLink && detailsCard.parentElement && depth < 4;
-      depth += 1
-    ) {
-      const parent = detailsCard.parentElement;
+    for (const button of acceptButtons) {
+      const label = button.getAttribute('aria-label') ?? '';
 
-      if (parent.querySelectorAll('button[aria-label^="Accept "]').length > 1) {
-        break;
+      if (!/[’']s invitation$/i.test(label)) {
+        continue;
       }
 
-      detailsCard = parent;
-      messageLink = detailsCard.querySelector<HTMLAnchorElement>(
+      let card: HTMLElement | null = button.parentElement;
+
+      while (
+        card &&
+        (!card.textContent?.includes('wants to connect') ||
+          !card.querySelector<HTMLAnchorElement>('a[href*="/in/"]'))
+      ) {
+        card = card.parentElement;
+      }
+
+      const profileLink =
+        card?.querySelector<HTMLAnchorElement>('a[href*="/in/"]');
+
+      if (!card || !profileLink) {
+        continue;
+      }
+
+      const handle = normalizeHandle(profileLink.href);
+      const name = label
+        .replace(/^Accept /i, '')
+        .replace(/[’']s invitation$/i, '')
+        .trim();
+      if (!handle) continue;
+
+      let detailsCard = card;
+      let messageLink = detailsCard.querySelector<HTMLAnchorElement>(
         'a[href*="/messaging/compose/"]',
       );
+
+      for (
+        let depth = 0;
+        !messageLink && detailsCard.parentElement && depth < 4;
+        depth += 1
+      ) {
+        const parent = detailsCard.parentElement;
+
+        if (
+          parent.querySelectorAll('button[aria-label^="Accept "]').length > 1
+        ) {
+          break;
+        }
+
+        detailsCard = parent;
+        messageLink = detailsCard.querySelector<HTMLAnchorElement>(
+          'a[href*="/messaging/compose/"]',
+        );
+      }
+      const messageUrl = messageLink
+        ? new URL(messageLink.href, window.location.origin)
+        : null;
+      const profileUrn =
+        messageUrl?.searchParams
+          .get('profileUrn')
+          ?.replace('urn:li:fsd_profile:', '') ??
+        messageUrl?.searchParams.get('recipient') ??
+        handle;
+      const paragraphTexts = [...card.querySelectorAll('p')]
+        .map((paragraph) => paragraph.textContent?.trim() ?? '')
+        .filter(Boolean);
+      const headline =
+        paragraphTexts.find(
+          (text) =>
+            text !== name &&
+            !text.includes('wants to connect') &&
+            !/mutual connections?/i.test(text) &&
+            !/^reply to /i.test(text),
+        ) ?? null;
+      const message = [...detailsCard.querySelectorAll('p')]
+        .map((paragraph) => paragraph.textContent?.trim() ?? '')
+        .find(
+          (text) =>
+            text.length > 10 &&
+            !paragraphTexts.includes(text) &&
+            !/^reply to |^send a message|^message$/i.test(text),
+        );
+
+      invitations.set(handle, {
+        profileUrn,
+        linkedinId: getLinkedInIdFromProfileUrn(profileUrn),
+        direction: 'RECEIVED',
+        handle,
+        name: name || handle,
+        headline,
+        message: message ?? null,
+        sentAt: null,
+      });
     }
-    const messageUrl = messageLink
-      ? new URL(messageLink.href, window.location.origin)
-      : null;
-    const profileUrn =
-      messageUrl?.searchParams
-        .get('profileUrn')
-        ?.replace('urn:li:fsd_profile:', '') ??
-      messageUrl?.searchParams.get('recipient') ??
-      handle;
-    const paragraphTexts = [...card.querySelectorAll('p')]
-      .map((paragraph) => paragraph.textContent?.trim() ?? '')
-      .filter(Boolean);
-    const headline =
-      paragraphTexts.find(
-        (text) =>
-          text !== name &&
-          !text.includes('wants to connect') &&
-          !/mutual connections?/i.test(text) &&
-          !/^reply to /i.test(text),
-      ) ?? null;
-    const message = [...detailsCard.querySelectorAll('p')]
-      .map((paragraph) => paragraph.textContent?.trim() ?? '')
-      .find(
-        (text) =>
-          text.length > 10 &&
-          !paragraphTexts.includes(text) &&
-          !/^reply to |^send a message|^message$/i.test(text),
-      );
 
-    invitations.set(handle, {
-      profileUrn,
-      linkedinId: getLinkedInIdFromProfileUrn(profileUrn),
-      direction: 'RECEIVED',
-      handle,
-      name: name || handle,
-      headline,
-      message: message ?? null,
-      sentAt: null,
-    });
-  }
+    return [...invitations.values()];
+  };
 
-  return [...invitations.values()];
-};
-
-const syncConnections = async (
+export const syncRecentLinkedInConnections = async (
+  store: Pick<LinkedInHarvestStore, 'writeLinkedInConnections'>,
   ownerLinkedinId: string,
   runStartedAt: number,
   progress: LinkedInSyncProgress,
@@ -448,80 +456,6 @@ const syncConnections = async (
     });
   }
 
-  if (!state.connectionBackfillComplete) {
-    let start = Math.max(
-      0,
-      state.connectionBackfillStart -
-        (state.connectionBackfillStart > 0 ? CONNECTION_PAGE_SIZE : 0),
-    );
-
-    if (start > 0) {
-      const recentPage = await linkedInVoyagerClient.fetchConnectionsPage(
-        0,
-        CONNECTION_PAGE_SIZE,
-      );
-      const recentRecords = parseConnections(recentPage);
-
-      if (recentRecords.length > 0) {
-        const result = await writeLinkedInConnections(
-          ownerLinkedinId,
-          recentRecords,
-          runStartedAt,
-        );
-
-        progress.connections += result.received;
-        await randomDelay(500, 5_000);
-      }
-    }
-
-    for (;;) {
-      const page = await linkedInVoyagerClient.fetchConnectionsPage(
-        start,
-        CONNECTION_PAGE_SIZE,
-      );
-      const records = parseConnections(page);
-
-      if (records.length === 0) {
-        if (page.hasMore && page.nextStart && page.nextStart > start) {
-          start = page.nextStart;
-          await updateLinkedInSyncState(ownerLinkedinId, {
-            connectionBackfillStart: start,
-          });
-          await randomDelay(500, 5_000);
-          continue;
-        }
-
-        await updateLinkedInSyncState(ownerLinkedinId, {
-          connectionBackfillComplete: true,
-          connectionBackfillStart: 0,
-        });
-        return;
-      }
-
-      const result = await writeLinkedInConnections(
-        ownerLinkedinId,
-        records,
-        runStartedAt,
-      );
-
-      progress.connections += result.received;
-
-      if (!page.hasMore || !page.nextStart || page.nextStart <= start) {
-        await updateLinkedInSyncState(ownerLinkedinId, {
-          connectionBackfillComplete: true,
-          connectionBackfillStart: 0,
-        });
-        return;
-      }
-
-      start = page.nextStart;
-      await updateLinkedInSyncState(ownerLinkedinId, {
-        connectionBackfillStart: start,
-      });
-      await randomDelay(500, 5_000);
-    }
-  }
-
   let start = 0;
 
   for (;;) {
@@ -531,11 +465,7 @@ const syncConnections = async (
     );
     const records = parseConnections(page);
 
-    if (records.length === 0) {
-      break;
-    }
-
-    const result = await writeLinkedInConnections(
+    const result = await store.writeLinkedInConnections(
       ownerLinkedinId,
       records,
       runStartedAt,
@@ -543,8 +473,21 @@ const syncConnections = async (
 
     progress.connections += result.received;
 
+    if (!state.connectionBackfillComplete) {
+      if (state.connectionBackfillStart === 0) {
+        const nextStart = page.hasMore ? (page.nextStart ?? 0) : 0;
+
+        await updateLinkedInSyncState(ownerLinkedinId, {
+          connectionBackfillComplete: nextStart === 0,
+          connectionBackfillStart: nextStart,
+        });
+      }
+      break;
+    }
+
     if (
       !page.hasMore ||
+      records.length === 0 ||
       result.alreadyKnown >= CONNECTION_ALREADY_KNOWN_THRESHOLD ||
       !page.nextStart ||
       page.nextStart <= start
@@ -557,12 +500,66 @@ const syncConnections = async (
   }
 };
 
+export const backfillLinkedInConnections = async (
+  store: Pick<LinkedInHarvestStore, 'writeLinkedInConnections'>,
+  ownerLinkedinId: string,
+  runStartedAt: number,
+  progress: LinkedInSyncProgress,
+): Promise<void> => {
+  const state = await getLinkedInSyncState(ownerLinkedinId);
+
+  if (state.connectionBackfillComplete || state.connectionBackfillStart === 0) {
+    return;
+  }
+
+  // The recent pass already covered page zero. Overlap later pages in case
+  // changes to the connection list moved records across the stored offset.
+  let start = Math.max(
+    CONNECTION_PAGE_SIZE,
+    state.connectionBackfillStart - CONNECTION_PAGE_SIZE,
+  );
+
+  for (let pageIndex = 0; pageIndex < 8; pageIndex += 1) {
+    const page = await linkedInVoyagerClient.fetchConnectionsPage(
+      start,
+      CONNECTION_PAGE_SIZE,
+    );
+    const records = parseConnections(page);
+
+    if (records.length > 0) {
+      const result = await store.writeLinkedInConnections(
+        ownerLinkedinId,
+        records,
+        runStartedAt,
+      );
+      progress.connections += result.received;
+    }
+
+    if (!page.hasMore || !page.nextStart || page.nextStart <= start) {
+      await updateLinkedInSyncState(ownerLinkedinId, {
+        connectionBackfillComplete: true,
+        connectionBackfillStart: 0,
+      });
+      return;
+    }
+
+    start = page.nextStart;
+    await updateLinkedInSyncState(ownerLinkedinId, {
+      connectionBackfillStart: Math.max(state.connectionBackfillStart, start),
+    });
+
+    if (pageIndex < 7) await randomDelay(500, 5_000);
+  }
+};
+
 const syncInvitationDirection = async (
+  store: Pick<LinkedInHarvestStore, 'writeLinkedInInvitations'>,
   ownerLinkedinId: string,
   direction: 'SENT' | 'RECEIVED',
   runStartedAt: number,
   progress: LinkedInSyncProgress,
-  forceFullScan = false,
+  forceFullScan: boolean,
+  readReceivedInvitations: () => Promise<LinkedInHarvestInvitation[]>,
 ): Promise<string | null> => {
   let start = 0;
 
@@ -579,11 +576,11 @@ const syncInvitationDirection = async (
           );
 
     if (!page) {
-      const domRecords = parseReceivedInvitationsFromDom();
+      const domRecords = await readReceivedInvitations();
 
       if (domRecords.length > 0) {
         progress.invitations += domRecords.length;
-        await writeLinkedInInvitations(
+        await store.writeLinkedInInvitations(
           ownerLinkedinId,
           domRecords,
           runStartedAt,
@@ -602,7 +599,7 @@ const syncInvitationDirection = async (
     }
 
     progress.invitations += records.length;
-    const result = await writeLinkedInInvitations(
+    const result = await store.writeLinkedInInvitations(
       ownerLinkedinId,
       records,
       runStartedAt,
@@ -625,10 +622,12 @@ const syncInvitationDirection = async (
   return null;
 };
 
-export const syncLinkedInConnectionsAndInvitations = async (
+export const syncLinkedInInvitations = async (
+  store: Pick<LinkedInHarvestStore, 'writeLinkedInInvitations'>,
   ownerLinkedinId: string,
   runStartedAt: number,
   progress: LinkedInSyncProgress,
+  readReceivedInvitations: () => Promise<LinkedInHarvestInvitation[]>,
 ): Promise<{ warnings: string[] }> => {
   const warnings: string[] = [];
   const state = await getLinkedInSyncState(ownerLinkedinId);
@@ -636,22 +635,27 @@ export const syncLinkedInConnectionsAndInvitations = async (
     state.invitationSyncRevision !== LINKEDIN_INVITATION_SYNC_REVISION;
   let invitationSyncSucceeded = true;
 
-  await syncConnections(ownerLinkedinId, runStartedAt, progress);
-
   for (const direction of ['SENT', 'RECEIVED'] as const) {
     try {
       const warning = await syncInvitationDirection(
+        store,
         ownerLinkedinId,
         direction,
         runStartedAt,
         progress,
         forceFullInvitationScan,
+        readReceivedInvitations,
       );
 
       if (warning) {
         warnings.push(warning);
       }
     } catch (error) {
+      if (
+        error instanceof LinkedInSafetyLimitError ||
+        error instanceof LinkedInSyncTimeLimitError
+      )
+        throw error;
       invitationSyncSucceeded = false;
       warnings.push(
         error instanceof Error

@@ -1,5 +1,4 @@
 import type {
-  TwentyTokenPair,
   GraphQLResponse,
   PeopleQueryResult,
   CompaniesQueryResult,
@@ -233,7 +232,10 @@ export class TwentyApiClient {
   private baseUrl: string;
   private token: string | null = null;
 
-  constructor(baseUrl: string) {
+  constructor(
+    baseUrl: string,
+    private readonly recoverToken?: (rejectedToken: string) => Promise<string>,
+  ) {
     this.baseUrl = baseUrl.replace(/\/$/, '');
   }
 
@@ -358,68 +360,69 @@ export class TwentyApiClient {
     query: string,
     variables?: Record<string, unknown>,
   ): Promise<GraphQLResponse<T>> {
-    if (!this.token) {
-      throw new Error('No authentication token set');
-    }
-
-    const response = await fetch(`${this.baseUrl}/graphql`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.token}`,
-      },
-      body: JSON.stringify({ query, variables }),
-    });
-
-    if (!response.ok) {
-      const responseText = await response.text();
-
-      throw new Error(`HTTP error: ${response.status} ${responseText}`);
-    }
-
-    const result = await response.json();
-
-    if (result.errors?.length) {
-      throw new Error(
-        result.errors
-          .map((error: { message: string }) => error.message)
-          .join('; '),
-      );
-    }
-
-    return result;
+    return this.request('graphql', query, variables);
   }
 
   async metadataRequest<T>(
     query: string,
     variables?: Record<string, unknown>,
   ): Promise<GraphQLResponse<T>> {
-    if (!this.token) {
-      throw new Error('No authentication token set');
-    }
+    return this.request('metadata', query, variables);
+  }
 
-    const response = await fetch(`${this.baseUrl}/metadata`, {
+  private async request<T>(
+    endpoint: 'graphql' | 'metadata',
+    query: string,
+    variables?: Record<string, unknown>,
+    retryAuthentication = true,
+  ): Promise<GraphQLResponse<T>> {
+    const token = this.token;
+    if (!token) throw new Error('No authentication token set');
+
+    const response = await fetch(`${this.baseUrl}/${endpoint}`, {
       method: 'POST',
+      signal: AbortSignal.timeout(25_000),
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.token}`,
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({ query, variables }),
     });
 
-    if (!response.ok) {
-      const responseText = await response.text();
+    const result = response.ok
+      ? ((await response.json()) as GraphQLResponse<T>)
+      : null;
+    const authenticationRejected =
+      response.status === 401 ||
+      (!result?.data &&
+        result?.errors?.some(
+          (error) =>
+            error.extensions?.code === 'UNAUTHENTICATED' ||
+            error.message === 'Token has expired.',
+        ));
 
-      throw new Error(`HTTP error: ${response.status} ${responseText}`);
+    if (authenticationRejected && retryAuthentication && this.recoverToken) {
+      this.token = await this.recoverToken(token);
+      return this.request(endpoint, query, variables, false);
     }
 
-    const result = (await response.json()) as GraphQLResponse<T>;
+    if (authenticationRejected && this.recoverToken) {
+      throw new Error(
+        'Open Twenty CRM and sign in, then click Sync now again.',
+      );
+    }
 
-    if (result.errors?.length) {
+    if (!response.ok) {
+      throw new Error(
+        `HTTP error: ${response.status} ${await response.text()}`,
+      );
+    }
+
+    if (result?.errors?.length) {
       throw new Error(result.errors.map((error) => error.message).join('; '));
     }
 
-    return result;
+    return result ?? {};
   }
 
   async findPersonByLinkedInUrl(
@@ -1007,15 +1010,5 @@ export class TwentyApiClient {
       return parseInt(match[1].replace(/,/g, ''), 10);
     }
     return undefined;
-  }
-}
-
-// Helper to extract token from Twenty's tokenPair cookie
-export function extractTokenFromCookie(cookieValue: string): string | null {
-  try {
-    const tokenPair: TwentyTokenPair = JSON.parse(cookieValue);
-    return tokenPair.accessOrWorkspaceAgnosticToken?.token || null;
-  } catch {
-    return null;
   }
 }

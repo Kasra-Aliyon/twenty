@@ -1,6 +1,8 @@
-import { TwentyApiClient, extractTokenFromCookie } from '../utils/twenty-api';
+import { TwentyApiClient } from '../utils/twenty-api';
 import {
+  getTwentyAccessToken,
   syncTwentyBrowserSession,
+  TWENTY_SIGN_IN_REQUIRED,
   withTwentySessionOperation,
 } from '../utils/twenty-session';
 import {
@@ -18,20 +20,23 @@ import {
   addToRecentCaptures,
   getRecentCaptures,
   getTwentyTokenPair,
-  saveTwentyTokenPair,
 } from '../utils/storage';
 import {
   getLinkedInSyncTotalsWithClient,
-  handleLinkedInHarvestStoreRequest,
-  type LinkedInHarvestStoreRequest,
+  createLinkedInHarvestStore,
 } from '../utils/linkedin-harvest-store';
 import {
   getLinkedInSafetySettings,
   getLinkedInSafetySnapshot,
   recordLinkedInOutboundAttempt,
   setLinkedInSafetySettings,
+  tripLinkedInSafetyCircuit,
 } from '../utils/linkedin-safety';
-import { getStoredLinkedInIdentity } from '../utils/linkedin-sync-state';
+import {
+  getStoredLinkedInIdentity,
+  LINKEDIN_SYNC_INTERVAL_MINUTES,
+  getLinkedInSyncState,
+} from '../utils/linkedin-sync-state';
 import {
   canRecoverLinkedInActionAfterInterruption,
   createSerializedLinkedinRunnerOperation,
@@ -47,6 +52,7 @@ import {
   resolveRunnerActionReport,
   resolveRunnerProviderStart,
 } from '../utils/linkedin-runner-state';
+import { createLinkedInBackgroundSync } from '../utils/linkedin-background-sync';
 import type {
   ExtensionMessage,
   ExtensionResponse,
@@ -58,226 +64,44 @@ import type {
   LinkedInConnectionState,
   LinkedInRunnerSessionState,
   LinkedInSafetySettings,
-  LinkedInSyncLock,
-  LinkedInSyncProgress,
+  LinkedInHarvestInvitation,
   TwentyLinkedInAction,
 } from '../types';
 
 const LINKEDIN_RUNNER_ALARM = 'twenty-linkedin-runner-poll';
 const LINKEDIN_SYNC_ALARM = 'twenty-linkedin-automatic-sync';
 const LINKEDIN_RUNNER_STATE_KEY = 'twentyLinkedinRunnerState';
-const LINKEDIN_SYNC_LOCKS_KEY = 'twentyLinkedinSyncLocks';
-const LINKEDIN_SYNC_LOCK_TTL_MILLISECONDS = 30_000;
-
-let linkedinSyncLockOperation: Promise<void> = Promise.resolve();
 const withLinkedinRunnerStateOperation =
   createSerializedLinkedinRunnerOperation();
-
-const withLinkedinSyncLockStore = <TResult>(
-  operation: () => Promise<TResult>,
-): Promise<TResult> => {
-  const result = linkedinSyncLockOperation.then(operation, operation);
-
-  linkedinSyncLockOperation = result.then(
-    () => undefined,
-    () => undefined,
-  );
-
-  return result;
-};
-
-const getStoredLinkedinSyncLocks = async (): Promise<
-  Record<string, LinkedInSyncLock>
-> => {
-  const storedValue = await browser.storage.session.get(
-    LINKEDIN_SYNC_LOCKS_KEY,
-  );
-
-  return (
-    (storedValue[LINKEDIN_SYNC_LOCKS_KEY] as
-      | Record<string, LinkedInSyncLock>
-      | undefined) ?? {}
-  );
-};
-
-const saveStoredLinkedinSyncLocks = async (
-  locks: Record<string, LinkedInSyncLock>,
-): Promise<void> => {
-  await browser.storage.session.set({ [LINKEDIN_SYNC_LOCKS_KEY]: locks });
-};
-
-const getLiveLinkedinSyncLockFromStore = (
-  locks: Record<string, LinkedInSyncLock>,
-  key: string,
-): LinkedInSyncLock | null => {
-  const lock = locks[key];
-
-  if (!lock) {
-    return null;
-  }
-
-  if (lock.expiresAt <= Date.now()) {
-    delete locks[key];
-    return null;
-  }
-
-  return lock;
-};
-
-const isTabAlive = async (tabId: number): Promise<boolean> => {
-  try {
-    await browser.tabs.get(tabId);
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-const acquireLinkedinSyncLock = async (
-  key: string,
-  ownerTabId: number,
-  progress: LinkedInSyncProgress,
-): Promise<{ acquired: boolean; lock: LinkedInSyncLock }> => {
-  return withLinkedinSyncLockStore(async () => {
-    const locks = await getStoredLinkedinSyncLocks();
-    const existingLock = getLiveLinkedinSyncLockFromStore(locks, key);
-
-    if (
-      existingLock &&
-      existingLock.ownerTabId !== ownerTabId &&
-      (await isTabAlive(existingLock.ownerTabId))
-    ) {
-      await saveStoredLinkedinSyncLocks(locks);
-      return { acquired: false, lock: existingLock };
-    }
-
-    const lock: LinkedInSyncLock = {
-      key,
-      ownerTabId,
-      expiresAt: Date.now() + LINKEDIN_SYNC_LOCK_TTL_MILLISECONDS,
-      progress,
-    };
-
-    locks[key] = lock;
-    await saveStoredLinkedinSyncLocks(locks);
-
-    return { acquired: true, lock };
-  });
-};
-
-const heartbeatLinkedinSyncLock = async (
-  key: string,
-  ownerTabId: number,
-  progress: LinkedInSyncProgress,
-): Promise<LinkedInSyncLock | null> =>
-  withLinkedinSyncLockStore(async () => {
-    const locks = await getStoredLinkedinSyncLocks();
-    const lock = getLiveLinkedinSyncLockFromStore(locks, key);
-
-    if (!lock || lock.ownerTabId !== ownerTabId) {
-      await saveStoredLinkedinSyncLocks(locks);
-      return null;
-    }
-
-    const nextLock = {
-      ...lock,
-      expiresAt: Date.now() + LINKEDIN_SYNC_LOCK_TTL_MILLISECONDS,
-      progress,
-    };
-
-    locks[key] = nextLock;
-    await saveStoredLinkedinSyncLocks(locks);
-
-    return nextLock;
-  });
-
-const releaseLinkedinSyncLock = async (
-  key: string,
-  ownerTabId: number,
-): Promise<boolean> =>
-  withLinkedinSyncLockStore(async () => {
-    const locks = await getStoredLinkedinSyncLocks();
-    const lock = getLiveLinkedinSyncLockFromStore(locks, key);
-
-    if (!lock || lock.ownerTabId !== ownerTabId) {
-      await saveStoredLinkedinSyncLocks(locks);
-      return false;
-    }
-
-    delete locks[key];
-    await saveStoredLinkedinSyncLocks(locks);
-    return true;
-  });
-
-const getLiveLinkedinSyncLock = async (
-  key: string,
-): Promise<LinkedInSyncLock | null> =>
-  withLinkedinSyncLockStore(async () => {
-    const locks = await getStoredLinkedinSyncLocks();
-    const lock = getLiveLinkedinSyncLockFromStore(locks, key);
-
-    await saveStoredLinkedinSyncLocks(locks);
-    return lock;
-  });
-
-const removeLinkedinSyncLocksForTab = async (tabId: number): Promise<void> =>
-  withLinkedinSyncLockStore(async () => {
-    const locks = await getStoredLinkedinSyncLocks();
-
-    for (const [key, lock] of Object.entries(locks)) {
-      if (lock.ownerTabId === tabId) {
-        delete locks[key];
-      }
-    }
-
-    await saveStoredLinkedinSyncLocks(locks);
-  });
-
-const requestLinkedinSyncInExistingTab = async (
-  force: boolean,
-): Promise<boolean> => {
-  const tabs = await browser.tabs.query({
-    url: ['*://linkedin.com/*', '*://*.linkedin.com/*'],
-  });
-  const targetTab =
-    tabs.find((tab) => tab.active && !tab.discarded && tab.id !== undefined) ??
-    tabs.find((tab) => !tab.discarded && tab.id !== undefined);
-
-  if (targetTab?.id === undefined) {
-    return false;
-  }
-
-  await browser.tabs.sendMessage(targetTab.id, {
-    type: 'RUN_LINKEDIN_SYNC',
-    force,
-  });
-
-  return true;
-};
 
 const ensurePeriodicAlarm = async (
   name: string,
   periodInMinutes: number,
 ): Promise<void> => {
-  if (!(await browser.alarms.get(name))) {
+  if ((await browser.alarms.get(name))?.periodInMinutes !== periodInMinutes) {
     await browser.alarms.create(name, { periodInMinutes });
   }
 };
 
-const getLinkedinCsrfToken = async (): Promise<string> => {
-  const cookies = await browser.cookies.getAll({
-    domain: 'www.linkedin.com',
-    name: 'JSESSIONID',
+const readReceivedInvitations = async (): Promise<
+  LinkedInHarvestInvitation[]
+> => {
+  const tabs = await browser.tabs.query({
+    url: 'https://www.linkedin.com/mynetwork/invitation-manager/*',
   });
-  const csrfToken = cookies[0]?.value.replace(/^"|"$/g, '');
+  const tab = tabs.find(
+    ({ id, discarded, url }) =>
+      id !== undefined && !discarded && !url?.includes('/sent'),
+  );
+  if (tab?.id === undefined) return [];
 
-  if (!csrfToken) {
-    throw new Error(
-      'LinkedIn session cookie was not found. Sign in to LinkedIn first.',
-    );
-  }
+  const records = await browser.tabs
+    .sendMessage(tab.id, {
+      type: 'READ_LINKEDIN_INVITATIONS_PAGE',
+    })
+    .catch(() => null);
 
-  return csrfToken;
+  return Array.isArray(records) ? records : [];
 };
 
 const DEFAULT_LINKEDIN_RUNNER_STATE: LinkedInRunnerSessionState = {
@@ -315,7 +139,6 @@ const setLinkedinRunnerState = async (
 const handleLinkedinRunnerTabRemovedWithoutLock = async (
   tabId: number,
 ): Promise<void> => {
-  await removeLinkedinSyncLocksForTab(tabId);
   const runnerState = await getLinkedinRunnerState();
 
   if (runnerState.tabId !== tabId) {
@@ -404,55 +227,24 @@ const handleLinkedinRunnerTabRemoved = (tabId: number): Promise<void> =>
   );
 
 // Cache for API client
-let apiClient: TwentyApiClient | null = null;
-let cachedTwentyApiUrl: string | null = null;
-
-type RenewTokenResult = {
-  renewToken?: {
-    tokens?: TwentyTokenPair;
-  };
-};
-
-const RENEW_TOKEN_MUTATION = `
-  mutation RenewToken($appToken: String!) {
-    renewToken(appToken: $appToken) {
-      tokens {
-        accessOrWorkspaceAgnosticToken {
-          token
-          expiresAt
-        }
-        refreshToken {
-          token
-          expiresAt
-        }
-      }
-    }
-  }
-`;
-
-// Get or create API client
 async function getApiClient(): Promise<TwentyApiClient> {
   const settings = await getSettings();
-
-  if (!settings.twentyApiUrl) {
-    throw new Error('Twenty API URL not configured');
-  }
-
-  // Create new client if URL changed
-  if (cachedTwentyApiUrl !== settings.twentyApiUrl || !apiClient) {
-    apiClient = new TwentyApiClient(settings.twentyApiUrl);
-    cachedTwentyApiUrl = settings.twentyApiUrl;
-  }
-
   const token = await getAuthToken(settings);
-  if (!token) {
-    throw new Error(
-      'No authentication token found. Please log in to local Twenty CRM.',
-    );
-  }
 
-  apiClient.setToken(token);
-  return apiClient;
+  if (!token) throw new Error(TWENTY_SIGN_IN_REQUIRED);
+
+  const client = new TwentyApiClient(
+    settings.twentyApiUrl,
+    async (rejectedToken) => {
+      const renewedToken = await getAuthToken(settings, rejectedToken);
+
+      if (!renewedToken) throw new Error(TWENTY_SIGN_IN_REQUIRED);
+
+      return renewedToken;
+    },
+  );
+  client.setToken(token);
+  return client;
 }
 
 function isValidTwentyTokenPair(payload: unknown): payload is TwentyTokenPair {
@@ -490,123 +282,20 @@ function haveSameOrigin(firstUrl: string, secondUrl: string): boolean {
   }
 }
 
-async function getTokenFromStorage(): Promise<string | null> {
-  const tokenPair = await getTwentyTokenPair();
-
-  if (!isValidTwentyTokenPair(tokenPair)) {
-    return null;
-  }
-
-  return tokenPair.accessOrWorkspaceAgnosticToken.token;
-}
-
-function isTokenExpired(expiresAt: string | undefined): boolean {
-  if (!expiresAt) {
-    return false;
-  }
-
-  const expiresAtTime = new Date(expiresAt).getTime();
-
-  if (Number.isNaN(expiresAtTime)) {
-    return false;
-  }
-
-  return expiresAtTime <= Date.now() + 30_000;
-}
-
-async function renewTokenPair(
-  settings: ExtensionSettings,
-): Promise<string | null> {
-  return withTwentySessionOperation(async () => {
-    const currentSettings = await getSettings();
-    if (
-      settings.twentyApiUrl !== currentSettings.twentyApiUrl ||
-      settings.twentyAppUrl !== currentSettings.twentyAppUrl
-    )
-      return null;
-
-    let tokenPair = await getTwentyTokenPair();
-
-    if (!isValidTwentyTokenPair(tokenPair)) {
-      return null;
-    }
-
-    if (tokenPair.sessionSource !== 'extension') {
-      try {
-        await syncTwentyBrowserSession(settings, tokenPair);
-        tokenPair = await getTwentyTokenPair();
-      } catch {
-        // Never rotate a legacy copy of the browser's refresh token.
-        return tokenPair?.accessOrWorkspaceAgnosticToken.token ?? null;
-      }
-    }
-
-    if (!tokenPair || tokenPair.sessionSource !== 'extension') return null;
-
-    if (!isTokenExpired(tokenPair.accessOrWorkspaceAgnosticToken.expiresAt)) {
-      return tokenPair.accessOrWorkspaceAgnosticToken.token;
-    }
-
-    try {
-      const response = await fetch(`${settings.twentyApiUrl}/metadata`, {
-        method: 'POST',
-        signal: AbortSignal.timeout(15_000),
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          query: RENEW_TOKEN_MUTATION,
-          variables: {
-            appToken: tokenPair.refreshToken.token,
-          },
-        }),
-      });
-
-      if (!response.ok) {
-        const responseText = await response.text();
-
-        console.error(
-          '[Twenty] Token renewal HTTP error:',
-          response.status,
-          responseText,
-        );
-        return tokenPair.accessOrWorkspaceAgnosticToken.token;
-      }
-
-      const result = (await response.json()) as {
-        data?: RenewTokenResult;
-        errors?: Array<{ message: string }>;
-      };
-
-      if (result.errors?.length) {
-        console.error(
-          '[Twenty] Token renewal GraphQL error:',
-          result.errors.map((error) => error.message).join('; '),
-        );
-        return tokenPair.accessOrWorkspaceAgnosticToken.token;
-      }
-
-      const renewedTokenPair = result.data?.renewToken?.tokens;
-
-      if (!isValidTwentyTokenPair(renewedTokenPair)) {
-        console.error(
-          '[Twenty] Token renewal did not return a valid token pair',
-        );
-        return tokenPair.accessOrWorkspaceAgnosticToken.token;
-      }
-
-      await saveTwentyTokenPair({
-        ...renewedTokenPair,
-        sessionSource: 'extension',
-      });
-      console.log('[Twenty] Local token renewed');
-
-      return renewedTokenPair.accessOrWorkspaceAgnosticToken.token;
-    } catch (error) {
-      console.error('[Twenty] Token renewal failed:', error);
-      return tokenPair.accessOrWorkspaceAgnosticToken.token;
-    }
+async function readTwentyTabSession(
+  tabId: number,
+  origin: string,
+): Promise<TwentyTokenPair | null> {
+  const results = await browser.scripting.executeScript({
+    target: { tabId },
+    func: (expectedOrigin) =>
+      location.origin === expectedOrigin
+        ? localStorage.getItem('tokenPairState')
+        : null,
+    args: [origin],
   });
+
+  return parseTokenPair(results[0]?.result ?? null);
 }
 
 async function syncTokenPairFromActiveTab(): Promise<boolean> {
@@ -632,12 +321,10 @@ async function syncTokenPairFromActiveTab(): Promise<boolean> {
   }
 
   try {
-    const injectionResults = await browser.scripting.executeScript({
-      target: { tabId: activeTab.id },
-      func: () => localStorage.getItem('tokenPairState'),
-    });
-    const rawTokenPair = injectionResults[0]?.result ?? null;
-    const tokenPair = parseTokenPair(rawTokenPair);
+    const tokenPair = await readTwentyTabSession(
+      activeTab.id,
+      new URL(settings.twentyAppUrl).origin,
+    );
 
     await withTwentySessionOperation(async () => {
       const currentSettings = await getSettings();
@@ -659,65 +346,61 @@ async function syncTokenPairFromActiveTab(): Promise<boolean> {
   }
 }
 
-// Get auth token from synced local storage first, then legacy Twenty cookie.
+async function readTwentyBrowserSession(
+  settings: ExtensionSettings,
+): Promise<TwentyTokenPair | null> {
+  const appUrl = new URL(settings.twentyAppUrl);
+  // Match patterns omit the port. Recheck the exact origin before and during injection.
+  const tabs = await browser.tabs.query({
+    url: `${appUrl.protocol}//${appUrl.hostname}/*`,
+  });
+
+  for (const tab of tabs) {
+    if (
+      tab.id === undefined ||
+      tab.discarded ||
+      !tab.url ||
+      !haveSameOrigin(tab.url, appUrl.origin)
+    )
+      continue;
+
+    const tokens = await readTwentyTabSession(tab.id, appUrl.origin).catch(
+      () => null,
+    );
+    if (tokens) return tokens;
+  }
+
+  const cookie = await browser.cookies
+    .get({ url: appUrl.origin, name: 'tokenPair' })
+    .catch(() => null);
+  return cookie ? parseTokenPair(decodeURIComponent(cookie.value)) : null;
+}
+
 async function getAuthToken(
   settings: ExtensionSettings,
+  rejectedToken?: string,
 ): Promise<string | null> {
-  const storedToken =
-    (await renewTokenPair(settings)) ?? (await getTokenFromStorage());
-
-  if (storedToken) {
-    return storedToken;
-  }
-
-  try {
-    const cookieUrl = settings.twentyAppUrl || settings.twentyApiUrl;
-    // Try to get the tokenPair cookie from Twenty domain
-    const cookie = await browser.cookies.get({
-      url: cookieUrl,
-      name: 'tokenPair',
-    });
-
-    console.log(
-      'Cookie lookup for',
-      cookieUrl,
-      ':',
-      cookie ? 'found' : 'not found',
-    );
-
-    if (cookie?.value) {
-      const decodedValue = decodeURIComponent(cookie.value);
-      return extractTokenFromCookie(decodedValue);
-    }
-
-    // Also try without www
-    const altUrl = cookieUrl.includes('://www.')
-      ? cookieUrl.replace('://www.', '://')
-      : cookieUrl.replace('://', '://www.');
-
-    const altCookie = await browser.cookies.get({
-      url: altUrl,
-      name: 'tokenPair',
-    });
-
-    console.log(
-      'Alt cookie lookup for',
-      altUrl,
-      ':',
-      altCookie ? 'found' : 'not found',
-    );
-
-    if (altCookie?.value) {
-      const decodedValue = decodeURIComponent(altCookie.value);
-      return extractTokenFromCookie(decodedValue);
-    }
-
-    return null;
-  } catch (error) {
-    console.error('Error getting auth token:', error);
-    return null;
-  }
+  return getTwentyAccessToken(
+    settings,
+    () => readTwentyBrowserSession(settings),
+    rejectedToken,
+  );
 }
+
+async function getLinkedInSyncStore() {
+  const client = await getApiClient();
+  const result = await client.metadataRequest<{
+    currentUser: { id: string } | null;
+  }>('query LinkedInSyncSession { currentUser { id } }');
+
+  if (!result.data?.currentUser?.id) throw new Error(TWENTY_SIGN_IN_REQUIRED);
+  return createLinkedInHarvestStore(client);
+}
+
+const linkedInSync = createLinkedInBackgroundSync(
+  getLinkedInSyncStore,
+  readReceivedInvitations,
+);
 
 // Check if a person already exists (by LinkedIn URL or name)
 async function checkPersonDuplicate(
@@ -986,7 +669,7 @@ async function handleMessage(
       case 'GET_SETTINGS': {
         const settings = await getSettings();
         const hasToken = settings.twentyApiUrl
-          ? !!(await getAuthToken(settings))
+          ? !!(await getAuthToken(settings).catch(() => null))
           : false;
         return {
           success: true,
@@ -998,11 +681,6 @@ async function handleMessage(
         const newSettings = message.payload as Partial<ExtensionSettings>;
         console.log('Saving settings:', newSettings);
         await withTwentySessionOperation(() => saveSettings(newSettings));
-        // Clear cached client when URL changes
-        if (newSettings.twentyApiUrl) {
-          apiClient = null;
-          cachedTwentyApiUrl = null;
-        }
         console.log('Settings saved successfully');
         return { success: true };
       }
@@ -1324,12 +1002,6 @@ async function handleMessage(
         });
       }
 
-      case 'GET_LINKEDIN_CSRF_TOKEN': {
-        const csrfToken = await getLinkedinCsrfToken();
-
-        return { success: true, data: { csrfToken } };
-      }
-
       case 'GET_LINKEDIN_SYNC_TOTALS': {
         const requestedOwnerLinkedinId = (
           message.payload as { ownerLinkedinId?: string } | undefined
@@ -1362,6 +1034,21 @@ async function handleMessage(
       case 'GET_LINKEDIN_SAFETY_SNAPSHOT':
         return { success: true, data: await getLinkedInSafetySnapshot() };
 
+      case 'RECORD_LINKEDIN_OUTBOUND_ATTEMPT': {
+        const { actionId, attemptedAt } = message.payload as {
+          actionId: string;
+          attemptedAt: number;
+        };
+        await recordLinkedInOutboundAttempt(actionId, attemptedAt);
+        return { success: true };
+      }
+
+      case 'TRIP_LINKEDIN_SAFETY_CIRCUIT': {
+        const { reason } = message.payload as { reason: string };
+        await tripLinkedInSafetyCircuit(reason);
+        return { success: true };
+      }
+
       case 'GET_LINKEDIN_SAFETY_SETTINGS':
         return { success: true, data: await getLinkedInSafetySettings() };
 
@@ -1376,100 +1063,21 @@ async function handleMessage(
           ),
         };
 
-      case 'REQUEST_LINKEDIN_SYNC': {
-        const safetySnapshot = await getLinkedInSafetySnapshot();
+      case 'REQUEST_LINKEDIN_SYNC':
+        void linkedInSync.run(true);
+        return { success: true };
 
-        if (
-          safetySnapshot.cooldownUntil !== null &&
-          safetySnapshot.cooldownUntil > Date.now()
-        ) {
-          return {
-            success: false,
-            error: `${safetySnapshot.cooldownReason ?? 'LinkedIn safety cooldown is active.'} Sync is paused until ${new Date(safetySnapshot.cooldownUntil).toLocaleString()}.`,
-          };
-        }
-
-        const dispatched = await requestLinkedinSyncInExistingTab(true);
-
-        return {
-          success: dispatched,
-          data: { dispatched },
-          error: dispatched
-            ? undefined
-            : 'Open LinkedIn in a tab before starting a sync.',
-        };
-      }
-
-      case 'LINKEDIN_HARVEST_STORE': {
-        const client = await getApiClient();
-        const result = await handleLinkedInHarvestStoreRequest(
-          client,
-          message.payload as LinkedInHarvestStoreRequest,
-        );
-
-        return { success: true, data: result };
-      }
-
-      case 'SYNC_LOCK_ACQUIRE': {
-        const tabId = sender?.tab?.id;
-        const { key, progress } = message.payload as {
-          key: string;
-          progress: LinkedInSyncProgress;
-        };
-
-        if (typeof tabId !== 'number') {
-          return {
-            success: false,
-            error: 'The LinkedIn sync tab could not be identified',
-          };
-        }
-
+      case 'GET_LINKEDIN_SYNC_STATUS': {
+        const identity = await getStoredLinkedInIdentity();
+        const state = identity
+          ? await getLinkedInSyncState(identity.linkedinId)
+          : null;
         return {
           success: true,
-          data: await acquireLinkedinSyncLock(key, tabId, progress),
-        };
-      }
-
-      case 'SYNC_LOCK_HEARTBEAT': {
-        const tabId = sender?.tab?.id;
-        const { key, progress } = message.payload as {
-          key: string;
-          progress: LinkedInSyncProgress;
-        };
-
-        if (typeof tabId !== 'number') {
-          return {
-            success: false,
-            error: 'The LinkedIn sync tab could not be identified',
-          };
-        }
-
-        const lock = await heartbeatLinkedinSyncLock(key, tabId, progress);
-
-        return {
-          success: lock !== null,
-          data: { lock },
-          error: lock ? undefined : 'This tab no longer owns the sync lock',
-        };
-      }
-
-      case 'SYNC_LOCK_RELEASE': {
-        const tabId = sender?.tab?.id;
-        const { key } = message.payload as { key: string };
-
-        return {
-          success:
-            typeof tabId === 'number' &&
-            (await releaseLinkedinSyncLock(key, tabId)),
-        };
-      }
-
-      case 'SYNC_LOCK_STATUS': {
-        const { key } = message.payload as { key: string };
-
-        return {
-          success: true,
-          data: { lock: await getLiveLinkedinSyncLock(key) },
+          data: {
+            ...(await linkedInSync.getStatus()),
+            lastRunAt: state?.lastRunAt ?? null,
+          },
         };
       }
 
@@ -1691,8 +1299,10 @@ export default defineBackground(() => {
 
   void Promise.all([
     ensurePeriodicAlarm(LINKEDIN_RUNNER_ALARM, 1),
-    ensurePeriodicAlarm(LINKEDIN_SYNC_ALARM, 30),
+    ensurePeriodicAlarm(LINKEDIN_SYNC_ALARM, LINKEDIN_SYNC_INTERVAL_MINUTES),
   ]);
+  browser.runtime.onStartup.addListener(() => void linkedInSync.run());
+  browser.runtime.onInstalled.addListener(() => void linkedInSync.run());
   browser.tabs.onRemoved.addListener((tabId) => {
     void handleLinkedinRunnerTabRemoved(tabId).catch((error) =>
       console.error('[Twenty] Runner tab cleanup failed:', error),
@@ -1700,12 +1310,7 @@ export default defineBackground(() => {
   });
   browser.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === LINKEDIN_SYNC_ALARM) {
-      void requestLinkedinSyncInExistingTab(false).catch((error) =>
-        console.error(
-          '[Twenty] Automatic LinkedIn sync dispatch failed:',
-          error,
-        ),
-      );
+      void linkedInSync.run();
       return;
     }
 

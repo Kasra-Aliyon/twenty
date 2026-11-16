@@ -1,4 +1,8 @@
-import type { LinkedInIdentity, LinkedInSyncState } from '../types';
+import type {
+  LinkedInIdentity,
+  LinkedInSyncState,
+  LinkedInSyncStatus,
+} from '../types';
 
 const LINKEDIN_SYNC_STATE_KEY_PREFIX = 'twentyLinkedinSyncState:';
 export const LINKEDIN_IDENTITY_CACHE_KEY = 'twentyLinkedinIdentityCache';
@@ -6,6 +10,18 @@ export const LINKEDIN_IDENTITY_CACHE_KEY = 'twentyLinkedinIdentityCache';
 export const LINKEDIN_CONNECTION_SYNC_REVISION = 1;
 export const LINKEDIN_MESSAGE_SYNC_REVISION = 4;
 export const LINKEDIN_INVITATION_SYNC_REVISION = 2;
+// LinkedIn reads are capped at 200 per rolling day. Each message check costs one
+// read, so the cadences below leave roughly a quarter of that budget for
+// downloading the threads that actually changed.
+export const LINKEDIN_SYNC_INTERVAL_MINUTES = 15;
+export const LINKEDIN_CONNECTION_SYNC_INTERVAL_MINUTES = 60;
+export const LINKEDIN_MAINTENANCE_INTERVAL_MINUTES = 120;
+export const LINKEDIN_IDENTITY_REVALIDATION_MILLISECONDS = 24 * 60 * 60_000;
+
+export type CachedLinkedInIdentity = LinkedInIdentity & {
+  verifiedAt?: number;
+  sessionFingerprint?: string | null;
+};
 
 const defaultLinkedInSyncState = (): LinkedInSyncState => ({
   safeSyncedThroughLastActivityAt: null,
@@ -18,6 +34,9 @@ const defaultLinkedInSyncState = (): LinkedInSyncState => ({
   lastConnectionSyncAt: null,
   lastMessageSyncAt: null,
   lastAttemptAt: null,
+  lastInvitationAttemptAt: null,
+  lastMessageBackfillAttemptAt: null,
+  messageRepairCursor: null,
   lastRunAt: null,
   syncStartedAt: null,
   lastError: null,
@@ -26,35 +45,29 @@ const defaultLinkedInSyncState = (): LinkedInSyncState => ({
 const getStateKey = (linkedinId: string) =>
   `${LINKEDIN_SYNC_STATE_KEY_PREFIX}${linkedinId}`;
 
-export const getCachedLinkedInIdentity =
-  async (): Promise<LinkedInIdentity | null> => {
-    const identity = await getStoredLinkedInIdentity();
-    const pageMemberId = document
-      .querySelector<HTMLMetaElement>('meta[name="__init"]')
-      ?.content.match(/urn:li:member:(\d+)/)?.[1];
-
-    if (!identity || (pageMemberId && identity.linkedinId !== pageMemberId)) {
-      return null;
-    }
-
-    return identity;
-  };
+export const emptyLinkedInSyncStatus = (): LinkedInSyncStatus => ({
+  running: false,
+  isError: false,
+  message: 'Waiting for the next automatic sync.',
+  lastRunAt: null,
+  progress: { connections: 0, invitations: 0, threads: 0, messages: 0 },
+});
 
 export const getStoredLinkedInIdentity =
-  async (): Promise<LinkedInIdentity | null> => {
+  async (): Promise<CachedLinkedInIdentity | null> => {
     const storedValue = await browser.storage.local.get(
       LINKEDIN_IDENTITY_CACHE_KEY,
     );
 
     return (
       (storedValue[LINKEDIN_IDENTITY_CACHE_KEY] as
-        | LinkedInIdentity
+        | CachedLinkedInIdentity
         | undefined) ?? null
     );
   };
 
 export const setCachedLinkedInIdentity = async (
-  identity: LinkedInIdentity,
+  identity: CachedLinkedInIdentity,
 ): Promise<void> => {
   await browser.storage.local.set({ [LINKEDIN_IDENTITY_CACHE_KEY]: identity });
 };

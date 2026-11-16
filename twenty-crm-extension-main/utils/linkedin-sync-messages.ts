@@ -8,24 +8,21 @@ import type {
   LinkedInMessageReadConfirmation,
   LinkedInSyncProgress,
 } from '../types';
-import {
-  confirmLinkedInMessageReads,
-  getLinkedInMessageSyncCandidates,
-  getOldestLinkedInThread,
-  updateLinkedInThreadSummary,
-  writeLinkedInMessages,
-  writeLinkedInThreadParticipants,
-  writeLinkedInThreads,
+import type {
+  LinkedInHarvestStore,
+  LinkedInMessageSyncCandidate,
 } from './linkedin-harvest-store';
 import {
   getLinkedInSyncState,
   LINKEDIN_MESSAGE_SYNC_REVISION,
   updateLinkedInSyncState,
 } from './linkedin-sync-state';
+import { getLinkedInSafetySnapshot } from './linkedin-safety';
 import { linkedInVoyagerClient, randomDelay } from './linkedin-voyager-client';
 
 const THREAD_PAGE_SIZE = 25;
 const MESSAGE_PAGE_SIZE = 100;
+const MESSAGE_BACKFILL_READ_BUDGET = 12;
 
 const asRecord = (value: unknown): Record<string, unknown> | null =>
   value !== null && typeof value === 'object'
@@ -310,6 +307,7 @@ const mergeReadConfirmation = (
 };
 
 const writeThreadPage = async (
+  store: LinkedInHarvestStore,
   values: unknown[],
   identity: LinkedInIdentity,
   progress: LinkedInSyncProgress,
@@ -329,7 +327,10 @@ const writeThreadPage = async (
 
   if (threads.length > 0) {
     progress.threads += threads.length;
-    const result = await writeLinkedInThreads(identity.linkedinId, threads);
+    const result = await store.writeLinkedInThreads(
+      identity.linkedinId,
+      threads,
+    );
     const twentyThreadIdByExternalId = new Map(
       result.writtenThreads.map((thread) => [thread.externalId, thread.id]),
     );
@@ -353,7 +354,10 @@ const writeThreadPage = async (
       },
     );
 
-    await writeLinkedInThreadParticipants(identity.linkedinId, participants);
+    await store.writeLinkedInThreadParticipants(
+      identity.linkedinId,
+      participants,
+    );
 
     for (const value of values) {
       for (const receipt of toReadReceipts(value, identity)) {
@@ -382,6 +386,7 @@ type IncrementalResult = {
 };
 
 const syncIncrementalThreads = async (
+  store: LinkedInHarvestStore,
   identity: LinkedInIdentity,
   since: number,
   progress: LinkedInSyncProgress,
@@ -408,6 +413,14 @@ const syncIncrementalThreads = async (
     );
 
     if (elements.length === 0) {
+      // A mailbox that already has synced threads cannot have an empty first
+      // page; accepting it froze the checkpoint while reporting success.
+      if (since > 0 && runHighWater === null) {
+        throw new Error(
+          'LinkedIn returned an empty inbox, so new messages could not be checked. Sync will retry automatically.',
+        );
+      }
+
       exhausted = true;
       crossedBoundary = true;
       break;
@@ -432,19 +445,26 @@ const syncIncrementalThreads = async (
       }
     }
 
-    await writeThreadPage(pageThreads, identity, progress, readConfirmations);
+    await writeThreadPage(
+      store,
+      pageThreads,
+      identity,
+      progress,
+      readConfirmations,
+    );
+    await syncMissingMessages(store, identity, progress, pageThreads);
+
+    if (!page.hasMore) {
+      exhausted = pageThreads.length === elements.length;
+      crossedBoundary = true;
+      break;
+    }
 
     if (since === 0) {
       shouldStop = true;
     }
 
     if (shouldStop) {
-      break;
-    }
-
-    if (!page.hasMore) {
-      exhausted = true;
-      crossedBoundary = true;
       break;
     }
 
@@ -480,11 +500,13 @@ const syncIncrementalThreads = async (
 };
 
 const syncHistoricalThreads = async (
+  store: LinkedInHarvestStore,
   identity: LinkedInIdentity,
   progress: LinkedInSyncProgress,
   readConfirmations: ReadConfirmationMap,
+  shouldContinue: () => Promise<boolean>,
 ): Promise<boolean> => {
-  const oldestThread = await getOldestLinkedInThread(identity.linkedinId);
+  const oldestThread = await store.getOldestLinkedInThread(identity.linkedinId);
 
   if (!oldestThread) {
     return false;
@@ -496,7 +518,8 @@ const syncHistoricalThreads = async (
     updatedBefore: oldestThreadTime,
   };
 
-  for (;;) {
+  for (let pageIndex = 0; pageIndex < 2; pageIndex += 1) {
+    if (!(await shouldContinue())) return false;
     const page = await linkedInVoyagerClient.fetchMessageThreadsPage(
       identity.linkedinUrn,
       pagination,
@@ -512,11 +535,20 @@ const syncHistoricalThreads = async (
       return true;
     }
 
+    const threads = elements.filter(isSyncableThread);
     await writeThreadPage(
-      elements.filter(isSyncableThread),
+      store,
+      threads,
       identity,
       progress,
       readConfirmations,
+    );
+    await syncMissingMessages(
+      store,
+      identity,
+      progress,
+      threads,
+      shouldContinue,
     );
 
     if (!page.hasMore) {
@@ -544,8 +576,10 @@ const syncHistoricalThreads = async (
       pagination = { ...pagination, updatedBefore: nextUpdatedBefore };
     }
 
-    await randomDelay(500, 5_000);
+    if (pageIndex === 0) await randomDelay(500, 5_000);
   }
+
+  return false;
 };
 
 const toMessage = (
@@ -577,10 +611,9 @@ const toMessage = (
 };
 
 const syncMessagesForCandidate = async (
+  store: LinkedInHarvestStore,
   identity: LinkedInIdentity,
-  candidate: Awaited<
-    ReturnType<typeof getLinkedInMessageSyncCandidates>
-  >[number],
+  candidate: LinkedInMessageSyncCandidate,
   progress: LinkedInSyncProgress,
 ): Promise<void> => {
   const conversationUrn =
@@ -615,7 +648,7 @@ const syncMessagesForCandidate = async (
 
     if (messages.length > 0) {
       progress.messages += messages.length;
-      await writeLinkedInMessages(identity.linkedinId, messages);
+      await store.writeLinkedInMessages(identity.linkedinId, messages);
     }
 
     const nextAnchor = syncingAfter
@@ -634,30 +667,41 @@ const syncMessagesForCandidate = async (
     await randomDelay(500, 5_000);
   }
 
-  await updateLinkedInThreadSummary(candidate.twentyThreadId);
+  await store.updateLinkedInThreadSummary(candidate.twentyThreadId);
 };
 
 const syncMissingMessages = async (
+  store: LinkedInHarvestStore,
   identity: LinkedInIdentity,
   progress: LinkedInSyncProgress,
+  threads: unknown[],
+  shouldContinue?: () => Promise<boolean>,
 ): Promise<void> => {
-  const candidates = await getLinkedInMessageSyncCandidates(
+  const threadIds = threads
+    .map(getThreadId)
+    .filter((id): id is string => id !== null);
+  if (threadIds.length === 0) return;
+
+  const candidates = await store.getLinkedInMessageSyncCandidates(
     identity.linkedinId,
+    threadIds,
   );
 
   for (const candidate of candidates) {
-    await syncMessagesForCandidate(identity, candidate, progress);
+    if (shouldContinue && !(await shouldContinue())) return;
+    await syncMessagesForCandidate(store, identity, candidate, progress);
   }
 };
 
-export const syncLinkedInMessages = async (
+export const syncRecentLinkedInMessages = async (
+  store: LinkedInHarvestStore,
   identity: LinkedInIdentity,
   progress: LinkedInSyncProgress,
 ): Promise<void> => {
-  let state = await getLinkedInSyncState(identity.linkedinId);
+  const state = await getLinkedInSyncState(identity.linkedinId);
 
   if (state.messageSyncRevision !== LINKEDIN_MESSAGE_SYNC_REVISION) {
-    state = await updateLinkedInSyncState(identity.linkedinId, {
+    await updateLinkedInSyncState(identity.linkedinId, {
       historicalBackfillComplete: false,
       messageSyncRevision: LINKEDIN_MESSAGE_SYNC_REVISION,
     });
@@ -666,6 +710,7 @@ export const syncLinkedInMessages = async (
   const since = state.safeSyncedThroughLastActivityAt ?? 0;
   const readConfirmations: ReadConfirmationMap = new Map();
   const incrementalResult = await syncIncrementalThreads(
+    store,
     identity,
     since,
     progress,
@@ -682,29 +727,69 @@ export const syncLinkedInMessages = async (
     });
   }
 
-  if (incrementalResult.exhausted) {
+  if (incrementalResult.exhausted && since === 0) {
     await updateLinkedInSyncState(identity.linkedinId, {
       historicalBackfillComplete: true,
     });
-  } else if (!state.historicalBackfillComplete) {
-    const historicalBackfillComplete = await syncHistoricalThreads(
-      identity,
-      progress,
-      readConfirmations,
-    );
-
-    if (historicalBackfillComplete) {
-      await updateLinkedInSyncState(identity.linkedinId, {
-        historicalBackfillComplete: true,
-      });
-    }
   }
 
-  await syncMissingMessages(identity, progress);
+  await storeReadConfirmations(store, identity, readConfirmations);
+};
 
+export const backfillLinkedInMessages = async (
+  store: LinkedInHarvestStore,
+  identity: LinkedInIdentity,
+  progress: LinkedInSyncProgress,
+): Promise<void> => {
+  const state = await getLinkedInSyncState(identity.linkedinId);
+  const startedAt = Date.now();
+  const initialReads = (await getLinkedInSafetySnapshot()).readRequestsToday;
+  const shouldContinue = async () =>
+    Date.now() - startedAt < 120_000 &&
+    (await getLinkedInSafetySnapshot()).readRequestsToday - initialReads <
+      MESSAGE_BACKFILL_READ_BUDGET;
+
+  // Recover partial writes in small pages so catch-up leaves room for fresh activity.
+  const { candidates, nextCursor } = await store.getLinkedInMessageRepairPage(
+    identity.linkedinId,
+    state.messageRepairCursor,
+  );
+  for (const candidate of candidates) {
+    if (!(await shouldContinue())) return;
+    await syncMessagesForCandidate(store, identity, candidate, progress);
+  }
+  await updateLinkedInSyncState(identity.linkedinId, {
+    messageRepairCursor: nextCursor,
+  });
+
+  if (state.historicalBackfillComplete) return;
+
+  const readConfirmations: ReadConfirmationMap = new Map();
+  const complete = await syncHistoricalThreads(
+    store,
+    identity,
+    progress,
+    readConfirmations,
+    shouldContinue,
+  );
+
+  if (complete) {
+    await updateLinkedInSyncState(identity.linkedinId, {
+      historicalBackfillComplete: true,
+    });
+  }
+
+  await storeReadConfirmations(store, identity, readConfirmations);
+};
+
+const storeReadConfirmations = async (
+  store: LinkedInHarvestStore,
+  identity: LinkedInIdentity,
+  readConfirmations: ReadConfirmationMap,
+): Promise<void> => {
   if (readConfirmations.size > 0) {
     try {
-      await confirmLinkedInMessageReads(identity.linkedinId, [
+      await store.confirmLinkedInMessageReads(identity.linkedinId, [
         ...readConfirmations.values(),
       ]);
     } catch (error) {

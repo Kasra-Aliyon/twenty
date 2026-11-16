@@ -60,8 +60,10 @@ Same process - visit any LinkedIn company page (`linkedin.com/company/name`)
 
 ### Syncing LinkedIn data
 
-- Open LinkedIn and use **Sync now** in the Twenty runner or extension popup.
-- Sync every 30 mins while a LinkedIn tab is open.
+- Use **Sync now** in the extension popup or the Twenty runner.
+- The extension checks for new messages every 15 minutes and connections every hour while
+  Chrome is running and the computer is awake. LinkedIn and Twenty tabs can be
+  closed after signing in. Invitations and historical catch-up run after recent updates.
 - Stored totals are scoped to the signed-in LinkedIn account. During a sync,
   the runner separately shows how many records were processed in that run.
 - Messages use activity and per-thread message checkpoints. Connections use a
