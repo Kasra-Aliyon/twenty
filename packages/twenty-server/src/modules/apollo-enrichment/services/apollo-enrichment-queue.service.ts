@@ -44,7 +44,10 @@ export class ApolloEnrichmentQueueService {
         trigger,
       },
       {
-        id: this.buildJobId({ workspaceId, personId }),
+        id:
+          trigger === 'manual-backfill'
+            ? `${APOLLO_ENRICHMENT_QUEUE_JOB_ID_PREFIX}-manual-${workspaceId}-${personId}`
+            : this.buildJobId({ workspaceId, personId }),
         retryLimit: APOLLO_ENRICHMENT_JOB_RETRY_LIMIT,
         backoff: {
           type: 'exponential',

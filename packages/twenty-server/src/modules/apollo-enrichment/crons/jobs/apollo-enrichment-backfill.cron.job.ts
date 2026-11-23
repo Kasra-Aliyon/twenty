@@ -32,7 +32,10 @@ export class ApolloEnrichmentBackfillCronJob {
       return;
     }
 
-    if (!this.twentyConfigService.get('APOLLO_ENRICHMENT_BACKFILL_ENABLED')) {
+    if (
+      !this.twentyConfigService.get('APOLLO_AUTOMATIC_ENRICHMENT_ENABLED') ||
+      !this.twentyConfigService.get('APOLLO_ENRICHMENT_BACKFILL_ENABLED')
+    ) {
       return;
     }
 

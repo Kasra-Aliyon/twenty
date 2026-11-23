@@ -4,6 +4,7 @@ import {
 } from 'twenty-shared/database-events';
 import { FieldActorSource } from 'twenty-shared/types';
 
+import { type TwentyConfigService } from 'src/engine/core-modules/twenty-config/twenty-config.service';
 import { ApolloEnrichmentPersonListener } from 'src/modules/apollo-enrichment/listeners/apollo-enrichment-person.listener';
 import { ApolloEnrichmentMapperService } from 'src/modules/apollo-enrichment/services/apollo-enrichment-mapper.service';
 import { type ApolloEnrichmentQueueService } from 'src/modules/apollo-enrichment/services/apollo-enrichment-queue.service';
@@ -36,16 +37,21 @@ describe('ApolloEnrichmentPersonListener', () => {
       ...overrides,
     }) as PersonWorkspaceEntity;
 
+  const get = jest.fn();
   const enqueuePerson = jest.fn();
   const listener = new ApolloEnrichmentPersonListener(
     new ApolloEnrichmentMapperService(),
     {
       enqueuePerson,
     } as unknown as ApolloEnrichmentQueueService,
+    { get } as unknown as TwentyConfigService,
   );
 
   beforeEach(() => {
     enqueuePerson.mockReset();
+    get.mockImplementation(
+      (key) => key === 'APOLLO_AUTOMATIC_ENRICHMENT_ENABLED',
+    );
   });
 
   const buildEventBatch = <T>(events: T[]): WorkspaceEventBatch<T> => ({
@@ -53,6 +59,36 @@ describe('ApolloEnrichmentPersonListener', () => {
     workspaceId: 'workspace-id',
     objectMetadata: {} as FlatObjectMetadata,
     events,
+  });
+
+  it('skips created and updated people when only requested enrichment is enabled', async () => {
+    get.mockReturnValue(false);
+    const person = buildPerson({
+      linkedinLink: {
+        primaryLinkLabel: '',
+        primaryLinkUrl: 'https://www.linkedin.com/in/jane',
+        secondaryLinks: null,
+      },
+    });
+
+    await listener.handleCreatedEvent(
+      buildEventBatch([
+        {
+          recordId: person.id,
+          properties: { after: person },
+        } as ObjectRecordCreateEvent<PersonWorkspaceEntity>,
+      ]),
+    );
+    await listener.handleUpdatedEvent(
+      buildEventBatch([
+        {
+          recordId: person.id,
+          properties: { before: buildPerson(), after: person },
+        } as ObjectRecordUpdateEvent<PersonWorkspaceEntity>,
+      ]),
+    );
+
+    expect(enqueuePerson).not.toHaveBeenCalled();
   });
 
   it('enqueues created people that need enrichment', async () => {

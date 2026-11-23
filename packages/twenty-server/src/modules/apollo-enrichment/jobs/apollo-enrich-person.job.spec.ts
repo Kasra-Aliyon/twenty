@@ -1,20 +1,42 @@
+import { type TwentyConfigService } from 'src/engine/core-modules/twenty-config/twenty-config.service';
 import { ApolloEnrichPersonJob } from 'src/modules/apollo-enrichment/jobs/apollo-enrich-person.job';
 import { type ApolloEnrichmentService } from 'src/modules/apollo-enrichment/services/apollo-enrichment.service';
 import { ApolloEnrichmentError } from 'src/modules/apollo-enrichment/types/apollo-enrichment-error';
 
 describe('ApolloEnrichPersonJob', () => {
   const enrichPerson = jest.fn();
-  const job = new ApolloEnrichPersonJob({
-    enrichPerson,
-  } as unknown as ApolloEnrichmentService);
+  const get = jest.fn();
+  const job = new ApolloEnrichPersonJob(
+    {
+      enrichPerson,
+    } as unknown as ApolloEnrichmentService,
+    { get } as unknown as TwentyConfigService,
+  );
   const jobData = {
     workspaceId: 'workspace-id',
     personId: 'person-id',
-    trigger: 'backfill' as const,
+    trigger: 'manual-backfill' as const,
   };
 
   beforeEach(() => {
     enrichPerson.mockReset();
+    get.mockReturnValue(false);
+  });
+
+  it.each(['person.created', 'person.updated', 'backfill'] as const)(
+    'skips previously queued %s jobs in request-only mode',
+    async (trigger) => {
+      await job.handle({ ...jobData, trigger });
+      expect(enrichPerson).not.toHaveBeenCalled();
+    },
+  );
+
+  it('processes a requested backfill in request-only mode', async () => {
+    await job.handle(jobData);
+    expect(enrichPerson).toHaveBeenCalledWith({
+      personId: jobData.personId,
+      workspaceId: jobData.workspaceId,
+    });
   });
 
   it('swallows non-retryable Apollo errors', async () => {

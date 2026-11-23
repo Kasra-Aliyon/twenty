@@ -1,4 +1,5 @@
 export type ApolloEnrichmentTrigger =
   | 'person.created'
   | 'person.updated'
-  | 'backfill';
+  | 'backfill'
+  | 'manual-backfill';
