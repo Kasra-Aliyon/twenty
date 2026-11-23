@@ -2184,6 +2184,9 @@ export const STANDARD_OBJECTS = {
       linkedinConnectionState: {
         universalIdentifier: '6321ab3f-7514-456d-8b10-bd6389818a3f',
       },
+      linkedinConnectedTo: {
+        universalIdentifier: 'c57f3bc0-0418-430c-8a39-18c33bff67ce',
+      },
       linkedinConnectedAt: {
         universalIdentifier: '13041c10-4e75-47f7-88f8-85ff1547e999',
       },
@@ -2294,6 +2297,9 @@ export const STANDARD_OBJECTS = {
           linkedinLink: {
             universalIdentifier: '20202020-af02-4a02-8a02-ae0a1ea11af8',
           },
+          linkedinConnectedTo: {
+            universalIdentifier: 'b649fbe3-0cf9-426f-bff8-23445bab86e3',
+          },
           linkedinConnectedAt: {
             universalIdentifier: '93584d13-9b4c-4f39-8877-c7968c46fab8',
           },
@@ -2342,6 +2348,9 @@ export const STANDARD_OBJECTS = {
           },
           linkedinLink: {
             universalIdentifier: '20202020-af02-4a02-8a02-ae0a1ea12205',
+          },
+          linkedinConnectedTo: {
+            universalIdentifier: '931dd81d-de4d-4a94-958a-35f5a70ae890',
           },
           linkedinConnectedAt: {
             universalIdentifier: '403cf9a2-6f7b-4822-b714-56bafe609733',

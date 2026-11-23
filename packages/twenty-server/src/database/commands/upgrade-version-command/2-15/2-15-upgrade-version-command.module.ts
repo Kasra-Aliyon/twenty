@@ -28,12 +28,14 @@ import { AddLinkedinNavigationItemCommand } from 'src/database/commands/upgrade-
 import { RecomputeSequenceCountersCommand } from 'src/database/commands/upgrade-version-command/2-15/2-15-workspace-command-1800000024000-recompute-sequence-counters.command';
 import { AddSequenceApolloWaitingStatesCommand } from 'src/database/commands/upgrade-version-command/2-15/2-15-workspace-command-1800000027000-add-sequence-apollo-waiting-states.command';
 import { ShowApolloLocationColumnsCommand } from 'src/database/commands/upgrade-version-command/2-15/2-15-workspace-command-1800000028000-show-apollo-location-columns.command';
+import { AddLinkedinConnectionOwnersCommand } from 'src/database/commands/upgrade-version-command/2-15/2-15-workspace-command-1800000029000-add-linkedin-connection-owners.command';
 import { ApplicationModule } from 'src/engine/core-modules/application/application.module';
 import { FeatureFlagModule } from 'src/engine/core-modules/feature-flag/feature-flag.module';
 import { UserWorkspaceEntity } from 'src/engine/core-modules/user-workspace/user-workspace.entity';
 import { ConnectedAccountEntity } from 'src/engine/metadata-modules/connected-account/entities/connected-account.entity';
 import { FieldMetadataModule } from 'src/engine/metadata-modules/field-metadata/field-metadata.module';
 import { FieldMetadataEntity } from 'src/engine/metadata-modules/field-metadata/field-metadata.entity';
+import { ViewFieldModule } from 'src/engine/metadata-modules/view-field/view-field.module';
 import { WorkspaceMetadataVersionModule } from 'src/engine/metadata-modules/workspace-metadata-version/workspace-metadata-version.module';
 import { WorkspaceCacheModule } from 'src/engine/workspace-cache/workspace-cache.module';
 import { WorkspaceMigrationModule } from 'src/engine/workspace-manager/workspace-migration/workspace-migration.module';
@@ -53,6 +55,7 @@ import { SequenceMetricsService } from 'src/modules/sequence/services/sequence-m
       FieldMetadataEntity,
       UserWorkspaceEntity,
     ]),
+    ViewFieldModule,
     WorkspaceMetadataVersionModule,
     LinkedinModule,
   ],
@@ -83,6 +86,7 @@ import { SequenceMetricsService } from 'src/modules/sequence/services/sequence-m
     RecomputeSequenceCountersCommand,
     AddSequenceApolloWaitingStatesCommand,
     ShowApolloLocationColumnsCommand,
+    AddLinkedinConnectionOwnersCommand,
     SequenceMetricsService,
   ],
 })

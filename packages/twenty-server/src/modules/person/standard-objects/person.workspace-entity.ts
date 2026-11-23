@@ -45,6 +45,7 @@ export class PersonWorkspaceEntity extends BaseWorkspaceEntity {
   emails: EmailsMetadata;
   linkedinLink: LinksMetadata | null;
   linkedinConnectionState: LinkedInConnectionState;
+  linkedinConnectedTo: string[] | null;
   linkedinConnectedAt: Date | null;
   jobTitle: string | null;
   /** @deprecated Use `phones` field instead */

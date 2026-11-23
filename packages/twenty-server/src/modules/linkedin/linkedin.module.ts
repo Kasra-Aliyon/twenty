@@ -1,7 +1,12 @@
 import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
 
+import { WorkspaceEntity } from 'src/engine/core-modules/workspace/workspace.entity';
 import { ObjectMetadataRepositoryModule } from 'src/engine/object-metadata-repository/object-metadata-repository.module';
 import { WorkspaceCacheModule } from 'src/engine/workspace-cache/workspace-cache.module';
+import { LinkedinConnectionOwnersCronCommand } from 'src/modules/linkedin/commands/linkedin-connection-owners.cron.command';
+import { LinkedinConnectionOwnersCronJob } from 'src/modules/linkedin/jobs/linkedin-connection-owners.cron.job';
+import { LinkedinConnectionOwnersService } from 'src/modules/linkedin/services/linkedin-connection-owners.service';
 import { LinkedinConnectionMatchJob } from 'src/modules/linkedin/jobs/linkedin-connection-match.job';
 import { LinkedinThreadParticipantMatchJob } from 'src/modules/linkedin/jobs/linkedin-thread-participant-match.job';
 import { LinkedinConnectionPersonListener } from 'src/modules/linkedin/listeners/linkedin-connection-person.listener';
@@ -33,12 +38,16 @@ import { TimelineActivityWorkspaceEntity } from 'src/modules/timeline/standard-o
 
 @Module({
   imports: [
+    TypeOrmModule.forFeature([WorkspaceEntity]),
     ObjectMetadataRepositoryModule.forFeature([
       TimelineActivityWorkspaceEntity,
     ]),
     WorkspaceCacheModule,
   ],
   providers: [
+    LinkedinConnectionOwnersCronCommand,
+    LinkedinConnectionOwnersCronJob,
+    LinkedinConnectionOwnersService,
     LinkedinConnectionMatcherService,
     LinkedinParticipantMatcherService,
     LinkedinConnectionMatchJob,
@@ -66,6 +75,8 @@ import { TimelineActivityWorkspaceEntity } from 'src/modules/timeline/standard-o
     LinkedinRecordMergeManyPreQueryHook,
   ],
   exports: [
+    LinkedinConnectionOwnersCronCommand,
+    LinkedinConnectionOwnersService,
     LinkedinConnectionMatcherService,
     LinkedinParticipantMatcherService,
   ],

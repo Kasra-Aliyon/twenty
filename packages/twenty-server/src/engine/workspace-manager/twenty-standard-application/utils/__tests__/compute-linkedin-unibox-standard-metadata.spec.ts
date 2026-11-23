@@ -232,6 +232,26 @@ describe('Unibox LinkedIn standard metadata build', () => {
     expect(personConnections?.isActive).toBe(false);
   });
 
+  it('shows the member names on both People views', () => {
+    const field = getField('person', 'linkedinConnectedTo');
+
+    expect(field).toMatchObject({
+      type: FieldMetadataType.ARRAY,
+      isUIEditable: false,
+    });
+    for (const view of ['allPeople', 'personRecordPageFields'] as const) {
+      const identifier =
+        STANDARD_OBJECTS.person.views[view].viewFields.linkedinConnectedTo
+          .universalIdentifier;
+      expect(
+        allFlatEntityMaps.flatViewFieldMaps.byUniversalIdentifier[identifier],
+      ).toMatchObject({
+        fieldMetadataId: field?.id,
+        isVisible: true,
+      });
+    }
+  });
+
   it('exposes the LinkedIn connection date on People', () => {
     const connectedAtField = getField('person', 'linkedinConnectedAt');
     const allPeopleConnectedAtViewField =
