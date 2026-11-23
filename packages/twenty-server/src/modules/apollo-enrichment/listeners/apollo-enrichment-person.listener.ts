@@ -8,6 +8,7 @@ import {
 import { OnDatabaseBatchEvent } from 'src/engine/api/graphql/graphql-query-runner/decorators/on-database-batch-event.decorator';
 import { DatabaseEventAction } from 'src/engine/api/graphql/graphql-query-runner/enums/database-event-action';
 import { objectRecordChangedProperties as objectRecordUpdateEventChangedProperties } from 'src/engine/core-modules/event-emitter/utils/object-record-changed-properties.util';
+import { TwentyConfigService } from 'src/engine/core-modules/twenty-config/twenty-config.service';
 import { WorkspaceEventBatch } from 'src/engine/workspace-event-emitter/types/workspace-event-batch.type';
 import { ApolloEnrichmentMapperService } from 'src/modules/apollo-enrichment/services/apollo-enrichment-mapper.service';
 import { ApolloEnrichmentQueueService } from 'src/modules/apollo-enrichment/services/apollo-enrichment-queue.service';
@@ -18,6 +19,7 @@ export class ApolloEnrichmentPersonListener {
   constructor(
     private readonly apolloEnrichmentMapperService: ApolloEnrichmentMapperService,
     private readonly apolloEnrichmentQueueService: ApolloEnrichmentQueueService,
+    private readonly twentyConfigService: TwentyConfigService,
   ) {}
 
   @OnDatabaseBatchEvent('person', DatabaseEventAction.CREATED)
@@ -26,6 +28,10 @@ export class ApolloEnrichmentPersonListener {
       ObjectRecordCreateEvent<PersonWorkspaceEntity>
     >,
   ): Promise<void> {
+    if (!this.twentyConfigService.get('APOLLO_AUTOMATIC_ENRICHMENT_ENABLED')) {
+      return;
+    }
+
     const peopleToEnrich = payload.events.filter((eventPayload) =>
       this.apolloEnrichmentMapperService.shouldEnrichPerson(
         eventPayload.properties.after,
@@ -47,6 +53,10 @@ export class ApolloEnrichmentPersonListener {
       ObjectRecordUpdateEvent<PersonWorkspaceEntity>
     >,
   ): Promise<void> {
+    if (!this.twentyConfigService.get('APOLLO_AUTOMATIC_ENRICHMENT_ENABLED')) {
+      return;
+    }
+
     const peopleToEnrich = payload.events.filter((eventPayload) => {
       const changedFields = objectRecordUpdateEventChangedProperties(
         eventPayload.properties.before,

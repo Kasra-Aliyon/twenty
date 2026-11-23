@@ -283,6 +283,15 @@ export class ConfigVariables {
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.APOLLO_ENRICHMENT,
+    description:
+      'Allow automatic Apollo enrichment on person changes and scheduled backfills',
+    type: ConfigVariableType.BOOLEAN,
+  })
+  @IsOptional()
+  APOLLO_AUTOMATIC_ENRICHMENT_ENABLED = false;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.APOLLO_ENRICHMENT,
     description: 'Apollo API key used for enrichment requests',
     type: ConfigVariableType.STRING,
     isSensitive: true,

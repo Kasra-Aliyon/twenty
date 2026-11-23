@@ -3,6 +3,7 @@ import { Logger } from '@nestjs/common';
 import { Process } from 'src/engine/core-modules/message-queue/decorators/process.decorator';
 import { Processor } from 'src/engine/core-modules/message-queue/decorators/processor.decorator';
 import { MessageQueue } from 'src/engine/core-modules/message-queue/message-queue.constants';
+import { TwentyConfigService } from 'src/engine/core-modules/twenty-config/twenty-config.service';
 import { APOLLO_PHONE_ENRICHMENT_POLL_JOB_NAME } from 'src/modules/apollo-enrichment/apollo-enrichment.constants';
 import { ApolloEnrichmentService } from 'src/modules/apollo-enrichment/services/apollo-enrichment.service';
 import { ApolloEnrichmentError } from 'src/modules/apollo-enrichment/types/apollo-enrichment-error';
@@ -29,10 +30,19 @@ export class ApolloEnrichPersonJob {
 
   constructor(
     private readonly apolloEnrichmentService: ApolloEnrichmentService,
+    private readonly twentyConfigService: TwentyConfigService,
   ) {}
 
   @Process(ApolloEnrichPersonJob.name)
   async handle(data: ApolloEnrichPersonJobData): Promise<void> {
+    // Retries and waiting jobs can predate the switch to request-only enrichment.
+    if (
+      data.trigger !== 'manual-backfill' &&
+      !this.twentyConfigService.get('APOLLO_AUTOMATIC_ENRICHMENT_ENABLED')
+    ) {
+      return;
+    }
+
     try {
       const result = await this.apolloEnrichmentService.enrichPerson({
         workspaceId: data.workspaceId,

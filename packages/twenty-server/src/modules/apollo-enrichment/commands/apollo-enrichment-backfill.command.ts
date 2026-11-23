@@ -62,7 +62,7 @@ export class ApolloEnrichmentBackfillCommand extends CommandRunner {
         await this.apolloEnrichmentQueueService.enqueuePerson({
           workspaceId: workspace.id,
           personId,
-          trigger: 'backfill',
+          trigger: 'manual-backfill',
         });
         this.apolloEnrichmentService.markBackfillAttempted({
           workspaceId: workspace.id,
