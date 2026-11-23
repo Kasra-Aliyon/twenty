@@ -110,6 +110,18 @@ export const computeStandardPersonViewFields = (
         size: 150,
       },
     }),
+    allPeopleLinkedinConnectedTo: createStandardViewFieldFlatMetadata({
+      ...args,
+      objectName: 'person',
+      context: {
+        viewName: 'allPeople',
+        viewFieldName: 'linkedinConnectedTo',
+        fieldName: 'linkedinConnectedTo',
+        position: 7.5,
+        isVisible: true,
+        size: 240,
+      },
+    }),
     allPeopleLinkedinConnectedAt: createStandardViewFieldFlatMetadata({
       ...args,
       objectName: 'person',
@@ -365,6 +377,20 @@ export const computeStandardPersonViewFields = (
         viewFieldGroupName: 'social',
       },
     }),
+    personRecordPageFieldsLinkedinConnectedTo:
+      createStandardViewFieldFlatMetadata({
+        ...args,
+        objectName: 'person',
+        context: {
+          viewName: 'personRecordPageFields',
+          viewFieldName: 'linkedinConnectedTo',
+          fieldName: 'linkedinConnectedTo',
+          position: 0.5,
+          isVisible: true,
+          size: 240,
+          viewFieldGroupName: 'social',
+        },
+      }),
     personRecordPageFieldsLinkedinConnectedAt:
       createStandardViewFieldFlatMetadata({
         ...args,

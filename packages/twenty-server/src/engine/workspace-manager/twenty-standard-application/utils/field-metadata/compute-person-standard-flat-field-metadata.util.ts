@@ -177,8 +177,10 @@ export const buildPersonStandardFlatFieldMetadatas = ({
     context: {
       fieldName: 'linkedinConnectionState',
       type: FieldMetadataType.SELECT,
-      label: i18nLabel(msg`LinkedIn connection state`),
-      description: i18nLabel(msg`Latest connection state observed on LinkedIn`),
+      label: i18nLabel(msg`LinkedIn state (team)`),
+      description: i18nLabel(
+        msg`Connection state recorded across the team. See LinkedIn connected to for individual members.`,
+      ),
       icon: 'IconBrandLinkedin',
       isNullable: false,
       defaultValue: `'${LINKEDIN_CONNECTION_STATES.UNKNOWN}'`,
@@ -698,15 +700,33 @@ export const buildPersonStandardFlatFieldMetadatas = ({
     twentyStandardApplicationId,
     now,
   }),
+  linkedinConnectedTo: createStandardFieldFlatMetadata({
+    objectName,
+    workspaceId,
+    context: {
+      fieldName: 'linkedinConnectedTo',
+      type: FieldMetadataType.ARRAY,
+      label: i18nLabel(msg`LinkedIn connected to`),
+      description: i18nLabel(
+        msg`Team members with a recorded LinkedIn connection to this person. A blank means no member connection has been confirmed.`,
+      ),
+      icon: 'IconBrandLinkedin',
+      isUIEditable: false,
+    },
+    standardObjectMetadataRelatedEntityIds,
+    dependencyFlatEntityMaps,
+    twentyStandardApplicationId,
+    now,
+  }),
   linkedinConnectedAt: createStandardFieldFlatMetadata({
     objectName,
     workspaceId,
     context: {
       fieldName: 'linkedinConnectedAt',
       type: FieldMetadataType.DATE_TIME,
-      label: i18nLabel(msg`LinkedIn connected at`),
+      label: i18nLabel(msg`Last LinkedIn connection (team)`),
       description: i18nLabel(
-        msg`Most recent date this person was connected on LinkedIn`,
+        msg`Most recent LinkedIn connection date recorded for any team member.`,
       ),
       icon: 'IconCalendarClock',
       isNullable: true,
